@@ -48,6 +48,7 @@ class L76X(object):
     SET_REDUCTION               = '$PMTK314,-1'
     #SET_NMEA_OUTPUT = '$PMTK314,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,1,0'
     SET_NMEA_OUTPUT = '$PMTK314,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0'
+    SET_GPS_SEARCH_MODE = '$PMTK353,1,0,0,0,0' # $PMTK353,GPS_Enable,0,0,0,BEIDOU_Enable
 
     #Baud rate
     SET_NMEA_BAUDRATE          = '$PMTK251'
@@ -62,11 +63,11 @@ class L76X(object):
     _uart0 = 0
     _uart1 = 1
     
-    def __init__(self,uartx=_uart0,_baudrate = 9600 ):
+    def __init__(self,uartx=_uart0,_baudrate = 9600):
         if uartx==self._uart1:
-            self.ser = UART(uartx,baudrate=_baudrate,tx=Pin(4),rx=Pin(5))
+            self.ser = UART(uartx,baudrate=_baudrate,tx=Pin(4), rx=Pin(5))
         else:
-            self.ser = UART(uartx,baudrate=_baudrate,tx=Pin(0),rx=Pin(1))
+            self.ser = UART(uartx,baudrate=_baudrate,tx=Pin(0), rx=Pin(1))
 
         self.StandBy = Pin(self.STANDBY_PIN,Pin.OUT)
         self.Force = Pin(self.FORCE_PIN,Pin.IN)
@@ -84,6 +85,7 @@ class L76X(object):
         self.uart_send_byte('\r'.encode())
         self.uart_send_byte('\n'.encode())
         utime.sleep(0.1)
+        print(data)
 
     def set_baudrate(self, _baudrate, uartx=_uart0):
         if self._uart1==uartx:
@@ -91,7 +93,7 @@ class L76X(object):
         else:
             self.ser = UART(uartx,baudrate=_baudrate,tx=Pin(0),rx=Pin(1))
 
-    def set_nmea_output(f_GLL = 1, f_RMC = 1, f_VTG = 1, f_GGA = 1, f_GSA = 1, f_GSV = 1, f_ZDA = 1, f_MCHN = 0):
+    def set_nmea_output(self, f_GLL = 1, f_RMC = 1, f_VTG = 1, f_GGA = 1, f_GSA = 1, f_GSV = 1, f_ZDA = 1, f_MCHN = 0):
         """
         0 NMEA_SEN_GLL, // GPGLL interval - Geographic Position - Latitude longitude
         1 NMEA_SEN_RMC, // GPRMC interval - Recommended Minimum Specific GNSS Sentence
@@ -120,9 +122,9 @@ class L76X(object):
                 
     def exit_backup_mode(self):
         self.Force.value(1)
-        time.sleep(1)
+        utime.sleep(1)
         self.Force.value(0)
-        time.sleep(1)
+        utime.sleep(1)
         self.Force = Pin(self.FORCE_PIN,Pin.IN)
         
     def uart_send_byte(self, value): 
