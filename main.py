@@ -2,6 +2,8 @@ from machine import Pin, SPI
 from writer import Writer
 import utime
 import _thread
+import copy
+import framebuf
 
 import l76x
 import NMEA
@@ -16,6 +18,9 @@ received_sentence = ''
 mutex = _thread.allocate_lock()
 
 # Display
+p0 = bytearray([0x18, 0x24, 0x24, 0x18, 0x00, 0x00, 0x00, 0x00])
+fb0 = framebuf.FrameBuffer(p0, 8, 8, framebuf.MONO_HLSB)
+
 spi1 = SPI(1, baudrate=1_000_000, sck=Pin(10), mosi=Pin(11), miso=None) # SCK MOSI MISO
 OLED = sh1107.SH1107_SPI(128, 64, spi1, Pin(8), Pin(12), Pin(9), rotate=180) # DC RST CS
 dogica = Writer(OLED, freesans20)
@@ -107,11 +112,10 @@ nmea_parser = NMEA.parser()
 buffer = ''
 while True:
     mutex.acquire()
-    if len(received_sentence) > 0:
-        buffer = received_sentence
-        nmea_parser.parse_sentence(buffer)
-        received_sentence = ''
-    mutex.release()    
+    buffer = copy.copy(received_sentence)
+    mutex.release()
+    if len(buffer) > 0:
+        nmea_parser.parse_sentence(buffer)    
     
     if screen == 0:
         OLED.fill(0)
@@ -124,11 +128,16 @@ while True:
         OLED.show()
     elif screen == 1:
         OLED.fill(0)
+        rcv = nmea_parser.sentences_received
+        val = nmea_parser.sentences_valid
+        inv = nmea_parser.sentences_invalid
+        par = nmea_parser.sentences_parsed
+        ign = nmea_parser.sentences_ignored
         OLED.text("rcv: " + str(nmea_parser.sentences_received), 0, 0*12, 1)
-        OLED.text("val: " + str(nmea_parser.sentences_valid) + ' | ' + nmea_parser.sentence_last_valid_type, 0, 1*12, 1)
-        OLED.text("inv: " + str(nmea_parser.sentences_invalid) + ' | ' + nmea_parser.sentence_last_invalid_type, 0, 2*12, 1)
-        OLED.text("par: " + str(nmea_parser.sentences_parsed) + ' | ' + nmea_parser.sentence_last_parsed_type, 0, 3*12, 1)
-        OLED.text("ign: " + str(nmea_parser.sentences_ignored) + ' | ' + nmea_parser.sentence_last_ignored_type, 0, 4*12, 1)        
+        OLED.text("val: " + str(round(val/rcv * 100)) + '% ' + nmea_parser.sentence_last_valid_type, 0, 1*12, 1)
+        OLED.text("inv: " + str(round(inv/rcv * 100)) + '% ' + nmea_parser.sentence_last_invalid_type, 0, 2*12, 1)
+        OLED.text("par: " + str(round(par/rcv * 100)) + '% ' + nmea_parser.sentence_last_parsed_type, 0, 3*12, 1)
+        OLED.text("ign: " + str(round(ign/rcv * 100)) + '% ' + nmea_parser.sentence_last_ignored_type, 0, 4*12, 1)        
         OLED.show()
     elif screen == 2:
         OLED.fill(0)
