@@ -10,7 +10,9 @@ class parser(object):
         self.birds_in_view = 0
         self.fix_type = None
         self.HDOP = None
+        self.PDOP = None
         self.VDOP = None
+        self.mode = None
         
         # Stats
         self.sentences_received = 0
@@ -48,6 +50,8 @@ class parser(object):
             self.NS = payload[3]
             self.lon = payload[4]
             self.EW = payload[5]
+            self.fix_type = payload[6]
+            self.birds_in_use = payload[7]
         elif sentence_type == 'RMC':
             self.sentence_last_parsed_type = sentence_type
             self.sentences_parsed += 1
@@ -57,7 +61,13 @@ class parser(object):
             self.lat = payload[3]
             self.NS = payload[4]
             self.lon = payload[5]
-            self.EW = payload[6]            
+            self.EW = payload[6]
+        elif sentence_type == 'GSV':
+            self.sentence_last_parsed_type = sentence_type
+            self.sentences_parsed += 1
+            tmp = sentence.split('*')
+            payload = tmp[0].split(',')
+            self.birds_in_view = payload[3]
         else:
             self.sentence_last_ignored_type = sentence_type
             self.sentences_ignored += 1
@@ -102,9 +112,10 @@ class parser(object):
         if len(self.lat) > 0:
             try:
                 deg = self.lat[0:2]
-                mm = self.lat[2:]
+                mm = round(float(self.lat[2:]),2)
                 NS = self.NS
-                tmp = f'{NS}{deg}°{mm}'
+                #tmp = f'{NS}{deg}°{mm}'
+                tmp = "{}{}{}{}".format(NS, deg, chr(176), mm)
                 return tmp
             except:
                 return ''
@@ -115,9 +126,10 @@ class parser(object):
         if len(self.lon) > 0:
             try:
                 deg = self.lon[0:3]
-                mm = self.lon[3:]
+                mm = round(float(self.lon[3:]),2)
                 EW = self.EW
-                tmp = f'{EW}{deg}°{mm}'
+                #tmp = f'{EW}{deg}°{mm}'
+                tmp = "{}{}{}{}".format(EW, deg, chr(176), mm)
                 return tmp
             except:
                 return ''

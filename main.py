@@ -3,12 +3,11 @@ from writer import Writer
 import utime
 import _thread
 import copy
-import framebuf
 
 import l76x
 import NMEA
 import sh1107
-import freesans20 #dogica_gps
+import roboto14 #dogica_gps
 
 # Vriables
 DEBUG = True
@@ -18,12 +17,9 @@ received_sentence = ''
 mutex = _thread.allocate_lock()
 
 # Display
-p0 = bytearray([0x18, 0x24, 0x24, 0x18, 0x00, 0x00, 0x00, 0x00])
-fb0 = framebuf.FrameBuffer(p0, 8, 8, framebuf.MONO_HLSB)
-
 spi1 = SPI(1, baudrate=1_000_000, sck=Pin(10), mosi=Pin(11), miso=None) # SCK MOSI MISO
 OLED = sh1107.SH1107_SPI(128, 64, spi1, Pin(8), Pin(12), Pin(9), rotate=180) # DC RST CS
-dogica = Writer(OLED, freesans20)
+font_large = Writer(OLED, roboto14)
 OLED.init_display()
 OLED.fill(0)
 OLED.text('Waiting for GPS...', 0, 0, 1)
@@ -34,10 +30,10 @@ OLED.show()
 #gps.exit_backup_mode()
 
 # Key handling
-keyA = Pin(15, Pin.IN, Pin.PULL_UP)
-keyB = Pin(17, Pin.IN, Pin.PULL_UP)
-screen_max = 2
+key0 = Pin(15, Pin.IN, Pin.PULL_UP)
+key1 = Pin(17, Pin.IN, Pin.PULL_UP)
 screen = 0
+screen_max = 2
 last_time = 0
 
 def button_UP_pressed_handler(pin):
@@ -45,10 +41,11 @@ def button_UP_pressed_handler(pin):
     new_time = utime.ticks_ms()
     # if it has been more that 1/5 of a second since the last event, we have a new event
     if (new_time - last_time) > 200:
-        if screen == screen_max:
+        print('Key UP')
+        if screen >= screen_max:
             screen = 0
         else:
-            screen = screen + 1
+            screen += 1
         last_time = new_time
 
 def button_DN_pressed_handler(pin):
@@ -56,15 +53,12 @@ def button_DN_pressed_handler(pin):
     new_time = utime.ticks_ms()
     # if it has been more that 1/5 of a second since the last event, we have a new event
     if (new_time - last_time) > 200:
-        if screen == 0:
+        print('Key DN')
+        if screen <= 0:
             screen = screen_max
         else:
-            screen = screen - 1
+            screen -= 1
         last_time = new_time
-
-# now we register the handler function when the button is pressed
-keyA.irq(trigger=machine.Pin.IRQ_FALLING, handler = button_UP_pressed_handler)
-keyB.irq(trigger=machine.Pin.IRQ_FALLING, handler = button_DN_pressed_handler)
 
 # GPS thread
 def gps_thread():
@@ -74,7 +68,7 @@ def gps_thread():
     UARTx = 0
     BAUDRATE = 9600
     gps=l76x.L76X(uartx=UARTx,_baudrate = BAUDRATE)
-    gps.exit_backup_mode()
+    #gps.exit_backup_mode()
     #gps.l76x_send_command(gps.SET_FULL_COLD_START)
     gps.send_command(gps.SET_POS_FIX_800MS)
     gps.send_command(gps.SET_NORMAL_MODE)
@@ -103,28 +97,36 @@ def gps_thread():
 
 thread1 = _thread.start_new_thread(gps_thread, ())
 
+# now we register the handler function when the button is pressed
+key0.irq(trigger = machine.Pin.IRQ_FALLING, handler = button_UP_pressed_handler)
+key1.irq(trigger = machine.Pin.IRQ_FALLING, handler = button_DN_pressed_handler)
+
 #
 # MAIN LOOP
 #
 OLED.init_display()
 nmea_parser = NMEA.parser()
-
+screen = 0
 buffer = ''
 while True:
     mutex.acquire()
-    buffer = copy.copy(received_sentence)
-    mutex.release()
+    #print(buffer)
+    #buffer = copy.copy(received_sentence)
+    buffer = received_sentence
     if len(buffer) > 0:
-        nmea_parser.parse_sentence(buffer)    
-    
+        nmea_parser.parse_sentence(buffer)
+    mutex.release()
+        
     if screen == 0:
         OLED.fill(0)
-        Writer.set_textpos(OLED, 0, 25)
-        dogica.printstring(nmea_parser.get_time_string())
-        Writer.set_textpos(OLED, 20, 0)
-        dogica.printstring(nmea_parser.get_lat_string())
-        Writer.set_textpos(OLED, 40, 0)
-        dogica.printstring(nmea_parser.get_lon_string())
+        Writer.set_textpos(OLED, 0, 15)
+        font_large.printstring(nmea_parser.get_time_string())
+        Writer.set_textpos(OLED, 15, 0)
+        font_large.printstring(nmea_parser.get_lat_string())
+        Writer.set_textpos(OLED, 30, 0)
+        font_large.printstring(nmea_parser.get_lon_string())
+        Writer.set_textpos(OLED, 45, 0)
+        font_large.printstring('Fix:' + str(nmea_parser.birds_in_use) + ' ' + str(nmea_parser.birds_in_use) + '/' + str(nmea_parser.birds_in_view))
         OLED.show()
     elif screen == 1:
         OLED.fill(0)

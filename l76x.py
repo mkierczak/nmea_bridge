@@ -7,8 +7,8 @@ import utime
 chars = '0123456789ABCDEF*'
 
 class L76X(object):
-    FORCE_PIN  = 14
-    STANDBY_PIN= 17
+    #FORCE_PIN  = None # 14
+    #STANDBY_PIN = None # 17
     
     #Startup mode
     SET_HOT_START       = '$PMTK101'
@@ -69,10 +69,10 @@ class L76X(object):
         else:
             self.ser = UART(uartx,baudrate=_baudrate,tx=Pin(0), rx=Pin(1))
 
-        self.StandBy = Pin(self.STANDBY_PIN,Pin.OUT)
-        self.Force = Pin(self.FORCE_PIN,Pin.IN)
-        self.StandBy.value(0)
-        self.Force.value(0)
+        #self.StandBy = Pin(self.STANDBY_PIN,Pin.OUT)
+        #self.Force = Pin(self.FORCE_PIN,Pin.IN)
+        #self.StandBy.value(0)
+        #self.Force.value(0)
     
     def send_command(self, data):
         Check = ord(data[1]) 
@@ -121,11 +121,11 @@ class L76X(object):
         self.send_command(cmd)
                 
     def exit_backup_mode(self):
-        self.Force.value(1)
+        #self.Force.value(1)
         utime.sleep(1)
-        self.Force.value(0)
+        #self.Force.value(0)
         utime.sleep(1)
-        self.Force = Pin(self.FORCE_PIN,Pin.IN)
+        #self.Force = Pin(self.FORCE_PIN,Pin.IN)
         
     def uart_send_byte(self, value): 
         self.ser.write(value) 
