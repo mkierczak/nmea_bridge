@@ -13,6 +13,7 @@ class parser(object):
         self.PDOP = None
         self.VDOP = None
         self.mode = None
+        self.magvar = ''
         
         # Stats
         self.sentences_received = 0
@@ -62,6 +63,7 @@ class parser(object):
             self.NS = payload[4]
             self.lon = payload[5]
             self.EW = payload[6]
+            self.magvar = str(payload[10]) + payload[11]
         elif sentence_type == 'GSV':
             self.sentence_last_parsed_type = sentence_type
             self.sentences_parsed += 1

@@ -179,6 +179,7 @@ while True:
     elif screen == 2:
         OLED.fill(0)
         OLED.text(buffer, 0, 0, 1)
+        OLED.text('Var:' + nmea_parser.magvar, 0, 15, 1)
         OLED.show()
     #print(f"Screen: {screen}")
     #utime.sleep_ms(10)
