@@ -9,7 +9,7 @@ class parser(object):
         self.birds_in_use = 0
         self.birds_in_view = 0
         self.fix_type = 'NO FIX'
-        self.HDOP = None
+        self.HDOP = 30
         self.PDOP = None
         self.VDOP = None
         self.mode = ''
@@ -37,7 +37,7 @@ class parser(object):
             print(f'INVALID: {sentence}')
             self.sentence_last_ignored_type = sentence[3:6]
             self.sentences_invalid += 1
-    
+        
     def _dispatch(self, sentence):
         sentence_type = sentence[3:6]
         self.sentence_last_valid_type = sentence_type
@@ -59,6 +59,7 @@ class parser(object):
             elif fix == 2:
                 self.fix_type = 'DGPS'
             self.birds_in_use = payload[7]
+            self.HDOP = payload[8]
         elif sentence_type == 'RMC':
             self.sentence_last_parsed_type = sentence_type
             self.sentences_parsed += 1
@@ -88,6 +89,7 @@ class parser(object):
                 self.mode = '3D'
             else:
                 self.mode = ''
+            self.HDOP = payload[16]
         else:
             self.sentence_last_ignored_type = sentence_type
             self.sentences_ignored += 1
@@ -155,3 +157,18 @@ class parser(object):
                 return ''
         else:
             return ''
+    
+    def get_hdop_string(self):
+        dop = float(self.HDOP)
+        if dop < 1:
+            return("A") # Ideal
+        elif dop >= 1 and dop < 2:
+            return("B") # Excellent
+        elif dop >= 2 and dop < 5:
+            return("C") # Good
+        elif dop >= 5 and dop < 10:
+            return("D") # Moderate
+        elif dop >= 10 and dop < 20:
+            return("E") # Fair
+        else:
+            return("F") # Poor

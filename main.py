@@ -155,7 +155,7 @@ while True:
     if screen == 0:
         OLED.fill(0)
         #OLED.hline(0,0,128,1)
-        OLED.text(nmea_parser.get_time_string(), 30, 3, 1)
+        OLED.text(nmea_parser.get_time_string() + ' GMT', 30, 3, 1)
         OLED.hline(0,14,128,1)
         Writer.set_textpos(OLED, 17, 0)
         font_large.printstring(nmea_parser.get_lat_string())
@@ -163,6 +163,7 @@ while True:
         font_large.printstring(nmea_parser.get_lon_string())
         OLED.hline(0,48,128,1)
         OLED.text(nmea_parser.fix_type + ' ' + nmea_parser.mode + ' ' + str(nmea_parser.birds_in_use) + '/' + str(nmea_parser.birds_in_view), 0, 54, 1)
+        OLED.text(nmea_parser.get_hdop_string(), 120, 54, 1)
         OLED.show()
     elif screen == 1:
         OLED.fill(0)
