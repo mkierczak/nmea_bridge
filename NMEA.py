@@ -12,7 +12,7 @@ class parser(object):
         self.HDOP = None
         self.PDOP = None
         self.VDOP = None
-        self.mode = None
+        self.mode = ''
         self.magvar = ''
         
         # Stats
@@ -76,6 +76,18 @@ class parser(object):
             tmp = sentence.split('*')
             payload = tmp[0].split(',')
             self.birds_in_view = payload[3]
+        elif sentence_type == 'GSA':
+            self.sentence_last_parsed_type = sentence_type
+            self.sentences_parsed += 1
+            tmp = sentence.split('*')
+            payload = tmp[0].split(',')
+            mode = int(payload[2])
+            if mode == 2:
+                self.mode = '2D'
+            elif mode == 3:
+                self.mode = '3D'
+            else:
+                self.mode = ''
         else:
             self.sentence_last_ignored_type = sentence_type
             self.sentences_ignored += 1

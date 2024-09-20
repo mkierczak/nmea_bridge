@@ -162,7 +162,7 @@ while True:
         Writer.set_textpos(OLED, 32, 0)
         font_large.printstring(nmea_parser.get_lon_string())
         OLED.hline(0,48,128,1)
-        OLED.text(nmea_parser.fix_type + ' ' + str(nmea_parser.birds_in_use) + '/' + str(nmea_parser.birds_in_view), 0, 54, 1)
+        OLED.text(nmea_parser.fix_type + ' ' + nmea_parser.mode + ' ' + str(nmea_parser.birds_in_use) + '/' + str(nmea_parser.birds_in_view), 0, 54, 1)
         OLED.show()
     elif screen == 1:
         OLED.fill(0)
