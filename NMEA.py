@@ -14,6 +14,10 @@ class parser(object):
         self.VDOP = None
         self.mode = ''
         self.magvar = ''
+        self.birds_GPS = 0
+        self.birds_GLONASS = 0
+        self.birds_SBAS = 0
+        self.birds_OTHER = 0
         
         # Stats
         self.sentences_received = 0
@@ -90,6 +94,25 @@ class parser(object):
             else:
                 self.mode = ''
             self.HDOP = payload[16]
+            cnt_GPS = 0
+            cnt_SBAS = 0
+            cnt_GLONASS = 0
+            cnt_OTHER = 0
+            for bird in payload[3:14]:
+                if len(bird) > 0:
+                    prn = int(bird)
+                    if prn >= 1 and prn <= 32:
+                        cnt_GPS += 1
+                    elif prn >= 33 and prn <= 64:
+                        cnt_SBAS += 1
+                    elif prn >= 65 and prn <= 96:
+                        cnt_GLONASS += 1
+                    else:
+                        cnt_OTHER += 1
+            self.birds_GPS = cnt_GPS
+            self.birds_SBAS = cnt_SBAS
+            self.birds_GLONASS = cnt_GLONASS
+            self.birds_OTHER = cnt_OTHER
         else:
             self.sentence_last_ignored_type = sentence_type
             self.sentences_ignored += 1
