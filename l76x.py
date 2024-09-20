@@ -47,7 +47,7 @@ class L76X(object):
     #To restore the system default setting
     SET_REDUCTION               = '$PMTK314,-1'
     #SET_NMEA_OUTPUT = '$PMTK314,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,1,0'
-    SET_NMEA_OUTPUT = '$PMTK314,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0'
+    SET_NMEA_OUTPUT = '$PMTK314,0,0,0,1,5,5,0,0,0,0,0,0,0,0,0,0,0,0,0'
     SET_GPS_SEARCH_MODE = '$PMTK353,1,0,0,0,0' # $PMTK353,GPS_Enable,0,0,0,BEIDOU_Enable
 
     #Baud rate
