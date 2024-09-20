@@ -32,33 +32,72 @@ OLED.show()
 # Key handling
 key0 = Pin(15, Pin.IN, Pin.PULL_UP)
 key1 = Pin(17, Pin.IN, Pin.PULL_UP)
+
 screen = 0
-screen_max = 2
-last_time = 0
+screen_max = 1
 
-def button_UP_pressed_handler(pin):
-    global screen, last_time
-    new_time = utime.ticks_ms()
-    # if it has been more that 1/5 of a second since the last event, we have a new event
-    if (new_time - last_time) > 200:
-        print('Key UP')
-        if screen >= screen_max:
-            screen = 0
-        else:
-            screen += 1
-        last_time = new_time
+# Variables to store button press times
+key0_press_time = 0
+key1_press_time = 0
 
-def button_DN_pressed_handler(pin):
-    global screen, last_time
-    new_time = utime.ticks_ms()
-    # if it has been more that 1/5 of a second since the last event, we have a new event
-    if (new_time - last_time) > 200:
-        print('Key DN')
-        if screen <= 0:
-            screen = screen_max
+# Threshold in milliseconds to distinguish between short and long press
+LONG_PRESS_THRESHOLD = 1000  # 1 second
+
+def button_UP_handler(pin):
+    global key0_press_time
+    if pin.value() == 0:  # Button is pressed (active low)
+        key0_press_time = utime.ticks_ms()
+    else:  # Button is released
+        press_duration = utime.ticks_diff(utime.ticks_ms(), key0_press_time)
+        if press_duration >= LONG_PRESS_THRESHOLD:
+            handle_long_press_UP()
         else:
-            screen -= 1
-        last_time = new_time
+            handle_short_press_UP()
+
+def button_DN_handler(pin):
+    global key1_press_time
+    if pin.value() == 0:  # Button is pressed (active low)
+        key1_press_time = utime.ticks_ms()
+    else:  # Button is released
+        press_duration = utime.ticks_diff(utime.ticks_ms(), key1_press_time)
+        if press_duration >= LONG_PRESS_THRESHOLD:
+            handle_long_press_DN()
+        else:
+            handle_short_press_DN()
+
+def handle_short_press_UP():
+    global screen
+    print('Short Press UP')
+    if screen >= screen_max:
+        screen = 0
+    else:
+        screen += 1
+    # Add your code to handle short press UP event
+
+def handle_long_press_UP():
+    global screen
+    screen = 2
+    print('Long Press UP')
+    # Add your code to handle long press UP event
+
+def handle_short_press_DN():
+    global screen
+    print('Short Press DN')
+    if screen <= 0:
+        screen = screen_max
+    else:
+        screen -= 1
+    # Add your code to handle short press DN event
+
+def handle_long_press_DN():
+    global screen
+    screen = 0
+    print('Long Press DN')
+    # Add your code to handle long press DN event
+
+# Register the handler functions for both rising and falling edges
+key0.irq(trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING, handler=button_UP_handler)
+key1.irq(trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING, handler=button_DN_handler)
 
 # GPS thread
 def gps_thread():
@@ -96,10 +135,6 @@ def gps_thread():
                 pass
 
 thread1 = _thread.start_new_thread(gps_thread, ())
-
-# now we register the handler function when the button is pressed
-key0.irq(trigger = machine.Pin.IRQ_FALLING, handler = button_UP_pressed_handler)
-key1.irq(trigger = machine.Pin.IRQ_FALLING, handler = button_DN_pressed_handler)
 
 #
 # MAIN LOOP
