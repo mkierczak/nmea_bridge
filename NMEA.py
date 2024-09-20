@@ -8,7 +8,7 @@ class parser(object):
         self.EW = ''
         self.birds_in_use = 0
         self.birds_in_view = 0
-        self.fix_type = None
+        self.fix_type = 'NO FIX'
         self.HDOP = None
         self.PDOP = None
         self.VDOP = None
@@ -51,7 +51,13 @@ class parser(object):
             self.NS = payload[3]
             self.lon = payload[4]
             self.EW = payload[5]
-            self.fix_type = payload[6]
+            fix = int(payload[6])
+            if fix == 0:
+                self.fix_type = 'NO FIX'
+            elif fix == 1:
+                self.fix_type = 'GPS'
+            elif fix == 2:
+                self.fix_type = 'DGPS'
             self.birds_in_use = payload[7]
         elif sentence_type == 'RMC':
             self.sentence_last_parsed_type = sentence_type
