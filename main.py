@@ -7,10 +7,13 @@ import copy
 import l76x
 import NMEA
 import sh1107
-import roboto14 #dogica_gps
+import roboto14
 
 # Vriables
-DEBUG = True
+DEBUG = True 					# TODO currently not in use
+STATS_REFRESH_RATE = 10 * 1000	# how often (in milliseconds) stats will be refreshed
+STATS_MULTIPLIER = 60 * 1000 / STATS_REFRESH_RATE # multiplier to get stats per minute
+LONG_PRESS_THRESHOLD = 1 * 1000	# threshold in milliseconds to distinguish between short and long press
 
 # Threading
 received_sentence = ''
@@ -40,9 +43,6 @@ screen_max = 1
 key0_press_time = 0
 key1_press_time = 0
 
-# Threshold in milliseconds to distinguish between short and long press
-LONG_PRESS_THRESHOLD = 1000  # 1 second
-
 def button_UP_handler(pin):
     global key0_press_time
     if pin.value() == 0:  # Button is pressed (active low)
@@ -67,33 +67,25 @@ def button_DN_handler(pin):
 
 def handle_short_press_UP():
     global screen
-    print('Short Press UP')
     if screen >= screen_max:
         screen = 0
     else:
         screen += 1
-    # Add your code to handle short press UP event
 
 def handle_long_press_UP():
     global screen
     screen = 2
-    print('Long Press UP')
-    # Add your code to handle long press UP event
 
 def handle_short_press_DN():
     global screen
-    print('Short Press DN')
     if screen <= 0:
         screen = screen_max
     else:
         screen -= 1
-    # Add your code to handle short press DN event
 
 def handle_long_press_DN():
     global screen
     screen = 0
-    print('Long Press DN')
-    # Add your code to handle long press DN event
 
 # Register the handler functions for both rising and falling edges
 key0.irq(trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING, handler=button_UP_handler)
@@ -143,6 +135,13 @@ OLED.init_display()
 nmea_parser = NMEA.parser()
 screen = 0
 buffer = ''
+last_stats = utime.ticks_ms()
+rcv = 1
+val = 0
+inv = 0
+par = 0
+ign = 0
+
 while True:
     mutex.acquire()
     #print(buffer)
@@ -151,7 +150,24 @@ while True:
     if len(buffer) > 0:
         nmea_parser.parse_sentence(buffer)
     mutex.release()
+    
+    # Gather stats
+    if utime.ticks_diff(utime.ticks_ms(), last_stats) > STATS_REFRESH_RATE:
+        rcv = nmea_parser.sentences_received
+        rcvpm = rcv * STATS_MULTIPLIER # received per minute
+        val = nmea_parser.sentences_valid
+        inv = nmea_parser.sentences_invalid
+        par = nmea_parser.sentences_parsed
+        ign = nmea_parser.sentences_ignored
+        # Reset stats
+        nmea_parser.sentences_received = 0
+        nmea_parser.sentences_valid = 0
+        nmea_parser.sentences_invalid = 0
+        nmea_parser.sentences_parsed = 0
+        nmea_parser.sentences_ignored = 0
+        last_stats = utime.ticks_ms()
         
+    # Update and display selected screen
     if screen == 0:
         OLED.fill(0)
         #OLED.hline(0,0,128,1)
@@ -167,12 +183,7 @@ while True:
         OLED.show()
     elif screen == 1:
         OLED.fill(0)
-        rcv = nmea_parser.sentences_received
-        val = nmea_parser.sentences_valid
-        inv = nmea_parser.sentences_invalid
-        par = nmea_parser.sentences_parsed
-        ign = nmea_parser.sentences_ignored
-        OLED.text("rcv: " + str(nmea_parser.sentences_received), 0, 0*12, 1)
+        OLED.text("rcv: " + str(rcvpm) + "/min", 0, 0*12, 1)
         OLED.text("val: " + str(round(val/rcv * 100)) + '% ' + nmea_parser.sentence_last_valid_type, 0, 1*12, 1)
         OLED.text("inv: " + str(round(inv/rcv * 100)) + '% ' + nmea_parser.sentence_last_invalid_type, 0, 2*12, 1)
         OLED.text("par: " + str(round(par/rcv * 100)) + '% ' + nmea_parser.sentence_last_parsed_type, 0, 3*12, 1)
@@ -189,8 +200,5 @@ while True:
         OLED.text('OTHER:' + str(nmea_parser.birds_OTHER), 0, 54, 1)
         OLED.hline(0,63,128,1)
         OLED.show()
-    #print(f"Screen: {screen}")
-    #utime.sleep_ms(10)
-
 
 
