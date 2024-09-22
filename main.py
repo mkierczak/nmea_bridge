@@ -17,10 +17,8 @@ LONG_PRESS_THRESHOLD = 1 * 1000	# threshold in milliseconds to distinguish betwe
 WATCHDOG_TIMEOUT = 5 * 1000 	# watchdog has to be fed every N seconds
 RCVPM_THRESHOLD = 10 			# watchdog - at least N messages from GPS have to be received per minute
 INV_THRESHOLD = 80 				# watchdog - if more than N per-cent messages are invalid -- reset
-
-# Threading
-received_sentence = ''
-mutex = _thread.allocate_lock()
+UARTx = 0	# GPS UART
+BAUDRATE = 9600	# GPS baudrate
 
 # Display
 spi1 = SPI(1, baudrate=10_000_000, sck=Pin(10), mosi=Pin(11), miso=None) # SCK MOSI MISO
@@ -28,18 +26,12 @@ oled = sh1107.SH1107_SPI(128, 64, spi1, Pin(8), Pin(12), Pin(9), rotate=180) # D
 font_large = Writer(oled, roboto14)
 oled.init_display()
 oled.fill(0)
-oled.text('Waiting for GPS...', 0, 0, 1)
+oled.text('Waiting for fix...', 0, 0, 1)
 oled.show()
-
-#gps.set_baudrate(BAUDRATE)
-#gps.send_command('$PMTK604') # Firmware version query
-#gps.exit_backup_mode()
-print('HELLO!')
 
 # Key handling
 key0 = Pin(15, Pin.IN, Pin.PULL_UP)
 key1 = Pin(17, Pin.IN, Pin.PULL_UP)
-print('HELLO!')
 
 screen = 0
 screen_max = 1
@@ -96,15 +88,15 @@ def handle_long_press_DN():
 key0.irq(trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING, handler=button_UP_handler)
 key1.irq(trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING, handler=button_DN_handler)
 
-# GPS thread
+# Threading
+received_sentence = ''
+mutex = _thread.allocate_lock()
+
 def gps_thread():
     global received_sentence
     
     # GPS init
-    UARTx = 0
-    BAUDRATE = 9600
     gps=l76x.L76X(uartx=UARTx,_baudrate = BAUDRATE)
-    #gps.exit_backup_mode()
     #gps.l76x_send_command(gps.SET_FULL_COLD_START)
     gps.send_command(gps.SET_POS_FIX_800MS)
     gps.send_command(gps.SET_NORMAL_MODE)
@@ -133,6 +125,21 @@ def gps_thread():
 
 thread1 = _thread.start_new_thread(gps_thread, ())
 
+def gather_stats(stats):
+    stats['rcv'] = nmea_parser.sentences_received
+    stats['rcvpm'] = rcv * STATS_MULTIPLIER # received per minute
+    stats['val'] = nmea_parser.sentences_valid
+    stats['inv'] = nmea_parser.sentences_invalid
+    stats['par'] = nmea_parser.sentences_parsed
+    stats['ign'] = nmea_parser.sentences_ignored
+    # Reset stats
+    nmea_parser.sentences_received = 0
+    nmea_parser.sentences_valid = 0
+    nmea_parser.sentences_invalid = 0
+    nmea_parser.sentences_parsed = 0
+    nmea_parser.sentences_ignored = 0
+    return stats
+
 #
 # MAIN LOOP
 #
@@ -140,16 +147,16 @@ oled.init_display()
 nmea_parser = NMEA.parser()
 screen = 0
 buffer = ''
-rcvpm = 1
-rcv = 1
-val = 0
-inv = 0
-par = 0
-ign = 0
+curr_stats = {}
+curr_stats['rcvpm'] = 1
+curr_stats['rcv'] = 1
+curr_stats['val'] = 0
+curr_stats['inv'] = 0
+curr_stats['par'] = 0
+curr_stats['ign'] = 0
 
 # Watchdog
 last_stats = utime.ticks_ms()
-#utime.sleep(STATS_REFRESH_RATE)
 wdt = WDT(timeout=WATCHDOG_TIMEOUT)
 
 while True:
@@ -164,29 +171,14 @@ while True:
     
     # Gather stats
     if utime.ticks_diff(utime.ticks_ms(), last_stats) > STATS_REFRESH_RATE:
-        rcv = nmea_parser.sentences_received
-        rcvpm = rcv * STATS_MULTIPLIER # received per minute
-        val = nmea_parser.sentences_valid
-        inv = nmea_parser.sentences_invalid
-        par = nmea_parser.sentences_parsed
-        ign = nmea_parser.sentences_ignored
-        # Reset stats
-        nmea_parser.sentences_received = 0
-        nmea_parser.sentences_valid = 0
-        nmea_parser.sentences_invalid = 0
-        nmea_parser.sentences_parsed = 0
-        nmea_parser.sentences_ignored = 0
-        last_stats = utime.ticks_ms()
+        stats = gather_stats(curr_stats)
+        last_stats = utime.ticks_ms()        
         
-    #Handle watchdog
-    # or round(inv/rcv * 100) > INV_THRESHOLD
-    #if rcvpm < RCVPM_THRESHOLD:
-    #    utime.sleep(WATCHDOG_TIMEOUT)
-    #else:
+    # Handle watchdog
     wdt.feed()
         
     # Update and display selected screen
-    if screen == 0:
+    if screen == 0: # Main screen
         oled.fill(0)
         #oled.hline(0,0,128,1)
         oled.text(nmea_parser.get_time_string() + ' GMT', 30, 3, 1)
@@ -199,15 +191,15 @@ while True:
         oled.text(nmea_parser.fix_type + ' ' + nmea_parser.mode + ' ' + str(nmea_parser.birds_in_use) + '/' + str(nmea_parser.birds_in_view), 0, 54, 1)
         oled.text(nmea_parser.get_hdop_string(), 120, 54, 1)
         oled.show()
-    elif screen == 1:
+    elif screen == 1: # Stats screen
         oled.fill(0)
-        oled.text("rcv: " + str(rcvpm) + "/min", 0, 0*12, 1)
-        oled.text("val: " + str(round(val/rcv * 100)) + '% ' + nmea_parser.sentence_last_valid_type, 0, 1*12, 1)
-        oled.text("inv: " + str(round(inv/rcv * 100)) + '% ' + nmea_parser.sentence_last_invalid_type, 0, 2*12, 1)
-        oled.text("par: " + str(round(par/rcv * 100)) + '% ' + nmea_parser.sentence_last_parsed_type, 0, 3*12, 1)
-        oled.text("ign: " + str(round(ign/rcv * 100)) + '% ' + nmea_parser.sentence_last_ignored_type, 0, 4*12, 1)        
+        oled.text("rcv: " + str(stats['rcvpm']) + "/min", 0, 0 * 12, 1)
+        oled.text("val: " + str(round(stats['val']/stats['rcv'] * 100)) + '% ' + nmea_parser.sentence_last_valid_type, 0, 1 * 12, 1)
+        oled.text("inv: " + str(round(stats['inv']/stats['rcv'] * 100)) + '% ' + nmea_parser.sentence_last_invalid_type, 0, 2 * 12, 1)
+        oled.text("par: " + str(round(stats['par']/stats['rcv'] * 100)) + '% ' + nmea_parser.sentence_last_parsed_type, 0, 3 * 12, 1)
+        oled.text("ign: " + str(round(stats['ign']/stats['rcv'] * 100)) + '% ' + nmea_parser.sentence_last_ignored_type, 0, 4 * 12, 1)        
         oled.show()
-    elif screen == 2:
+    elif screen == 2: # Debug screen
         oled.fill(0)
         oled.text(buffer, 0, 0, 1)
         oled.text('Var:' + nmea_parser.magvar, 0, 10, 1)
