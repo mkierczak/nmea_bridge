@@ -124,10 +124,13 @@ class parser(object):
         csum = 0
         for c in chksumdata:
             csum ^= ord(c)
-        if hex(csum) == hex(int(cksum, 16)):
-            return True
-        else:
-            #print(f'data: {chksumdata} -- CHKSUM: {cksum}')
+        try:
+            if hex(csum) == hex(int(cksum.strip(), 16)):
+                return True
+            else:
+                #print(f'data: {chksumdata} -- CHKSUM: {cksum}')
+                return False
+        except:
             return False
 
     def _validate_nmea(self, sentence):

@@ -1,8 +1,8 @@
-from machine import Pin, SPI
+from machine import Pin, SPI, WDT
 from writer import Writer
 import utime
 import _thread
-import copy
+#import copy
 
 import l76x
 import NMEA
@@ -14,27 +14,32 @@ DEBUG = True 					# TODO currently not in use
 STATS_REFRESH_RATE = 10 * 1000	# how often (in milliseconds) stats will be refreshed
 STATS_MULTIPLIER = 60 * 1000 / STATS_REFRESH_RATE # multiplier to get stats per minute
 LONG_PRESS_THRESHOLD = 1 * 1000	# threshold in milliseconds to distinguish between short and long press
+WATCHDOG_TIMEOUT = 5 * 1000 	# watchdog has to be fed every N seconds
+RCVPM_THRESHOLD = 10 			# watchdog - at least N messages from GPS have to be received per minute
+INV_THRESHOLD = 80 				# watchdog - if more than N per-cent messages are invalid -- reset
 
 # Threading
 received_sentence = ''
 mutex = _thread.allocate_lock()
 
 # Display
-spi1 = SPI(1, baudrate=1_000_000, sck=Pin(10), mosi=Pin(11), miso=None) # SCK MOSI MISO
-OLED = sh1107.SH1107_SPI(128, 64, spi1, Pin(8), Pin(12), Pin(9), rotate=180) # DC RST CS
-font_large = Writer(OLED, roboto14)
-OLED.init_display()
-OLED.fill(0)
-OLED.text('Waiting for GPS...', 0, 0, 1)
-OLED.show()
+spi1 = SPI(1, baudrate=10_000_000, sck=Pin(10), mosi=Pin(11), miso=None) # SCK MOSI MISO
+oled = sh1107.SH1107_SPI(128, 64, spi1, Pin(8), Pin(12), Pin(9), rotate=180) # DC RST CS
+font_large = Writer(oled, roboto14)
+oled.init_display()
+oled.fill(0)
+oled.text('Waiting for GPS...', 0, 0, 1)
+oled.show()
 
 #gps.set_baudrate(BAUDRATE)
 #gps.send_command('$PMTK604') # Firmware version query
 #gps.exit_backup_mode()
+print('HELLO!')
 
 # Key handling
 key0 = Pin(15, Pin.IN, Pin.PULL_UP)
 key1 = Pin(17, Pin.IN, Pin.PULL_UP)
+print('HELLO!')
 
 screen = 0
 screen_max = 1
@@ -131,18 +136,24 @@ thread1 = _thread.start_new_thread(gps_thread, ())
 #
 # MAIN LOOP
 #
-OLED.init_display()
+oled.init_display()
 nmea_parser = NMEA.parser()
 screen = 0
 buffer = ''
-last_stats = utime.ticks_ms()
+rcvpm = 1
 rcv = 1
 val = 0
 inv = 0
 par = 0
 ign = 0
 
+# Watchdog
+last_stats = utime.ticks_ms()
+#utime.sleep(STATS_REFRESH_RATE)
+wdt = WDT(timeout=WATCHDOG_TIMEOUT)
+
 while True:
+
     mutex.acquire()
     #print(buffer)
     #buffer = copy.copy(received_sentence)
@@ -167,38 +178,45 @@ while True:
         nmea_parser.sentences_ignored = 0
         last_stats = utime.ticks_ms()
         
+    #Handle watchdog
+    # or round(inv/rcv * 100) > INV_THRESHOLD
+    #if rcvpm < RCVPM_THRESHOLD:
+    #    utime.sleep(WATCHDOG_TIMEOUT)
+    #else:
+    wdt.feed()
+        
     # Update and display selected screen
     if screen == 0:
-        OLED.fill(0)
-        #OLED.hline(0,0,128,1)
-        OLED.text(nmea_parser.get_time_string() + ' GMT', 30, 3, 1)
-        OLED.hline(0,14,128,1)
-        Writer.set_textpos(OLED, 17, 0)
+        oled.fill(0)
+        #oled.hline(0,0,128,1)
+        oled.text(nmea_parser.get_time_string() + ' GMT', 30, 3, 1)
+        oled.hline(0,14,128,1)
+        Writer.set_textpos(oled, 17, 0)
         font_large.printstring(nmea_parser.get_lat_string())
-        Writer.set_textpos(OLED, 32, 0)
+        Writer.set_textpos(oled, 32, 0)
         font_large.printstring(nmea_parser.get_lon_string())
-        OLED.hline(0,48,128,1)
-        OLED.text(nmea_parser.fix_type + ' ' + nmea_parser.mode + ' ' + str(nmea_parser.birds_in_use) + '/' + str(nmea_parser.birds_in_view), 0, 54, 1)
-        OLED.text(nmea_parser.get_hdop_string(), 120, 54, 1)
-        OLED.show()
+        oled.hline(0,48,128,1)
+        oled.text(nmea_parser.fix_type + ' ' + nmea_parser.mode + ' ' + str(nmea_parser.birds_in_use) + '/' + str(nmea_parser.birds_in_view), 0, 54, 1)
+        oled.text(nmea_parser.get_hdop_string(), 120, 54, 1)
+        oled.show()
     elif screen == 1:
-        OLED.fill(0)
-        OLED.text("rcv: " + str(rcvpm) + "/min", 0, 0*12, 1)
-        OLED.text("val: " + str(round(val/rcv * 100)) + '% ' + nmea_parser.sentence_last_valid_type, 0, 1*12, 1)
-        OLED.text("inv: " + str(round(inv/rcv * 100)) + '% ' + nmea_parser.sentence_last_invalid_type, 0, 2*12, 1)
-        OLED.text("par: " + str(round(par/rcv * 100)) + '% ' + nmea_parser.sentence_last_parsed_type, 0, 3*12, 1)
-        OLED.text("ign: " + str(round(ign/rcv * 100)) + '% ' + nmea_parser.sentence_last_ignored_type, 0, 4*12, 1)        
-        OLED.show()
+        oled.fill(0)
+        oled.text("rcv: " + str(rcvpm) + "/min", 0, 0*12, 1)
+        oled.text("val: " + str(round(val/rcv * 100)) + '% ' + nmea_parser.sentence_last_valid_type, 0, 1*12, 1)
+        oled.text("inv: " + str(round(inv/rcv * 100)) + '% ' + nmea_parser.sentence_last_invalid_type, 0, 2*12, 1)
+        oled.text("par: " + str(round(par/rcv * 100)) + '% ' + nmea_parser.sentence_last_parsed_type, 0, 3*12, 1)
+        oled.text("ign: " + str(round(ign/rcv * 100)) + '% ' + nmea_parser.sentence_last_ignored_type, 0, 4*12, 1)        
+        oled.show()
     elif screen == 2:
-        OLED.fill(0)
-        OLED.text(buffer, 0, 0, 1)
-        OLED.text('Var:' + nmea_parser.magvar, 0, 10, 1)
-        OLED.hline(0,20,128,1)
-        OLED.text('GPS:' + str(nmea_parser.birds_GPS), 0, 24, 1)
-        OLED.text('SBAS:' + str(nmea_parser.birds_SBAS), 0, 34, 1)
-        OLED.text('GLONASS:' + str(nmea_parser.birds_GLONASS), 0, 44, 1)
-        OLED.text('OTHER:' + str(nmea_parser.birds_OTHER), 0, 54, 1)
-        OLED.hline(0,63,128,1)
-        OLED.show()
+        oled.fill(0)
+        oled.text(buffer, 0, 0, 1)
+        oled.text('Var:' + nmea_parser.magvar, 0, 10, 1)
+        oled.hline(0,20,128,1)
+        oled.text('GPS:' + str(nmea_parser.birds_GPS), 0, 24, 1)
+        oled.text('SBAS:' + str(nmea_parser.birds_SBAS), 0, 34, 1)
+        oled.text('GLONASS:' + str(nmea_parser.birds_GLONASS), 0, 44, 1)
+        oled.text('OTHER:' + str(nmea_parser.birds_OTHER), 0, 54, 1)
+        oled.hline(0,63,128,1)
+        oled.show()
 
 
