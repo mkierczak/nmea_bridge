@@ -104,6 +104,7 @@ class L76X(object):
         6 - 16 //Reserved
         17 NMEA_SEN_ZDA, // GPZDA interval – Time & Date
         18 NMEA_SEN_MCHN, // PMTKCHN interval – GPS channel status
+        Values:
         0 - Disabled or not supported sentence
         N - Output once every N position fix N = [1, 2, 3, ,4, 5]
         
