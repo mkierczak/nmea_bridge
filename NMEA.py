@@ -95,9 +95,9 @@ class parser(object):
                 self.mode = '3D'
             else:
                 self.mode = ''
-            self.HDOP = payload[15]
+            self.PDOP = payload[15]
             self.HDOP = payload[16]
-            self.HDOP = payload[17]
+            self.VDOP = payload[17]
             cnt_GPS = 0
             cnt_SBAS = 0
             cnt_GLONASS = 0
