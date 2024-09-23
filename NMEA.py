@@ -18,6 +18,7 @@ class parser(object):
         self.birds_GLONASS = 0
         self.birds_SBAS = 0
         self.birds_OTHER = 0
+        self.last_valid_sentence = ''
         
         # Stats
         self.sentences_received = 0
@@ -36,6 +37,7 @@ class parser(object):
         if self._validate_nmea(sentence):
             #print(f'Valid: {sentence}')
             self.sentences_valid += 1
+            self.last_valid_sentence = sentence
             self._dispatch(sentence)
         else:
             print(f'INVALID: {sentence}')
@@ -134,14 +136,17 @@ class parser(object):
             return False
 
     def _validate_nmea(self, sentence):
-        if not sentence.startswith('$'):
+        try:
+            if not sentence.startswith('$'):
+                return False
+            if not "*" in sentence:
+                return False
+            if len(sentence) > 82:
+                return False
+            crc_check = self._nmea_checksum(sentence)
+            return crc_check
+        except:
             return False
-        if not "*" in sentence:
-            return False
-        if len(sentence) > 82:
-            return False
-        crc_check = self._nmea_checksum(sentence)
-        return crc_check
     
     def get_time_string(self):
         if len(self.time) > 0:

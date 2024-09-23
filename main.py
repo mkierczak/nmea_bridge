@@ -2,7 +2,10 @@ from machine import Pin, SPI, WDT
 from writer import Writer
 import utime
 import _thread
-#import copy
+import copy
+
+import network
+import socket
 
 import l76x
 import NMEA
@@ -11,8 +14,9 @@ import roboto14
 
 # Vriables
 DEBUG = True 					# TODO: currently not in use
+SCREEN_REFRESH_RATE = 0.5 * 1000  # how often to refresh screen
 STATS_REFRESH_RATE = 10 * 1000	# how often (in milliseconds) stats will be refreshed
-STATS_MULTIPLIER = 60 * 1000 / STATS_REFRESH_RATE # multiplier to get stats per minute
+STATS_MULTIPLIER = 6 * 1000 / STATS_REFRESH_RATE # multiplier to get stats per minute
 LONG_PRESS_THRESHOLD = 1 * 1000	# threshold in milliseconds to distinguish between short and long press
 WATCHDOG_TIMEOUT = 5 * 1000 	# watchdog has to be fed every N seconds
 RCVPM_THRESHOLD = 10 			# watchdog - at least N messages from GPS have to be received per minute
@@ -144,65 +148,70 @@ def gather_stats(stats):
 # MAIN LOOP
 #
 nmea_parser = NMEA.parser()
+mode = 0					# TODO: 0 - normal mode, 1 - service mode
 screen = 0
 buffer = ''
 stats = { 'rcvpm' : 1, 'rcv' : 1, 'val' : 0, 'inv' : 0, 'par' : 0, 'ign' : 0 }
+last_display_update = utime.ticks_ms()
 oled.init_display()
 
 # Watchdog
 last_stats = utime.ticks_ms()
 wdt = WDT(timeout = WATCHDOG_TIMEOUT)
 
+# Main loop
 while True:
     # Feed watchdog
     wdt.feed()
 
-    mutex.acquire()
-    # TODO: go back to shallow copies mechanism
-    #print(buffer)
-    #buffer = copy.copy(received_sentence)
-    buffer = received_sentence
-    if len(buffer) > 0:
-        nmea_parser.parse_sentence(buffer)
-    mutex.release()
-    
-    # Gather stats
+    # Handle buffer with mutex
+    try:
+        mutex.acquire()
+        buffer = copy.copy(received_sentence)
+        if len(buffer) > 0:
+            nmea_parser.parse_sentence(buffer)
+    finally:
+        mutex.release()
+
+    # Gather stats every STATS_REFRESH_RATE milliseconds
     if utime.ticks_diff(utime.ticks_ms(), last_stats) > STATS_REFRESH_RATE:
         stats = gather_stats(stats)
-        last_stats = utime.ticks_ms()        
-                
-    # Update and display selected screen
-    if screen == 0: # Main screen
+        last_stats = utime.ticks_ms()
+
+    # Update the OLED display only every N ms
+    if utime.ticks_diff(utime.ticks_ms(), last_display_update) > SCREEN_REFRESH_RATE:
         oled.fill(0)
-        #oled.hline(0,0,128,1)
-        oled.text(nmea_parser.get_time_string() + ' GMT', 30, 3, 1)
-        oled.hline(0,14,128,1)
-        Writer.set_textpos(oled, 17, 0)
-        font_large.printstring(nmea_parser.get_lat_string())
-        Writer.set_textpos(oled, 32, 0)
-        font_large.printstring(nmea_parser.get_lon_string())
-        oled.hline(0,48,128,1)
-        oled.text(nmea_parser.fix_type + ' ' + nmea_parser.mode + ' ' + str(nmea_parser.birds_in_use) + '/' + str(nmea_parser.birds_in_view), 0, 54, 1)
-        oled.text(nmea_parser.get_hdop_string(), 120, 54, 1)
+        if screen == 0:  # Main screen
+            oled.text(nmea_parser.get_time_string() + ' GMT', 30, 3, 1)
+            oled.hline(0, 14, 128, 1)
+            Writer.set_textpos(oled, 17, 0)
+            font_large.printstring(nmea_parser.get_lat_string())
+            Writer.set_textpos(oled, 32, 0)
+            font_large.printstring(nmea_parser.get_lon_string())
+            oled.hline(0, 48, 128, 1)
+            oled.text(nmea_parser.fix_type + ' ' + nmea_parser.mode + ' ' + 
+                      str(nmea_parser.birds_in_use) + '/' + str(nmea_parser.birds_in_view), 0, 54, 1)
+            oled.text(nmea_parser.get_hdop_string(), 120, 54, 1)
+        elif screen == 1: # Stats screen
+            oled.fill(0)
+            oled.text("rcv: " + str(stats['rcv']) + "/min", 0, 0 * 12, 1)
+            oled.text("val: " + str(round(stats['val']/stats['rcv'] * 100)) + '% ' + nmea_parser.sentence_last_valid_type, 0, 1 * 12, 1)
+            oled.text("inv: " + str(round(stats['inv']/stats['rcv'] * 100)) + '% ' + nmea_parser.sentence_last_invalid_type, 0, 2 * 12, 1)
+            oled.text("par: " + str(round(stats['par']/stats['rcv'] * 100)) + '% ' + nmea_parser.sentence_last_parsed_type, 0, 3 * 12, 1)
+            oled.text("ign: " + str(round(stats['ign']/stats['rcv'] * 100)) + '% ' + nmea_parser.sentence_last_ignored_type, 0, 4 * 12, 1)        
+        elif screen == 2: # Debug screen
+            oled.fill(0)
+            oled.text(buffer, 0, 0, 1)
+            oled.text('Var:' + nmea_parser.magvar, 0, 10, 1)
+            oled.hline(0,20,128,1)
+            oled.text('GPS:' + str(nmea_parser.birds_GPS), 0, 24, 1)
+            oled.text('SBAS:' + str(nmea_parser.birds_SBAS), 0, 34, 1)
+            oled.text('GLONASS:' + str(nmea_parser.birds_GLONASS), 0, 44, 1)
+            oled.text('OTHER:' + str(nmea_parser.birds_OTHER), 0, 54, 1)
+            oled.hline(0,63,128,1)
         oled.show()
-    elif screen == 1: # Stats screen
-        oled.fill(0)
-        oled.text("rcv: " + str(stats['rcvpm']) + "/min", 0, 0 * 12, 1)
-        oled.text("val: " + str(round(stats['val']/stats['rcv'] * 100)) + '% ' + nmea_parser.sentence_last_valid_type, 0, 1 * 12, 1)
-        oled.text("inv: " + str(round(stats['inv']/stats['rcv'] * 100)) + '% ' + nmea_parser.sentence_last_invalid_type, 0, 2 * 12, 1)
-        oled.text("par: " + str(round(stats['par']/stats['rcv'] * 100)) + '% ' + nmea_parser.sentence_last_parsed_type, 0, 3 * 12, 1)
-        oled.text("ign: " + str(round(stats['ign']/stats['rcv'] * 100)) + '% ' + nmea_parser.sentence_last_ignored_type, 0, 4 * 12, 1)        
-        oled.show()
-    elif screen == 2: # Debug screen
-        oled.fill(0)
-        oled.text(buffer, 0, 0, 1)
-        oled.text('Var:' + nmea_parser.magvar, 0, 10, 1)
-        oled.hline(0,20,128,1)
-        oled.text('GPS:' + str(nmea_parser.birds_GPS), 0, 24, 1)
-        oled.text('SBAS:' + str(nmea_parser.birds_SBAS), 0, 34, 1)
-        oled.text('GLONASS:' + str(nmea_parser.birds_GLONASS), 0, 44, 1)
-        oled.text('OTHER:' + str(nmea_parser.birds_OTHER), 0, 54, 1)
-        oled.hline(0,63,128,1)
-        oled.show()
+        last_display_update = utime.ticks_ms()
+
+
 
 
