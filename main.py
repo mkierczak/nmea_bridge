@@ -191,7 +191,7 @@ while True:
             oled.hline(0, 48, 128, 1)
             oled.text(nmea_parser.fix_type + ' ' + nmea_parser.mode + ' ' + 
                       str(nmea_parser.birds_in_use) + '/' + str(nmea_parser.birds_in_view), 0, 54, 1)
-            oled.text(nmea_parser.get_hdop_string(), 120, 54, 1)
+            oled.text(nmea_parser.get_dop_string(type='PDOP') + nmea_parser.get_dop_string(type='HDOP') + nmea_parser.get_dop_string(type='VDOP'), 104, 54, 1)
         elif screen == 1: # Stats screen
             oled.fill(0)
             oled.text("rcv: " + str(stats['rcv']) + "/min", 0, 0 * 12, 1)
