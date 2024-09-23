@@ -10,8 +10,8 @@ class parser(object):
         self.birds_in_view = 0
         self.fix_type = 'NO FIX'
         self.HDOP = 30
-        self.PDOP = None
-        self.VDOP = None
+        self.PDOP = 30
+        self.VDOP = 30
         self.mode = ''
         self.magvar = ''
         self.birds_GPS = 0
@@ -95,7 +95,9 @@ class parser(object):
                 self.mode = '3D'
             else:
                 self.mode = ''
+            self.HDOP = payload[15]
             self.HDOP = payload[16]
+            self.HDOP = payload[17]
             cnt_GPS = 0
             cnt_SBAS = 0
             cnt_GLONASS = 0
@@ -189,9 +191,16 @@ class parser(object):
         else:
             return ''
     
-    def get_hdop_string(self):
+    def get_dop_string(self, type = 'HDOP'):
         try:
-            dop = float(self.HDOP)
+            if type == 'PDOP':
+                dop = float(self.PDOP)
+            elif type == 'HDOP':
+                dop = float(self.HDOP)
+            elif type == 'VDOP':
+                dop = float(self.VDOP)
+            else:
+                dop = float(self.HDOP)
             if dop < 1:
                 return("A") # Ideal
             elif dop >= 1 and dop < 2:
