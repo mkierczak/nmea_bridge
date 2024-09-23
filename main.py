@@ -10,7 +10,7 @@ import sh1107
 import roboto14
 
 # Vriables
-DEBUG = True 					# TODO currently not in use
+DEBUG = True 					# TODO: currently not in use
 STATS_REFRESH_RATE = 10 * 1000	# how often (in milliseconds) stats will be refreshed
 STATS_MULTIPLIER = 60 * 1000 / STATS_REFRESH_RATE # multiplier to get stats per minute
 LONG_PRESS_THRESHOLD = 1 * 1000	# threshold in milliseconds to distinguish between short and long press
@@ -127,7 +127,7 @@ thread1 = _thread.start_new_thread(gps_thread, ())
 
 def gather_stats(stats):
     stats['rcv'] = nmea_parser.sentences_received
-    stats['rcvpm'] = rcv * STATS_MULTIPLIER # received per minute
+    stats['rcvpm'] = stats['rcv'] * STATS_MULTIPLIER # received per minute
     stats['val'] = nmea_parser.sentences_valid
     stats['inv'] = nmea_parser.sentences_invalid
     stats['par'] = nmea_parser.sentences_parsed
@@ -143,25 +143,22 @@ def gather_stats(stats):
 #
 # MAIN LOOP
 #
-oled.init_display()
 nmea_parser = NMEA.parser()
 screen = 0
 buffer = ''
-curr_stats = {}
-curr_stats['rcvpm'] = 1
-curr_stats['rcv'] = 1
-curr_stats['val'] = 0
-curr_stats['inv'] = 0
-curr_stats['par'] = 0
-curr_stats['ign'] = 0
+stats = { 'rcvpm' : 1, 'rcv' : 1, 'val' : 0, 'inv' : 0, 'par' : 0, 'ign' : 0 }
+oled.init_display()
 
 # Watchdog
 last_stats = utime.ticks_ms()
-wdt = WDT(timeout=WATCHDOG_TIMEOUT)
+wdt = WDT(timeout = WATCHDOG_TIMEOUT)
 
 while True:
+    # Feed watchdog
+    wdt.feed()
 
     mutex.acquire()
+    # TODO: go back to shallow copies mechanism
     #print(buffer)
     #buffer = copy.copy(received_sentence)
     buffer = received_sentence
@@ -171,12 +168,9 @@ while True:
     
     # Gather stats
     if utime.ticks_diff(utime.ticks_ms(), last_stats) > STATS_REFRESH_RATE:
-        stats = gather_stats(curr_stats)
+        stats = gather_stats(stats)
         last_stats = utime.ticks_ms()        
-        
-    # Handle watchdog
-    wdt.feed()
-        
+                
     # Update and display selected screen
     if screen == 0: # Main screen
         oled.fill(0)
