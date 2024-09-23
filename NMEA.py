@@ -185,16 +185,19 @@ class parser(object):
             return ''
     
     def get_hdop_string(self):
-        dop = float(self.HDOP)
-        if dop < 1:
-            return("A") # Ideal
-        elif dop >= 1 and dop < 2:
-            return("B") # Excellent
-        elif dop >= 2 and dop < 5:
-            return("C") # Good
-        elif dop >= 5 and dop < 10:
-            return("D") # Moderate
-        elif dop >= 10 and dop < 20:
-            return("E") # Fair
-        else:
-            return("F") # Poor
+        try:
+            dop = float(self.HDOP)
+            if dop < 1:
+                return("A") # Ideal
+            elif dop >= 1 and dop < 2:
+                return("B") # Excellent
+            elif dop >= 2 and dop < 5:
+                return("C") # Good
+            elif dop >= 5 and dop < 10:
+                return("D") # Moderate
+            elif dop >= 10 and dop < 20:
+                return("E") # Fair
+            else:
+                return("F") # Poor
+        except:
+            return("?")
