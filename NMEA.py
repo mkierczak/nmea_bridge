@@ -37,7 +37,7 @@ class parser(object):
         if self._validate_nmea(sentence):
             #print(f'Valid: {sentence}')
             self.sentences_valid += 1
-            self.last_valid_sentence = sentence
+            self.last_valid_sentence = self._fix_sentence(sentence)
             self._dispatch(sentence)
         else:
             print(f'INVALID: {sentence}')
@@ -136,6 +136,17 @@ class parser(object):
                 return False
         except:
             return False
+    
+    def _fix_sentence(self, sentence):
+        sentence = sentence.replace('GN', 'GP')
+        sentence = sentence.split('*')
+        cksum = sentence[1]
+        chksumdata = sentence[0].replace('$', '')
+        csum = 0
+        for c in chksumdata:
+            csum ^= ord(c)
+        string_value = '{:02X}'.format(csum)
+        return sentence[0] + '*' + string_value
 
     def _validate_nmea(self, sentence):
         try:
