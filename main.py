@@ -1,4 +1,4 @@
-from machine import Pin, SPI, WDT
+from machine import Pin, SPI, WDT, UART
 from writer import Writer
 import utime
 import _thread
@@ -155,6 +155,11 @@ stats = { 'rcvpm' : 1, 'rcv' : 1, 'val' : 0, 'inv' : 0, 'par' : 0, 'ign' : 0 }
 last_display_update = utime.ticks_ms()
 oled.init_display()
 
+# RS-485 setup
+uart = UART(1, baudrate=4800, tx=Pin(4), rx=Pin(5))
+uart.init(4800, bits=8, parity=None, stop=1)
+utime.sleep(1) # grace time for UART to start
+
 # Watchdog
 last_stats = utime.ticks_ms()
 wdt = WDT(timeout = WATCHDOG_TIMEOUT)
@@ -173,6 +178,11 @@ while True:
     finally:
         mutex.release()
 
+    # resend buffer to the VHF radio
+    txData = nmea_parser.last_valid_sentence
+    print(txData.strip())
+    uart.write(txData)
+
     # Gather stats every STATS_REFRESH_RATE milliseconds
     if utime.ticks_diff(utime.ticks_ms(), last_stats) > STATS_REFRESH_RATE:
         stats = gather_stats(stats)
@@ -180,6 +190,11 @@ while True:
 
     # Update the OLED display only every N ms
     if utime.ticks_diff(utime.ticks_ms(), last_display_update) > SCREEN_REFRESH_RATE:
+        # resend buffer to the VHF radio
+        txData = nmea_parser.last_valid_sentence
+        print(buffer.strip())
+        uart.write(buffer.strip() + '\n')
+
         oled.fill(0)
         if screen == 0:  # Main screen
             oled.text(nmea_parser.get_time_string() + ' GMT', 30, 3, 1)
