@@ -100,11 +100,8 @@ def gps_thread():
     global received_sentence
     
     # GPS init
-    gps=l76x.L76X(uartx = UARTx, _baudrate = BAUDRATE)
-    gps.send_command(gps.PMTK_API_SET_STOP_QZSS) # disable Japanese QZSS
-    gps.send_command(gps.PMTK_API_SET_SBAS_ENABLED)
-    gps.send_command(gps.PMTK_API_SET_DGPS_MODE)
-    gps.send_command(gps.PMTK_ENABLE_EASY) 
+    gps=l76x.L76X(uartx=UARTx,_baudrate = BAUDRATE)
+    #gps.l76x_send_command(gps.SET_FULL_COLD_START)
     gps.send_command(gps.SET_POS_FIX_800MS)
     gps.send_command(gps.SET_NORMAL_MODE)
     gps.send_command(gps.SET_GPS_SEARCH_MODE)
@@ -120,8 +117,9 @@ def gps_thread():
                 if 10 <= ascii_char <= 126:
                     char = chr(ascii_char)
                     if char == '$':  # Beginning of a new sentence
+                        #print(f'Parsing: {buffer.strip()}')
+                        #nmea_parser.parse_sentence(buffer)
                         mutex.acquire()
-                        #print(buffer)
                         received_sentence = buffer
                         mutex.release()
                         buffer = ''
@@ -150,7 +148,7 @@ def gather_stats(stats):
 # MAIN LOOP
 #
 nmea_parser = NMEA.parser()
-mode = 0 # TODO: 0 - normal mode, 1 - service mode
+mode = 0					# TODO: 0 - normal mode, 1 - service mode
 screen = 0
 buffer = ''
 stats = { 'rcvpm' : 1, 'rcv' : 1, 'val' : 0, 'inv' : 0, 'par' : 0, 'ign' : 0 }
@@ -219,7 +217,7 @@ while True:
         elif screen == 2: # Debug screen
             oled.fill(0)
             oled.text(buffer, 0, 0, 1)
-            oled.text(nmea_parser.date, 0, 10, 1)
+            oled.text('Var:' + nmea_parser.magvar, 0, 10, 1)
             oled.hline(0,20,128,1)
             oled.text('GPS:' + str(nmea_parser.birds_GPS), 0, 24, 1)
             oled.text('SBAS:' + str(nmea_parser.birds_SBAS), 0, 34, 1)

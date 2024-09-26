@@ -1,14 +1,16 @@
 class parser(object):
     
     def __init__(self):
-        self.time = ''
+        self.time = '??'
+        self.timezone = '??'
+        self.date = ''
         self.lat = ''
         self.lon = ''
         self.NS = ''
         self.EW = ''
         self.birds_in_use = 0
         self.birds_in_view = 0
-        self.fix_type = 'NO FIX'
+        self.fix_type = 'NO'
         self.HDOP = 30
         self.PDOP = 30
         self.VDOP = 30
@@ -34,7 +36,7 @@ class parser(object):
     def parse_sentence(self, sentence):
         sentence = sentence.strip()
         self.sentences_received += 1
-        if self._validate_nmea(sentence):
+        if self._valid_nmea_checksum(sentence):
             #print(f'Valid: {sentence}')
             self.sentences_valid += 1
             self.last_valid_sentence = self._fix_sentence(sentence)
@@ -59,7 +61,7 @@ class parser(object):
             self.EW = payload[5]
             fix = int(payload[6])
             if fix == 0:
-                self.fix_type = 'NO FIX'
+                self.fix_type = 'NO'
             elif fix == 1:
                 self.fix_type = 'GPS'
             elif fix == 2:
@@ -117,36 +119,47 @@ class parser(object):
             self.birds_SBAS = cnt_SBAS
             self.birds_GLONASS = cnt_GLONASS
             self.birds_OTHER = cnt_OTHER
+        elif sentence_type == 'ZDA':
+            self.sentence_last_parsed_type = sentence_type
+            self.sentences_parsed += 1
+            tmp = sentence.split('*')
+            payload = tmp[0].split(',')
+            self.date = payload[2] + '/' + payload[3] + '/' + payload[4]
+            self.timezone = payload[5] + 'h' + payload[6] + 'm'
         else:
             self.sentence_last_ignored_type = sentence_type
             self.sentences_ignored += 1
-        
-    def _nmea_checksum(self, sentence):
-        sentence = sentence.split('*')
-        cksum = sentence[1]
-        chksumdata = sentence[0].replace('$', '')
+    
+    def _calculate_nmea_checksum(self, sentence):
+        tmp = sentence.split('*')
+        chksumdata = tmp[0].replace('$', '')
         csum = 0
         for c in chksumdata:
             csum ^= ord(c)
+        return csum
+
+    def _valid_nmea_checksum(self, sentence):
+        tmp = sentence.split('*')
+        cksum = tmp[1]
+        csum = self._calculate_nmea_checksum(sentence)
         try:
             if hex(csum) == hex(int(cksum.strip(), 16)):
                 return True
             else:
-                #print(f'data: {chksumdata} -- CHKSUM: {cksum}')
+                #print(f'DATA CHKSUM: {cksum} -- CHKSUM: {cksum}')
                 return False
         except:
             return False
     
     def _fix_sentence(self, sentence):
-        sentence = sentence.replace('GN', 'GP')
-        sentence = sentence.split('*')
-        cksum = sentence[1]
-        chksumdata = sentence[0].replace('$', '')
-        csum = 0
-        for c in chksumdata:
-            csum ^= ord(c)
-        string_value = '{:02X}'.format(csum)
-        return sentence[0] + '*' + string_value
+        if sentence.startswith('$GN'):
+            sentence = sentence.replace('$GN', '$GP')
+        new_checksum = self._calculate_nmea_checksum(sentence)
+        tmp = sentence.split('*')
+        string_value = '{:02X}'.format(new_checksum)
+        fixed = tmp[0] + '*' + string_value
+        #print(fixed)
+        return fixed
 
     def _validate_nmea(self, sentence):
         try:
@@ -156,7 +169,7 @@ class parser(object):
                 return False
             if len(sentence) > 82:
                 return False
-            crc_check = self._nmea_checksum(sentence)
+            crc_check = self._valid_nmea_checksum(sentence)
             return crc_check
         except:
             return False

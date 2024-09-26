@@ -10,13 +10,13 @@ class L76X(object):
     #FORCE_PIN  = None # 14
     #STANDBY_PIN = None # 17
     
-    #Startup mode
+    # Startup mode
     SET_HOT_START       = '$PMTK101'
     SET_WARM_START      = '$PMTK102'
     SET_COLD_START      = '$PMTK103'
     SET_FULL_COLD_START = '$PMTK104'
 
-    #Standby mode -- Exit requires high level trigger
+    # Standby mode -- Exit requires high level trigger
     SET_PERPETUAL_STANDBY_MODE      = '$PMTK161'
     SET_STANDBY_MODE                = '$PMTK161,0'
 
@@ -28,7 +28,7 @@ class L76X(object):
     SET_ALWAYSLOCATE_STANDBY_MODE   = '$PMTK225,8'
     SET_ALWAYSLOCATE_BACKUP_MODE    = '$PMTK225,9'
 
-    #Set the message interval,100ms~10000ms
+    # Set the message interval,100ms~10000ms
     SET_POS_FIX         = '$PMTK220'
     SET_POS_FIX_100MS   = '$PMTK220,100'
     SET_POS_FIX_200MS   = '$PMTK220,200'
@@ -40,17 +40,16 @@ class L76X(object):
     SET_POS_FIX_8S      = '$PMTK220,8000'
     SET_POS_FIX_10S     = '$PMTK220,10000'
 
-    #Switching time output
+    # Switching time output
     SET_SYNC_PPS_NMEA_OFF   = '$PMTK255,0'
     SET_SYNC_PPS_NMEA_ON    = '$PMTK255,1'
 
-    #To restore the system default setting
+    # To restore the system default setting
     SET_REDUCTION               = '$PMTK314,-1'
-    #SET_NMEA_OUTPUT = '$PMTK314,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,1,0'
-    SET_NMEA_OUTPUT = '$PMTK314,0,1,0,1,5,5,0,0,0,0,0,0,0,0,0,0,0,0,0'
-    SET_GPS_SEARCH_MODE = '$PMTK353,1,0,0,0,0' # $PMTK353,GPS_Enable,0,0,0,BEIDOU_Enable
+    SET_NMEA_OUTPUT = '$PMTK314,0,1,0,1,5,5,0,0,0,0,0,0,0,0,0,0,0,1,0' # RMC, GGA, GSV, GSA, ZDA
+    SET_GPS_SEARCH_MODE = '$PMTK353,1,0,0,0' # $PMTK353,GPS_Enable,BEIDOU_Disable
 
-    #Baud rate
+    # Baud rate
     SET_NMEA_BAUDRATE          = '$PMTK251'
     SET_NMEA_BAUDRATE_115200   = '$PMTK251,115200'
     SET_NMEA_BAUDRATE_57600    = '$PMTK251,57600'
@@ -59,6 +58,14 @@ class L76X(object):
     SET_NMEA_BAUDRATE_14400    = '$PMTK251,14400'
     SET_NMEA_BAUDRATE_9600     = '$PMTK251,9600'
     SET_NMEA_BAUDRATE_4800     = '$PMTK251,4800'
+    
+    # Augmentation
+    PMTK_API_SET_SBAS_ENABLED   = '$PMTK313,1'
+    PMTK_API_SET_DGPS_MODE      = '$PMTK301,2'
+    PMTK_ENABLE_EASY            = '$PMTK869,1,1'
+    
+    # Other
+    PMTK_API_SET_STOP_QZSS = '$PMTK352,0' # disable Japanese QZSS
     
     _uart0 = 0
     _uart1 = 1
