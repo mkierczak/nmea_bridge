@@ -229,7 +229,7 @@ while True:
         oled.show()
         last_display_update = utime.ticks_ms()
 
-        utime.sleep(0.1) # grace time to make the loop non-blocking
+        utime.sleep(0.01) # grace time to make the loop non-blocking
 
 
 
