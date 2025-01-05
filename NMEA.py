@@ -154,10 +154,12 @@ class parser(object):
     def _fix_sentence(self, sentence):
         if sentence.startswith('$GN'):
             sentence = sentence.replace('$GN', '$GP')
-        new_checksum = self._calculate_nmea_checksum(sentence)
-        tmp = sentence.split('*')
-        string_value = '{:02X}'.format(new_checksum)
-        fixed = tmp[0] + '*' + string_value
+            new_checksum = self._calculate_nmea_checksum(sentence)
+            tmp = sentence.split('*')
+            string_value = '{:02X}'.format(new_checksum)
+            fixed = tmp[0] + '*' + string_value
+        else:
+            fixed = sentence
         #print(fixed)
         return fixed
 
