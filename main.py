@@ -13,16 +13,16 @@ import sh1107
 import roboto14
 
 # Vriables
-DEBUG = True 					# TODO: currently not in use
+DEBUG = True 				   	  # TODO: currently not in use
 SCREEN_REFRESH_RATE = 0.5 * 1000  # how often to refresh screen
-STATS_REFRESH_RATE = 10 * 1000	# how often (in milliseconds) stats will be refreshed
+STATS_REFRESH_RATE = 10 * 1000	  # how often (in milliseconds) stats will be refreshed
 STATS_MULTIPLIER = 6 * 1000 / STATS_REFRESH_RATE # multiplier to get stats per minute
-LONG_PRESS_THRESHOLD = 1 * 1000	# threshold in milliseconds to distinguish between short and long press
-WATCHDOG_TIMEOUT = 5 * 1000 	# watchdog has to be fed every N seconds
-RCVPM_THRESHOLD = 10 			# watchdog - at least N messages from GPS have to be received per minute
-INV_THRESHOLD = 80 				# watchdog - if more than N per-cent messages are invalid -- reset
-UARTx = 0	# GPS UART
-BAUDRATE = 9600	# GPS baudrate
+LONG_PRESS_THRESHOLD = 1 * 1000	  # threshold in milliseconds to distinguish between short and long press
+WATCHDOG_TIMEOUT = 5 * 1000 	  # watchdog has to be fed every N seconds
+RCVPM_THRESHOLD = 10 			  # watchdog - at least N messages from GPS have to be received per minute
+INV_THRESHOLD = 80 				  # watchdog - if more than N per-cent messages are invalid -- reset
+UARTx = 0                         # GPS UART
+BAUDRATE = 9600	                  # GPS baudrate
 
 # Display
 spi1 = SPI(1, baudrate=10_000_000, sck=Pin(10), mosi=Pin(11), miso=None) # SCK MOSI MISO
@@ -144,6 +144,11 @@ def gather_stats(stats):
     nmea_parser.sentences_invalid = 0
     nmea_parser.sentences_parsed = 0
     nmea_parser.sentences_ignored = 0
+    # TODO: test resets below, maybe one wants global stats after all
+    nmea_parser.sentence_last_valid_type = ''
+    nmea_parser.sentence_last_invalid_type = ''
+    nmea_parser.sentence_last_ignored_type = ''
+    nmea_parser.sentence_last_parsed_type = ''   
     return stats
 
 #
