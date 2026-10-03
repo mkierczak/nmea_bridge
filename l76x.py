@@ -69,14 +69,18 @@ class L76X(object):
     # Default pins per UART (Pico): UART0 -> GP0/GP1, UART1 -> GP4/GP5
     _default_pins = {0: (0, 1), 1: (4, 5)}
 
-    def __init__(self, uartx=_uart0, _baudrate=9600, tx=None, rx=None):
+    RX_BUFFER = 1024  # bytes; rides out main-loop stalls at 9600 baud
+
+    def __init__(self, uartx=_uart0, _baudrate=9600, tx=None, rx=None, verbose=False):
+        self.verbose = verbose
         self._open(uartx, _baudrate, tx, rx)
 
     def _open(self, uartx, baudrate, tx=None, rx=None):
         d_tx, d_rx = self._default_pins[uartx]
         self.ser = UART(uartx, baudrate=baudrate,
                         tx=Pin(d_tx if tx is None else tx),
-                        rx=Pin(d_rx if rx is None else rx))
+                        rx=Pin(d_rx if rx is None else rx),
+                        rxbuf=self.RX_BUFFER)
     
     def send_command(self, data):
         Check = ord(data[1]) 
@@ -89,7 +93,8 @@ class L76X(object):
         self.uart_send_byte('\r'.encode())
         self.uart_send_byte('\n'.encode())
         utime.sleep(0.1)
-        print(data)
+        if self.verbose:
+            print(data)
 
     def set_baudrate(self, _baudrate, uartx=_uart0, tx=None, rx=None):
         self._open(uartx, _baudrate, tx, rx)

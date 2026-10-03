@@ -32,7 +32,29 @@ class Parser(object):
         self.sentence_last_valid_type = ''
         self.sentence_last_invalid_type = ''
         self.sentence_last_ignored_type = ''
-        
+        self._view_by_talker = {}
+
+    def snapshot_and_reset(self):
+        """Return counters as a dict and zero them. Last-seen types are kept."""
+        snap = {'rcv': self.sentences_received, 'val': self.sentences_valid,
+                'inv': self.sentences_invalid, 'par': self.sentences_parsed,
+                'ign': self.sentences_ignored}
+        self.sentences_received = 0
+        self.sentences_valid = 0
+        self.sentences_invalid = 0
+        self.sentences_parsed = 0
+        self.sentences_ignored = 0
+        return snap
+
+    def display_signature(self):
+        """Tuple of everything the screens show; equal tuples mean no redraw is needed."""
+        return (self.time, self.date, self.lat, self.lon, self.NS, self.EW,
+                self.fix_type, self.mode, self.birds_in_use, self.birds_in_view,
+                self.PDOP, self.HDOP, self.VDOP, self.birds_GPS, self.birds_SBAS,
+                self.birds_GLONASS, self.birds_OTHER, self.last_valid_sentence,
+                self.sentence_last_valid_type, self.sentence_last_invalid_type,
+                self.sentence_last_parsed_type, self.sentence_last_ignored_type)
+
     def parse_sentence(self, sentence):
         """Parse one sentence. Returns True if it was valid (last_valid_sentence updated)."""
         sentence = sentence.strip()
@@ -86,7 +108,9 @@ class Parser(object):
         self.magvar = str(payload[10]) + payload[11]
 
     def _parse_gsv(self, payload):
-        self.birds_in_view = payload[3]
+        # each talker (GP/GL/...) reports its own satellites in view; show the total
+        self._view_by_talker[payload[0][1:3]] = int(payload[3])
+        self.birds_in_view = sum(self._view_by_talker.values())
 
     def _parse_gsa(self, payload):
         mode = int(payload[2])
