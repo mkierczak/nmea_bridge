@@ -6,6 +6,7 @@ import _thread
 import l76x
 import NMEA
 import screens
+from jamming import JamDetector
 import sh1107
 import roboto14
 
@@ -19,6 +20,8 @@ WATCHDOG_TIMEOUT = 5 * 1000       # watchdog has to be fed every N milliseconds
 GPS_SILENCE_TIMEOUT = 30 * 1000   # stop feeding watchdog (=> reset) if no GPS data for N milliseconds
 FORWARD_TYPES = ('RMC', 'GGA', 'GSA', 'GSV', 'ZDA')  # sentence types forwarded to the radio
 FIX_STALE_TIMEOUT = 10 * 1000     # show NO FIX if no position update for N milliseconds
+JAM_DETECT = True                 # signal-degradation / jamming indicator (see jamming.py)
+JAM_EVAL_PERIOD = 2 * 1000        # how often the detector looks for a new GSV cycle
 UARTx = 0                         # GPS UART
 BAUDRATE = 9600                   # GPS baudrate
 
@@ -92,6 +95,7 @@ def gps_thread():
     gps.send_command(gps.SET_GPS_SEARCH_MODE)
     gps.send_command(gps.SET_SYNC_PPS_NMEA_ON)
     gps.send_command(gps.SET_NMEA_OUTPUT)
+    gps.send_command(gps.PMTK_SET_AIC)  # ack ($PMTK001,286,3) is parsed by NMEA.Parser
     
     buffer = bytearray()
     while True:
@@ -146,6 +150,8 @@ last_gps_rx = utime.ticks_ms()
 last_pos = None                   # ticks of last valid GGA/RMC
 wdt = None                        # armed on first GPS sentence (can't be stopped once started)
 last_sig = None
+detector = JamDetector(nmea_parser) if JAM_DETECT else None
+last_jam_eval = utime.ticks_ms()
 
 # Main loop
 while True:
@@ -179,13 +185,20 @@ while True:
         stats = gather_stats()
         last_stats = utime.ticks_ms()
 
+    no_fix = (nmea_parser.fix_type == 'NO' or last_pos is None or
+              utime.ticks_diff(utime.ticks_ms(), last_pos) > FIX_STALE_TIMEOUT)
+
+    # Look for signal degradation once per JAM_EVAL_PERIOD (acts on new GSV cycles only)
+    if detector and utime.ticks_diff(utime.ticks_ms(), last_jam_eval) > JAM_EVAL_PERIOD:
+        detector.evaluate(utime.ticks_ms(), not no_fix)
+        last_jam_eval = utime.ticks_ms()
+
     # Update the OLED only every N ms, and only if something visible changed
     if utime.ticks_diff(utime.ticks_ms(), last_display_update) > SCREEN_REFRESH_RATE:
-        no_fix = (nmea_parser.fix_type == 'NO' or last_pos is None or
-                  utime.ticks_diff(utime.ticks_ms(), last_pos) > FIX_STALE_TIMEOUT)
-        sig = (screen, no_fix, rx_dropped, tuple(stats.values()), nmea_parser.display_signature())
+        sig = (screen, no_fix, rx_dropped, tuple(stats.values()), nmea_parser.display_signature(),
+               detector.signature() if detector else None)
         if sig != last_sig:
-            screens.draw(oled, font_large, screen, nmea_parser, stats, rx_dropped, no_fix)
+            screens.draw(oled, font_large, screen, nmea_parser, stats, rx_dropped, no_fix, detector)
             oled.show()
             last_sig = sig
         last_display_update = utime.ticks_ms()

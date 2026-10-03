@@ -33,6 +33,10 @@ class Parser(object):
         self.sentence_last_invalid_type = ''
         self.sentence_last_ignored_type = ''
         self._view_by_talker = {}
+        self._cn0_partial = {}      # talker -> C/N0 list of the GSV cycle being received
+        self.cn0_by_talker = {}     # talker -> C/N0 list of the last complete GSV cycle
+        self.cn0_version = 0        # bumped whenever a GSV cycle completes
+        self.pmtk_acks = {}         # PMTK command number -> ack flag (3 = success)
 
     def snapshot_and_reset(self):
         """Return counters as a dict and zero them. Last-seen types are kept."""
@@ -53,7 +57,8 @@ class Parser(object):
                 self.PDOP, self.HDOP, self.VDOP, self.birds_GPS, self.birds_SBAS,
                 self.birds_GLONASS, self.birds_OTHER, self.last_valid_sentence,
                 self.sentence_last_valid_type, self.sentence_last_invalid_type,
-                self.sentence_last_parsed_type, self.sentence_last_ignored_type)
+                self.sentence_last_parsed_type, self.sentence_last_ignored_type,
+                self.cn0_stats(), self.pmtk_acks.get(286))
 
     def parse_sentence(self, sentence):
         """Parse one sentence. Returns True if it was valid (last_valid_sentence updated)."""
@@ -109,8 +114,30 @@ class Parser(object):
 
     def _parse_gsv(self, payload):
         # each talker (GP/GL/...) reports its own satellites in view; show the total
-        self._view_by_talker[payload[0][1:3]] = int(payload[3])
+        talker = payload[0][1:3]
+        self._view_by_talker[talker] = int(payload[3])
         self.birds_in_view = sum(self._view_by_talker.values())
+        # per-satellite C/N0 (dB-Hz) is the 4th field of each 4-field group; 0/empty = not tracked
+        total_msgs, msg_no = int(payload[1]), int(payload[2])
+        cn0 = [int(v) if v else 0 for v in payload[7::4]]
+        if msg_no == 1 or talker not in self._cn0_partial:
+            self._cn0_partial[talker] = []
+        self._cn0_partial[talker].extend(cn0)
+        if msg_no == total_msgs:
+            self.cn0_by_talker[talker] = self._cn0_partial[talker]
+            self._cn0_partial[talker] = []
+            self.cn0_version += 1
+
+    def cn0_stats(self):
+        """(tracked satellite count, mean C/N0, max C/N0) over the last complete GSV cycles."""
+        tracked = [c for lst in self.cn0_by_talker.values() for c in lst if c > 0]
+        if not tracked:
+            return 0, 0, 0
+        return len(tracked), sum(tracked) / len(tracked), max(tracked)
+
+    def _parse_pmtk(self, payload):
+        if payload[0] == '$PMTK001':  # ack: $PMTK001,<cmd>,<flag>
+            self.pmtk_acks[int(payload[1])] = int(payload[2])
 
     def _parse_gsa(self, payload):
         mode = int(payload[2])
@@ -140,7 +167,7 @@ class Parser(object):
         self.timezone = payload[5] + 'h' + payload[6] + 'm'
 
     _handlers = {'GGA': _parse_gga, 'RMC': _parse_rmc, 'GSV': _parse_gsv,
-                 'GSA': _parse_gsa, 'ZDA': _parse_zda}
+                 'GSA': _parse_gsa, 'ZDA': _parse_zda, 'TK0': _parse_pmtk}
 
     def _calculate_nmea_checksum(self, sentence):
         tmp = sentence.split('*')

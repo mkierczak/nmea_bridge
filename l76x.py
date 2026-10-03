@@ -59,6 +59,7 @@ class L76X(object):
     PMTK_API_SET_SBAS_ENABLED   = '$PMTK313,1'
     PMTK_API_SET_DGPS_MODE      = '$PMTK301,2'
     PMTK_ENABLE_EASY            = '$PMTK869,1,1'
+    PMTK_SET_AIC                = '$PMTK286,1'  # Active Interference Cancellation; ack is $PMTK001,286,3
     
     # Other
     PMTK_API_SET_STOP_QZSS = '$PMTK352,0' # disable Japanese QZSS
