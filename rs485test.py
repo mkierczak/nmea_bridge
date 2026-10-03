@@ -1,4 +1,4 @@
-from machine import UART
+from machine import UART, Pin
 import utime
 
 test_messages2 = [
@@ -16,7 +16,7 @@ test_messages = [
 "$GNRMC,194046.478,A,6013.2409,N,01744.1700,E,0.00,262.97,230924,,,A*78",
 "$GNRMC,194046.478,A,6013.2409,N,01744.1700,E,0.00,262.97,230924,,,A*78"   
 ]
-uart = machine.UART(1, baudrate=4800, tx=machine.Pin(4), rx=machine.Pin(5))
+uart = UART(1, baudrate=4800, tx=Pin(4), rx=Pin(5))
 uart.init(4800, bits=8, parity=None, stop=1)
 utime.sleep(1) # grace time for UART to start
 

@@ -1,4 +1,4 @@
-class parser(object):
+class Parser(object):
     
     def __init__(self):
         self.time = '??'
@@ -34,102 +34,90 @@ class parser(object):
         self.sentence_last_ignored_type = ''
         
     def parse_sentence(self, sentence):
+        """Parse one sentence. Returns True if it was valid (last_valid_sentence updated)."""
         sentence = sentence.strip()
         self.sentences_received += 1
-        if self._valid_nmea_checksum(sentence):
-            #print(f'Valid: {sentence}')
+        if self._validate_nmea(sentence):
+            try:
+                self._dispatch(sentence)
+            except (ValueError, IndexError):
+                # well-formed envelope but broken payload
+                self.sentences_invalid += 1
+                self.sentence_last_invalid_type = sentence[3:6]
+                return False
             self.sentences_valid += 1
-            self.last_valid_sentence = self._fix_sentence(sentence)
-            self._dispatch(sentence)
-        else:
-            print(f'INVALID: {sentence}')
-            self.sentence_last_ignored_type = sentence[3:6]
-            self.sentences_invalid += 1
-        
+            self.last_valid_sentence = self._fix_sentence(sentence) + '\r\n'
+            return True
+        self.sentence_last_invalid_type = sentence[3:6]
+        self.sentences_invalid += 1
+        return False
+
     def _dispatch(self, sentence):
         sentence_type = sentence[3:6]
         self.sentence_last_valid_type = sentence_type
-        if sentence_type == 'GGA':
-            self.sentence_last_parsed_type = sentence_type
-            self.sentences_parsed += 1
-            tmp = sentence.split('*')
-            payload = tmp[0].split(',')
-            self.time = payload[1]
-            self.lat = payload[2]
-            self.NS = payload[3]
-            self.lon = payload[4]
-            self.EW = payload[5]
-            fix = int(payload[6])
-            if fix == 0:
-                self.fix_type = 'NO'
-            elif fix == 1:
-                self.fix_type = 'GPS'
-            elif fix == 2:
-                self.fix_type = 'DGPS'
-            self.birds_in_use = payload[7]
-            self.HDOP = payload[8]
-        elif sentence_type == 'RMC':
-            self.sentence_last_parsed_type = sentence_type
-            self.sentences_parsed += 1
-            tmp = sentence.split('*')
-            payload = tmp[0].split(',')
-            self.time = payload[1]
+        handler = self._handlers.get(sentence_type)
+        if handler is None:
+            self.sentence_last_ignored_type = sentence_type
+            self.sentences_ignored += 1
+            return
+        payload = sentence.split('*')[0].split(',')
+        handler(self, payload)
+        self.sentence_last_parsed_type = sentence_type
+        self.sentences_parsed += 1
+
+    def _parse_gga(self, payload):
+        fix = int(payload[6])
+        self.time = payload[1]
+        self.lat = payload[2]
+        self.NS = payload[3]
+        self.lon = payload[4]
+        self.EW = payload[5]
+        self.fix_type = {0: 'NO', 1: 'GPS', 2: 'DGPS'}.get(fix, '?')
+        self.birds_in_use = payload[7]
+        self.HDOP = payload[8]
+
+    def _parse_rmc(self, payload):
+        self.time = payload[1]
+        if payload[2] == 'A':  # ignore position from void fixes
             self.lat = payload[3]
             self.NS = payload[4]
             self.lon = payload[5]
             self.EW = payload[6]
-            self.magvar = str(payload[10]) + payload[11]
-        elif sentence_type == 'GSV':
-            self.sentence_last_parsed_type = sentence_type
-            self.sentences_parsed += 1
-            tmp = sentence.split('*')
-            payload = tmp[0].split(',')
-            self.birds_in_view = payload[3]
-        elif sentence_type == 'GSA':
-            self.sentence_last_parsed_type = sentence_type
-            self.sentences_parsed += 1
-            tmp = sentence.split('*')
-            payload = tmp[0].split(',')
-            mode = int(payload[2])
-            if mode == 2:
-                self.mode = '2D'
-            elif mode == 3:
-                self.mode = '3D'
-            else:
-                self.mode = ''
-            self.PDOP = payload[15]
-            self.HDOP = payload[16]
-            self.VDOP = payload[17]
-            cnt_GPS = 0
-            cnt_SBAS = 0
-            cnt_GLONASS = 0
-            cnt_OTHER = 0
-            for bird in payload[3:14]:
-                if len(bird) > 0:
-                    prn = int(bird)
-                    if prn >= 1 and prn <= 32:
-                        cnt_GPS += 1
-                    elif prn >= 33 and prn <= 64:
-                        cnt_SBAS += 1
-                    elif prn >= 65 and prn <= 96:
-                        cnt_GLONASS += 1
-                    else:
-                        cnt_OTHER += 1
-            self.birds_GPS = cnt_GPS
-            self.birds_SBAS = cnt_SBAS
-            self.birds_GLONASS = cnt_GLONASS
-            self.birds_OTHER = cnt_OTHER
-        elif sentence_type == 'ZDA':
-            self.sentence_last_parsed_type = sentence_type
-            self.sentences_parsed += 1
-            tmp = sentence.split('*')
-            payload = tmp[0].split(',')
-            self.date = payload[2] + '/' + payload[3] + '/' + payload[4]
-            self.timezone = payload[5] + 'h' + payload[6] + 'm'
-        else:
-            self.sentence_last_ignored_type = sentence_type
-            self.sentences_ignored += 1
-    
+        self.magvar = str(payload[10]) + payload[11]
+
+    def _parse_gsv(self, payload):
+        self.birds_in_view = payload[3]
+
+    def _parse_gsa(self, payload):
+        mode = int(payload[2])
+        self.PDOP = payload[15]
+        self.HDOP = payload[16]
+        self.VDOP = payload[17]
+        cnt_GPS = cnt_SBAS = cnt_GLONASS = cnt_OTHER = 0
+        for bird in payload[3:15]:
+            if len(bird) > 0:
+                prn = int(bird)
+                if 1 <= prn <= 32:
+                    cnt_GPS += 1
+                elif 33 <= prn <= 64:
+                    cnt_SBAS += 1
+                elif 65 <= prn <= 96:
+                    cnt_GLONASS += 1
+                else:
+                    cnt_OTHER += 1
+        self.mode = {2: '2D', 3: '3D'}.get(mode, '')
+        self.birds_GPS = cnt_GPS
+        self.birds_SBAS = cnt_SBAS
+        self.birds_GLONASS = cnt_GLONASS
+        self.birds_OTHER = cnt_OTHER
+
+    def _parse_zda(self, payload):
+        self.date = payload[2] + '/' + payload[3] + '/' + payload[4]
+        self.timezone = payload[5] + 'h' + payload[6] + 'm'
+
+    _handlers = {'GGA': _parse_gga, 'RMC': _parse_rmc, 'GSV': _parse_gsv,
+                 'GSA': _parse_gsa, 'ZDA': _parse_zda}
+
     def _calculate_nmea_checksum(self, sentence):
         tmp = sentence.split('*')
         chksumdata = tmp[0].replace('$', '')
@@ -140,20 +128,17 @@ class parser(object):
 
     def _valid_nmea_checksum(self, sentence):
         tmp = sentence.split('*')
-        cksum = tmp[1]
+        if len(tmp) < 2:
+            return False
         csum = self._calculate_nmea_checksum(sentence)
         try:
-            if hex(csum) == hex(int(cksum.strip(), 16)):
-                return True
-            else:
-                #print(f'DATA CHKSUM: {cksum} -- CHKSUM: {cksum}')
-                return False
-        except:
+            return csum == int(tmp[1].strip(), 16)
+        except ValueError:
             return False
-    
+
     def _fix_sentence(self, sentence):
         if sentence.startswith('$GN'):
-            sentence = sentence.replace('$GN', '$GP')
+            sentence = '$GP' + sentence[3:]
             new_checksum = self._calculate_nmea_checksum(sentence)
             tmp = sentence.split('*')
             string_value = '{:02X}'.format(new_checksum)
@@ -189,34 +174,21 @@ class parser(object):
         else:
             return ''
     
-    def get_lat_string(self):
-        if len(self.lat) > 0:
+    def _coord_string(self, value, hemisphere, deg_digits):
+        if len(value) > 0:
             try:
-                deg = self.lat[0:2]
-                mm = round(float(self.lat[2:]),2)
-                NS = self.NS
-                #tmp = f'{NS}{deg}°{mm}'
-                tmp = "{}{}{}{}".format(NS, deg, chr(176), mm)
-                return tmp
-            except:
+                mm = round(float(value[deg_digits:]), 2)
+                return "{}{}{}{}".format(hemisphere, value[0:deg_digits], chr(176), mm)
+            except ValueError:
                 return ''
-        else:
-            return ''
+        return ''
+
+    def get_lat_string(self):
+        return self._coord_string(self.lat, self.NS, 2)
 
     def get_lon_string(self):
-        if len(self.lon) > 0:
-            try:
-                deg = self.lon[0:3]
-                mm = round(float(self.lon[3:]),2)
-                EW = self.EW
-                #tmp = f'{EW}{deg}°{mm}'
-                tmp = "{}{}{}{}".format(EW, deg, chr(176), mm)
-                return tmp
-            except:
-                return ''
-        else:
-            return ''
-    
+        return self._coord_string(self.lon, self.EW, 3)
+
     def get_dop_string(self, type = 'HDOP'):
         try:
             if type == 'PDOP':

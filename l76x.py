@@ -1,15 +1,11 @@
 # -*- coding:utf-8 -*-
 
 from machine import UART,Pin
-import math
 import utime
 
 chars = '0123456789ABCDEF*'
 
 class L76X(object):
-    #FORCE_PIN  = None # 14
-    #STANDBY_PIN = None # 17
-    
     # Startup mode
     SET_HOT_START       = '$PMTK101'
     SET_WARM_START      = '$PMTK102'
@@ -70,16 +66,17 @@ class L76X(object):
     _uart0 = 0
     _uart1 = 1
     
-    def __init__(self,uartx=_uart0,_baudrate = 9600):
-        if uartx==self._uart1:
-            self.ser = UART(uartx,baudrate=_baudrate,tx=Pin(4), rx=Pin(5))
-        else:
-            self.ser = UART(uartx,baudrate=_baudrate,tx=Pin(0), rx=Pin(1))
+    # Default pins per UART (Pico): UART0 -> GP0/GP1, UART1 -> GP4/GP5
+    _default_pins = {0: (0, 1), 1: (4, 5)}
 
-        #self.StandBy = Pin(self.STANDBY_PIN,Pin.OUT)
-        #self.Force = Pin(self.FORCE_PIN,Pin.IN)
-        #self.StandBy.value(0)
-        #self.Force.value(0)
+    def __init__(self, uartx=_uart0, _baudrate=9600, tx=None, rx=None):
+        self._open(uartx, _baudrate, tx, rx)
+
+    def _open(self, uartx, baudrate, tx=None, rx=None):
+        d_tx, d_rx = self._default_pins[uartx]
+        self.ser = UART(uartx, baudrate=baudrate,
+                        tx=Pin(d_tx if tx is None else tx),
+                        rx=Pin(d_rx if rx is None else rx))
     
     def send_command(self, data):
         Check = ord(data[1]) 
@@ -94,11 +91,8 @@ class L76X(object):
         utime.sleep(0.1)
         print(data)
 
-    def set_baudrate(self, _baudrate, uartx=_uart0):
-        if self._uart1==uartx:
-            self.ser = UART(uartx,baudrate=_baudrate,tx=Pin(4),rx=Pin(5))
-        else:
-            self.ser = UART(uartx,baudrate=_baudrate,tx=Pin(0),rx=Pin(1))
+    def set_baudrate(self, _baudrate, uartx=_uart0, tx=None, rx=None):
+        self._open(uartx, _baudrate, tx, rx)
 
     def set_nmea_output(self, f_GLL = 1, f_RMC = 1, f_VTG = 1, f_GGA = 1, f_GSA = 1, f_GSV = 1, f_ZDA = 1, f_MCHN = 0):
         """
@@ -119,22 +113,15 @@ class L76X(object):
         The command can reset baudrate to 9600 according to internet!
         """
         # Validate that params are in the right range
-        params = locals()
+        params = {'f_GLL': f_GLL, 'f_RMC': f_RMC, 'f_VTG': f_VTG, 'f_GGA': f_GGA,
+                  'f_GSA': f_GSA, 'f_GSV': f_GSV, 'f_ZDA': f_ZDA, 'f_MCHN': f_MCHN}
         for name, value in params.items():
             if value < 0 or value > 5:
-                print(f"WARNNG! Invalid value of {name} = {value}. Values mus be within 0-5! Exiting!")
-                exit()
+                raise ValueError("Invalid value of {} = {}. Values must be within 0-5".format(name, value))
         
         cmd = f"$PMTK314,{f_GLL},{f_RMC},{f_VTG},{f_GGA},{f_GSA},{f_GSV},0,0,0,0,0,0,0,0,0,0,0,{f_ZDA},{f_MCHN}"
         self.send_command(cmd)
                 
-    def exit_backup_mode(self):
-        #self.Force.value(1)
-        utime.sleep(1)
-        #self.Force.value(0)
-        utime.sleep(1)
-        #self.Force = Pin(self.FORCE_PIN,Pin.IN)
-        
     def uart_send_byte(self, value): 
         self.ser.write(value) 
 
