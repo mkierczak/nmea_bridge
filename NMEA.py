@@ -1,3 +1,21 @@
+def _to_units(value, hemisphere, deg_digits):
+    """'ddmm.mmmm' / 'dddmm.mmmm' -> signed integer in 1e-4 arc-minutes (exact, no float rounding)."""
+    deg = int(value[:deg_digits])
+    mins, _, frac = value[deg_digits:].partition('.')
+    units = (deg * 60 + int(mins)) * 10000 + int((frac + '0000')[:4])
+    return -units if hemisphere in ('S', 'W') else units
+
+
+def _days_from_civil(y, m, d):
+    """Days since 1970-01-01 (proleptic Gregorian)."""
+    y -= m <= 2
+    era = (y if y >= 0 else y - 399) // 400
+    yoe = y - era * 400
+    doy = (153 * (m + (-3 if m > 2 else 9)) + 2) // 5 + d - 1
+    doe = yoe * 365 + yoe // 4 - yoe // 100 + doy
+    return era * 146097 + doe - 719468
+
+
 class Parser(object):
     
     def __init__(self):
@@ -37,6 +55,21 @@ class Parser(object):
         self.cn0_by_talker = {}     # talker -> C/N0 list of the last complete GSV cycle
         self.cn0_version = 0        # bumped whenever a GSV cycle completes
         self.pmtk_acks = {}         # PMTK command number -> ack flag (3 = success)
+        self.module_jam_status = 0  # $PMTKSPF: 0 unknown, 1 healthy, 2 warning, 3 critical
+        self.sats_by_talker = {}    # talker -> [(prn, elevation or None, cn0)] of last complete GSV cycle
+        self._sats_partial = {}
+        self.birds_BD = 0
+        # fix data for plausibility checks (valid RMC / GGA only)
+        self.fix_count = 0          # bumped on every valid (status A) RMC
+        self.lat_u = self.lon_u = 0 # signed position in 1e-4 arc-minutes
+        self.sog_kn = None
+        self.cog_deg = None
+        self.utc_days = 0           # days since 1970-01-01 of the last RMC
+        self.utc_ms = 0             # milliseconds of day of the last RMC
+        self.rx_ms = None           # local ticks_ms when the last RMC was received
+        self._rx_ms = None
+        self.alt_m = None
+        self.alt_version = 0
 
     def snapshot_and_reset(self):
         """Return counters as a dict and zero them. Last-seen types are kept."""
@@ -55,14 +88,17 @@ class Parser(object):
         return (self.time, self.date, self.lat, self.lon, self.NS, self.EW,
                 self.fix_type, self.mode, self.birds_in_use, self.birds_in_view,
                 self.PDOP, self.HDOP, self.VDOP, self.birds_GPS, self.birds_SBAS,
-                self.birds_GLONASS, self.birds_OTHER, self.last_valid_sentence,
+                self.birds_GLONASS, self.birds_BD, self.birds_OTHER, self.last_valid_sentence,
                 self.sentence_last_valid_type, self.sentence_last_invalid_type,
                 self.sentence_last_parsed_type, self.sentence_last_ignored_type,
                 self.cn0_stats(), self.pmtk_acks.get(286))
 
-    def parse_sentence(self, sentence):
-        """Parse one sentence. Returns True if it was valid (last_valid_sentence updated)."""
+    def parse_sentence(self, sentence, rx_ms=None):
+        """Parse one sentence. Returns True if it was valid (last_valid_sentence updated).
+
+        rx_ms is the local ticks_ms at which the sentence arrived (used for time checks)."""
         sentence = sentence.strip()
+        self._rx_ms = rx_ms
         self.sentences_received += 1
         if self._validate_nmea(sentence):
             try:
@@ -102,6 +138,12 @@ class Parser(object):
         self.fix_type = {0: 'NO', 1: 'GPS', 2: 'DGPS'}.get(fix, '?')
         self.birds_in_use = payload[7]
         self.HDOP = payload[8]
+        if fix > 0:
+            try:
+                self.alt_m = float(payload[9])
+                self.alt_version += 1
+            except (ValueError, IndexError):
+                pass
 
     def _parse_rmc(self, payload):
         self.time = payload[1]
@@ -110,22 +152,54 @@ class Parser(object):
             self.NS = payload[4]
             self.lon = payload[5]
             self.EW = payload[6]
+            self._store_fix(payload)
         self.magvar = str(payload[10]) + payload[11]
+
+    def _store_fix(self, payload):
+        """Numeric fix data for plausibility checks. Never raises: a sentence that is otherwise
+        fine must still be forwarded, so bad optional fields just leave the fix data unchanged."""
+        try:
+            lat_u = _to_units(payload[3], payload[4], 2)
+            lon_u = _to_units(payload[5], payload[6], 3)
+            t, _, frac = payload[1].partition('.')
+            ms = (int(t[0:2]) * 3600 + int(t[2:4]) * 60 + int(t[4:6])) * 1000 + int((frac + '000')[:3])
+            d = payload[9]
+            days = _days_from_civil(2000 + int(d[4:6]), int(d[2:4]), int(d[0:2]))
+        except (ValueError, IndexError):
+            return
+        self.lat_u, self.lon_u, self.utc_days, self.utc_ms = lat_u, lon_u, days, ms
+        try:
+            self.sog_kn = float(payload[7]) if payload[7] else None
+            self.cog_deg = float(payload[8]) if payload[8] else None
+        except ValueError:
+            self.sog_kn = self.cog_deg = None
+        self.rx_ms = self._rx_ms
+        self.fix_count += 1
 
     def _parse_gsv(self, payload):
         # each talker (GP/GL/...) reports its own satellites in view; show the total
         talker = payload[0][1:3]
         self._view_by_talker[talker] = int(payload[3])
         self.birds_in_view = sum(self._view_by_talker.values())
-        # per-satellite C/N0 (dB-Hz) is the 4th field of each 4-field group; 0/empty = not tracked
+        # per-satellite groups of 4 fields: PRN, elevation, azimuth, C/N0 (dB-Hz; 0/empty = not tracked)
         total_msgs, msg_no = int(payload[1]), int(payload[2])
-        cn0 = [int(v) if v else 0 for v in payload[7::4]]
+        sats = []
+        for base in range(4, len(payload) - 3, 4):
+            el = payload[base + 1]
+            sats.append((int(payload[base]) if payload[base] else 0,
+                         int(el) if el else None,
+                         int(payload[base + 3]) if payload[base + 3] else 0))
+        cn0 = [c for _, _, c in sats]
         if msg_no == 1 or talker not in self._cn0_partial:
             self._cn0_partial[talker] = []
+            self._sats_partial[talker] = []
         self._cn0_partial[talker].extend(cn0)
+        self._sats_partial[talker].extend(sats)
         if msg_no == total_msgs:
             self.cn0_by_talker[talker] = self._cn0_partial[talker]
+            self.sats_by_talker[talker] = self._sats_partial[talker]
             self._cn0_partial[talker] = []
+            self._sats_partial[talker] = []
             self.cn0_version += 1
 
     def cn0_stats(self):
@@ -138,36 +212,40 @@ class Parser(object):
     def _parse_pmtk(self, payload):
         if payload[0] == '$PMTK001':  # ack: $PMTK001,<cmd>,<flag>
             self.pmtk_acks[int(payload[1])] = int(payload[2])
+        elif payload[0] == '$PMTKSPF':  # module's jamming detector status (PMTK838)
+            self.module_jam_status = int(payload[1])
 
     def _parse_gsa(self, payload):
         mode = int(payload[2])
         self.PDOP = payload[15]
         self.HDOP = payload[16]
         self.VDOP = payload[17]
-        cnt_GPS = cnt_SBAS = cnt_GLONASS = cnt_OTHER = 0
-        for bird in payload[3:15]:
-            if len(bird) > 0:
-                prn = int(bird)
+        talker = payload[0][1:3]
+        prns = [int(bird) for bird in payload[3:15] if len(bird) > 0]
+        self.mode = {2: '2D', 3: '3D'}.get(mode, '')
+        if talker == 'BD' or talker == 'GB':   # BeiDou (L76B: GPS and BeiDou only)
+            self.birds_BD = len(prns)
+        elif talker == 'GL':
+            self.birds_GLONASS = len(prns)
+        else:                                  # GP / GN: classify by PRN range
+            cnt_GPS = cnt_SBAS = cnt_OTHER = 0
+            for prn in prns:
                 if 1 <= prn <= 32:
                     cnt_GPS += 1
                 elif 33 <= prn <= 64:
                     cnt_SBAS += 1
-                elif 65 <= prn <= 96:
-                    cnt_GLONASS += 1
                 else:
                     cnt_OTHER += 1
-        self.mode = {2: '2D', 3: '3D'}.get(mode, '')
-        self.birds_GPS = cnt_GPS
-        self.birds_SBAS = cnt_SBAS
-        self.birds_GLONASS = cnt_GLONASS
-        self.birds_OTHER = cnt_OTHER
+            self.birds_GPS = cnt_GPS
+            self.birds_SBAS = cnt_SBAS
+            self.birds_OTHER = cnt_OTHER
 
     def _parse_zda(self, payload):
         self.date = payload[2] + '/' + payload[3] + '/' + payload[4]
         self.timezone = payload[5] + 'h' + payload[6] + 'm'
 
     _handlers = {'GGA': _parse_gga, 'RMC': _parse_rmc, 'GSV': _parse_gsv,
-                 'GSA': _parse_gsa, 'ZDA': _parse_zda, 'TK0': _parse_pmtk}
+                 'GSA': _parse_gsa, 'ZDA': _parse_zda, 'TK0': _parse_pmtk, 'TKS': _parse_pmtk}
 
     def _calculate_nmea_checksum(self, sentence):
         tmp = sentence.split('*')

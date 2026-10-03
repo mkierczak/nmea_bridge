@@ -43,7 +43,9 @@ class L76X(object):
     # To restore the system default setting
     SET_REDUCTION               = '$PMTK314,-1'
     SET_NMEA_OUTPUT = '$PMTK314,0,1,0,1,5,5,0,0,0,0,0,0,0,0,0,0,0,1,0' # RMC, GGA, GSV, GSA, ZDA
-    SET_GPS_SEARCH_MODE = '$PMTK353,1,0,0,0' # $PMTK353,GPS_Enable,BEIDOU_Disable
+    # $PMTK353,GPS,0,0,0,BeiDou (L76-LB: GPS and GPS+BeiDou only; the 3 middle fields are reserved)
+    SET_GPS_SEARCH_MODE = '$PMTK353,1,0,0,0,0'          # GPS only
+    SET_GPS_BEIDOU_SEARCH_MODE = '$PMTK353,1,0,0,0,1'   # GPS + BeiDou
 
     # Baud rate
     SET_NMEA_BAUDRATE          = '$PMTK251'
@@ -59,6 +61,7 @@ class L76X(object):
     PMTK_API_SET_SBAS_ENABLED   = '$PMTK313,1'
     PMTK_API_SET_DGPS_MODE      = '$PMTK301,2'
     PMTK_ENABLE_EASY            = '$PMTK869,1,1'
+    PMTK_JAM_DETECT_ON          = '$PMTK838,1'  # module jamming detector; reports $PMTKSPF,1|2|3
     PMTK_SET_AIC                = '$PMTK286,1'  # Active Interference Cancellation; ack is $PMTK001,286,3
     
     # Other

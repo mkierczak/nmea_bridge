@@ -75,7 +75,10 @@ class JamDetector(object):
             level = 1
         else:
             level = 0
-        self.reason = ('C' if c else '') + ('N' if n else '') + ('F' if f else '')
+        m = p.module_jam_status  # $PMTKSPF from the module's own detector: 2 warning, 3 critical
+        if m >= 2:
+            level = max(level, 1 if m == 2 else 2)
+        self.reason = ('C' if c else '') + ('N' if n else '') + ('F' if f else '') + ('M' if m >= 2 else '')
 
         if level > self.level:
             self._up += 1

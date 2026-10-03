@@ -17,7 +17,7 @@ time, position, fix, satellites, DOP grades and stats.
 All pins and rates are constants at the top of `main.py`.
 
 ## Deploy
-`make deploy` (uses `mpremote`) copies `main.py`, `NMEA.py`, `l76x.py`, `screens.py`, `jamming.py`, `sh1107.py`,
+`make deploy` (uses `mpremote`) copies `main.py`, `NMEA.py`, `l76x.py`, `screens.py`, `jamming.py`, `spoofing.py`, `sh1107.py`,
 `writer.py` and the font modules to the Pico. `main.py` runs on boot.
 
 ## Configuration
@@ -35,6 +35,35 @@ Thresholds are constants at the top of `jamming.py`; tune them with `tools/repla
 NMEA log. Set `JAM_DETECT = False` in `main.py` to disable it. At init the module is also asked to
 enable Active Interference Cancellation (`$PMTK286,1`); the debug screen shows `AIC+` (acked),
 `AIC-` (rejected) or `AIC?` (no reply, probably unsupported on the L76B).
+
+## Spoofing-suspicion indicator
+`spoofing.py` raises `SPF?` (suspect) or `SPF!` (alert, latched for 10 min) at the top right of the
+main screen. It is **heuristic**: the L76B gives NMEA only (no raw measurements, no RAIM, no signal
+authentication), so a careful spoofer (smooth drift, consistent time, realistic power) will pass.
+Treat it as "spoofing suspected", never as proof or protection. Indicators (letters on the debug
+screen):
+
+| | strength | meaning |
+|---|---|---|
+| K1 | strong | position jump that persists (implied speed above 60 kn; a single glitch is ignored) |
+| T1 | strong | GPS time steps relative to the Pico's own clock, or goes backwards |
+| K2 | medium | position change over ~10 s disagrees with the reported speed |
+| S1 | medium | satellites of one constellation have suspiciously uniform C/N0 |
+| C1 | medium | GPS vs BeiDou mean C/N0 offset moved away from its learned baseline |
+| K3 | weak | altitude step between fixes |
+| S2 | weak | C/N0 not correlated with elevation |
+| S3 | weak | sudden C/N0 rise or abrupt change of the tracked satellites |
+
+ALERT = any strong indicator or two medium ones within 60 s; SUSPECT = one medium or two weak. No
+indicator fires during the first 30 fixes after boot. `SPOOF_ACTION` in `main.py` is `'display'`
+(default: only show it) or `'block'` (also stop forwarding `SPOOF_BLOCK_TYPES`, default RMC and GGA,
+to the radio during an ALERT, so the radio shows "no position" instead of a suspect one). Measure the
+false-alarm rate on recorded logs (`tools/replay.py`) before using `'block'`.
+
+`GNSS_MODE` selects GPS-only or GPS+BeiDou (the L76B supports no other constellations; BeiDou
+appears as `$BD…` sentences, which are not forwarded to the radio: see `FORWARD_TALKERS`). The module's
+own jamming detector (`$PMTK838,1`, reports `$PMTKSPF`) also feeds the jamming indicator (reason `M`).
+Module replies to the configuration commands (`$PMTK001`) are printed when `DEBUG` is on.
 
 ## Buttons
 - UP short: next screen (main / stats); UP long: debug screen

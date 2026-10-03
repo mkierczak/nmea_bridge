@@ -7,6 +7,7 @@ import l76x
 import NMEA
 import screens
 from jamming import JamDetector
+from spoofing import SpoofDetector
 import sh1107
 import roboto14
 
@@ -22,6 +23,11 @@ FORWARD_TYPES = ('RMC', 'GGA', 'GSA', 'GSV', 'ZDA')  # sentence types forwarded 
 FIX_STALE_TIMEOUT = 10 * 1000     # show NO FIX if no position update for N milliseconds
 JAM_DETECT = True                 # signal-degradation / jamming indicator (see jamming.py)
 JAM_EVAL_PERIOD = 2 * 1000        # how often the detector looks for a new GSV cycle
+SPOOF_DETECT = True               # spoofing-suspicion indicator (see spoofing.py)
+SPOOF_ACTION = 'display'          # 'display': only show SPF?/SPF!; 'block': also stop forwarding SPOOF_BLOCK_TYPES during an ALERT
+SPOOF_BLOCK_TYPES = ('RMC', 'GGA')
+FORWARD_TALKERS = ('GP', 'GN')    # talker IDs forwarded to the radio (BeiDou $BDGSV/$BDGSA are not)
+GNSS_MODE = 'GPS+BD'              # 'GPS' or 'GPS+BD' (L76B supports no other constellations)
 UARTx = 0                         # GPS UART
 BAUDRATE = 9600                   # GPS baudrate
 
@@ -81,8 +87,17 @@ RX_QUEUE_MAX = 16                 # drop oldest beyond this
 MAX_SENTENCE_LEN = 100            # longer buffers are garbage; resync on next '$'
 mutex = _thread.allocate_lock()
 
-def gps_thread():
+def publish(buffer, rx_ms):
     global rx_dropped
+    sentence = buffer.decode()
+    mutex.acquire()
+    if len(rx_queue) >= RX_QUEUE_MAX:
+        rx_queue.pop(0)
+        rx_dropped += 1
+    rx_queue.append((rx_ms, sentence))
+    mutex.release()
+
+def gps_thread():
 
     # GPS init
     gps = l76x.L76X(uartx=UARTx, _baudrate=BAUDRATE, verbose=DEBUG)
@@ -92,10 +107,11 @@ def gps_thread():
     gps.send_command(gps.PMTK_ENABLE_EASY) 
     gps.send_command(gps.SET_POS_FIX_800MS)
     gps.send_command(gps.SET_NORMAL_MODE)
-    gps.send_command(gps.SET_GPS_SEARCH_MODE)
+    gps.send_command(gps.SET_GPS_BEIDOU_SEARCH_MODE if GNSS_MODE == 'GPS+BD' else gps.SET_GPS_SEARCH_MODE)
     gps.send_command(gps.SET_SYNC_PPS_NMEA_ON)
     gps.send_command(gps.SET_NMEA_OUTPUT)
-    gps.send_command(gps.PMTK_SET_AIC)  # ack ($PMTK001,286,3) is parsed by NMEA.Parser
+    gps.send_command(gps.PMTK_SET_AIC)  # acks ($PMTK001,<cmd>,3) are parsed by NMEA.Parser
+    gps.send_command(gps.PMTK_JAM_DETECT_ON)  # module jamming detector -> $PMTKSPF
     
     buffer = bytearray()
     while True:
@@ -114,16 +130,13 @@ def gps_thread():
                 continue
             if ascii_char == 0x24:  # '$' - beginning of a new sentence
                 if buffer:
-                    sentence = buffer.decode()
-                    mutex.acquire()
-                    if len(rx_queue) >= RX_QUEUE_MAX:
-                        rx_queue.pop(0)
-                        rx_dropped += 1
-                    rx_queue.append(sentence)
-                    mutex.release()
+                    publish(buffer, utime.ticks_ms())
                 buffer = bytearray()
             if len(buffer) < MAX_SENTENCE_LEN:
                 buffer.append(ascii_char)
+            if ascii_char == 10 and buffer:  # end of line: publish right away (accurate arrival time)
+                publish(buffer, utime.ticks_ms())
+                buffer = bytearray()
 
 _thread.start_new_thread(gps_thread, ())
 
@@ -152,6 +165,9 @@ wdt = None                        # armed on first GPS sentence (can't be stoppe
 last_sig = None
 detector = JamDetector(nmea_parser) if JAM_DETECT else None
 last_jam_eval = utime.ticks_ms()
+spoof = SpoofDetector(nmea_parser) if SPOOF_DETECT else None
+last_spoof_eval = utime.ticks_ms()
+logged_acks = {}
 
 # Main loop
 while True:
@@ -169,12 +185,17 @@ while True:
         if wdt is None:
             wdt = WDT(timeout=WATCHDOG_TIMEOUT)
 
-    for buffer in pending:
-        if nmea_parser.parse_sentence(buffer):
+    for rx_ms, buffer in pending:
+        if nmea_parser.parse_sentence(buffer, rx_ms):
             sentence_type = nmea_parser.sentence_last_valid_type
             if sentence_type in ('GGA', 'RMC'):
                 last_pos = utime.ticks_ms()
-            if sentence_type in FORWARD_TYPES:
+            if spoof and sentence_type in ('RMC', 'GGA', 'GSV'):
+                spoof.evaluate(utime.ticks_ms())
+            if (SPOOF_ACTION == 'block' and spoof and spoof.state == 'ALERT' and
+                    sentence_type in SPOOF_BLOCK_TYPES):
+                continue  # possible spoofing: don't hand this position to the radio
+            if sentence_type in FORWARD_TYPES and buffer[1:3] in FORWARD_TALKERS:
                 # forward the (fixed) sentence to the VHF radio, once
                 uart.write(nmea_parser.last_valid_sentence)
                 if DEBUG:
@@ -188,6 +209,18 @@ while True:
     no_fix = (nmea_parser.fix_type == 'NO' or last_pos is None or
               utime.ticks_diff(utime.ticks_ms(), last_pos) > FIX_STALE_TIMEOUT)
 
+    # Expire spoofing indicators even when no new data arrives
+    if spoof and utime.ticks_diff(utime.ticks_ms(), last_spoof_eval) > 1000:
+        spoof.evaluate(utime.ticks_ms())
+        last_spoof_eval = utime.ticks_ms()
+
+    # Report module replies to our configuration commands (3 = success)
+    if DEBUG:
+        for cmd in (286, 353, 838):
+            if cmd in nmea_parser.pmtk_acks and logged_acks.get(cmd) != nmea_parser.pmtk_acks[cmd]:
+                logged_acks[cmd] = nmea_parser.pmtk_acks[cmd]
+                print('PMTK{} ack: {}'.format(cmd, logged_acks[cmd]))
+
     # Look for signal degradation once per JAM_EVAL_PERIOD (acts on new GSV cycles only)
     if detector and utime.ticks_diff(utime.ticks_ms(), last_jam_eval) > JAM_EVAL_PERIOD:
         detector.evaluate(utime.ticks_ms(), not no_fix)
@@ -196,9 +229,9 @@ while True:
     # Update the OLED only every N ms, and only if something visible changed
     if utime.ticks_diff(utime.ticks_ms(), last_display_update) > SCREEN_REFRESH_RATE:
         sig = (screen, no_fix, rx_dropped, tuple(stats.values()), nmea_parser.display_signature(),
-               detector.signature() if detector else None)
+               detector.signature() if detector else None, spoof.signature() if spoof else None)
         if sig != last_sig:
-            screens.draw(oled, font_large, screen, nmea_parser, stats, rx_dropped, no_fix, detector)
+            screens.draw(oled, font_large, screen, nmea_parser, stats, rx_dropped, no_fix, detector, spoof)
             oled.show()
             last_sig = sig
         last_display_update = utime.ticks_ms()

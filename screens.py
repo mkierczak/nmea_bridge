@@ -3,13 +3,15 @@ from writer import Writer
 SCREEN_MAIN, SCREEN_STATS, SCREEN_DEBUG = 0, 1, 2
 
 
-def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None):
+def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None, spoof=None):
     """Render one screen into the frame buffer (caller calls oled.show())."""
     oled.fill(0)
     if screen == SCREEN_MAIN:
-        oled.text(parser.get_time_string() + ' UTC', 0, 3, 1)
+        oled.text(parser.get_time_string(), 0, 3, 1)  # UTC
         if jam:
-            oled.text(jam.label(), 96, 3, 1)  # '', OK, LOW or JAM?
+            oled.text(jam.label(), 64, 3, 1)  # '', OK, LOW or JAM?
+        if spoof:
+            oled.text(spoof.label(), 96, 3, 1)  # '', SPF? or SPF!
         oled.hline(0, 14, 128, 1)
         if no_fix:
             oled.text('NO FIX', 40, 28, 1)
@@ -43,7 +45,9 @@ def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None):
         oled.hline(0, 20, 128, 1)
         oled.text('GPS:' + str(parser.birds_GPS), 0, 24, 1)
         oled.text('SBAS:' + str(parser.birds_SBAS), 0, 34, 1)
-        oled.text('GLONASS:' + str(parser.birds_GLONASS), 0, 44, 1)
+        oled.text('BD:' + str(parser.birds_BD), 0, 44, 1)
+        if spoof:
+            oled.text('S:' + spoof.reason[:10], 48, 44, 1)
         oled.text('OTHER:' + str(parser.birds_OTHER), 0, 54, 1)
         if jam:
             oled.text('why:' + jam.reason, 64, 54, 1)
