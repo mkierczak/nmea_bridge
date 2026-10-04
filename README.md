@@ -8,7 +8,7 @@ every valid sentence once, `\r\n`-terminated, over RS-485 at 4800 baud. A 1.3" S
 time, position, fix, satellites, DOP grades and stats.
 
 ## Hardware
-- Raspberry Pi Pico
+- Raspberry Pi Pico W (the Wi-Fi feature needs the W; a plain Pico works with `WIFI_ENABLE = False`)
 - Waveshare L76B GNSS module on UART0 (GP0/GP1), 4800 baud by default (`GPS_BAUDRATE`)
 - Waveshare 2-CH RS485 module on UART1 (GP4/GP5), 4800 baud, to the radio
 - SH1107 128x64 SPI OLED: SCK GP10, MOSI GP11, DC GP8, RST GP12, CS GP9
@@ -17,13 +17,34 @@ time, position, fix, satellites, DOP grades and stats.
 All pins and rates are constants at the top of `main.py`.
 
 ## Deploy
-`make deploy` (uses `mpremote`) copies `main.py`, `NMEA.py`, `l76x.py`, `screens.py`, `jamming.py`, `spoofing.py`, `sh1107.py`,
-`writer.py` and the font modules to the Pico. `main.py` runs on boot.
+`make deploy` (uses `mpremote`) copies `main.py`, `NMEA.py`, `l76x.py`, `screens.py`, `jamming.py`, `spoofing.py`, `wifi.py`,
+`sh1107.py`, `writer.py` and the font modules to the Pico. `main.py` runs on boot.
+
+`make deploy-mpy` precompiles the modules with `mpy-cross` and deploys `.mpy` files instead (less RAM to
+load them, faster boot; `mpy-cross` must match the firmware version). With `DEBUG` on, the free/used heap
+is printed at boot and every minute (`MEM ...`): check it before and after enabling Wi-Fi.
 
 ## Configuration
 Constants at the top of `main.py`. `FORWARD_TYPES` selects which sentence types are forwarded to the
 radio (default: RMC, GGA, GSA, GSV, ZDA; an empty tuple forwards nothing). The display always uses
 all parsed sentences regardless of this list.
+
+### Wi-Fi: NMEA over TCP and UDP (Pico W)
+The access point is **off at boot**. Hold the **UP button for 3 s** to switch it on or off (a 1-3 s
+press still opens the debug screen). The WPA2 network `WIFI_SSID` / `WIFI_PASSWORD` (set both in
+`main.py`; **change the default password**, open networks are not supported) serves the NMEA stream
+on port `WIFI_PORT` (10110) as a TCP server (up to `WIFI_MAX_CLIENTS`, slow or dead clients are dropped)
+and as UDP broadcast to the AP subnet (`192.168.4.255`). Connect OpenCPN, SignalK, Navionics etc. to
+`192.168.4.1:10110`. The short-press cycle has a Wi-Fi screen with state, SSID, IP and client count.
+`WIFI_FORWARD_TYPES` / `WIFI_FORWARD_TALKERS` choose what is sent (default: the radio's types plus
+BeiDou talkers); when `SPOOF_ACTION = 'block'` is active the blocked sentences are not sent over Wi-Fi
+either. Everyone who joins the network can read the vessel's position.
+
+Resources (estimates, measure on your board): the app needs roughly 70-100 KB of heap; the Wi-Fi code is
+imported only when first switched on and adds on the order of 10-30 KB. Keep the Wi-Fi board and its
+antenna away from the GNSS antenna (the 2.4 GHz radio and board noise can lower C/N0; compare the
+C/N0 figures on the stats screen with Wi-Fi on and off). Starting the AP can block the main loop for
+a second or two, so a few GPS sentences may be dropped (see `drop:` on the stats screen).
 
 ### GPS baudrate
 `GPS_BAUDRATE` (default 4800; allowed 4800, 9600, 14400, 19200, 38400, 57600, 115200). At boot the

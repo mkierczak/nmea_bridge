@@ -3,3 +3,4 @@
 *.gch
 __pycache__/
 .pytest_cache/
+build/
