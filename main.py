@@ -7,7 +7,7 @@ import l76x
 import NMEA
 import screens
 from jamming import JamDetector
-from spoofing import SpoofDetector
+from spoofing import SpoofDetector, TIME_JUMP_MS
 import sh1107
 import roboto14
 
@@ -29,7 +29,8 @@ SPOOF_BLOCK_TYPES = ('RMC', 'GGA')
 FORWARD_TALKERS = ('GP', 'GN')    # talker IDs forwarded to the radio (BeiDou $BDGSV/$BDGSA are not)
 GNSS_MODE = 'GPS+BD'              # 'GPS' or 'GPS+BD' (L76B supports no other constellations)
 UARTx = 0                         # GPS UART
-BAUDRATE = 9600                   # GPS baudrate
+GPS_BAUDRATE = 4800               # GPS link rate: 4800, 9600, 14400, 19200, 38400, 57600 or 115200 (module is switched at boot)
+FIX_INTERVAL_MS = 1000 if GPS_BAUDRATE <= 4800 else 800  # slow links need a longer fix interval
 
 # Pins and buses
 PIN_OLED_SCK, PIN_OLED_MOSI = 10, 11
@@ -100,12 +101,19 @@ def publish(buffer, rx_ms):
 def gps_thread():
 
     # GPS init
-    gps = l76x.L76X(uartx=UARTx, _baudrate=BAUDRATE, verbose=DEBUG)
+    gps = l76x.L76X(uartx=UARTx, _baudrate=GPS_BAUDRATE, verbose=DEBUG)
+    found = gps.configure_baudrate(GPS_BAUDRATE)  # find the module's current rate, switch it if needed
+    avg_load, worst_load = l76x.nmea_load(GPS_BAUDRATE, FIX_INTERVAL_MS, GNSS_MODE == 'GPS+BD')
+    if DEBUG:
+        print('GPS baud {}: module found at {}'.format(GPS_BAUDRATE, found))
+        print('GPS link load: avg {:.0f}%, worst cycle {:.0f}%'.format(avg_load * 100, worst_load * 100))
+        if avg_load > 0.8 or worst_load > 1.0:
+            print('WARNING: GPS link may be overloaded; raise GPS_BAUDRATE or use GNSS_MODE = GPS')
     gps.send_command(gps.PMTK_API_SET_STOP_QZSS) # disable Japanese QZSS
     gps.send_command(gps.PMTK_API_SET_SBAS_ENABLED)
     gps.send_command(gps.PMTK_API_SET_DGPS_MODE)
     gps.send_command(gps.PMTK_ENABLE_EASY) 
-    gps.send_command(gps.SET_POS_FIX_800MS)
+    gps.send_command(l76x.fix_interval_command(FIX_INTERVAL_MS))
     gps.send_command(gps.SET_NORMAL_MODE)
     gps.send_command(gps.SET_GPS_BEIDOU_SEARCH_MODE if GNSS_MODE == 'GPS+BD' else gps.SET_GPS_SEARCH_MODE)
     gps.send_command(gps.SET_SYNC_PPS_NMEA_ON)
@@ -165,7 +173,9 @@ wdt = None                        # armed on first GPS sentence (can't be stoppe
 last_sig = None
 detector = JamDetector(nmea_parser) if JAM_DETECT else None
 last_jam_eval = utime.ticks_ms()
-spoof = SpoofDetector(nmea_parser) if SPOOF_DETECT else None
+# GPS time check must tolerate how late a sentence can arrive behind a big GSA/GSV cycle
+spoof = (SpoofDetector(nmea_parser, TIME_JUMP_MS + l76x.nmea_burst_ms(GPS_BAUDRATE, GNSS_MODE == 'GPS+BD'))
+         if SPOOF_DETECT else None)
 last_spoof_eval = utime.ticks_ms()
 logged_acks = {}
 
@@ -216,7 +226,7 @@ while True:
 
     # Report module replies to our configuration commands (3 = success)
     if DEBUG:
-        for cmd in (286, 353, 838):
+        for cmd in (251, 286, 353, 838):
             if cmd in nmea_parser.pmtk_acks and logged_acks.get(cmd) != nmea_parser.pmtk_acks[cmd]:
                 logged_acks[cmd] = nmea_parser.pmtk_acks[cmd]
                 print('PMTK{} ack: {}'.format(cmd, logged_acks[cmd]))

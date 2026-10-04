@@ -91,8 +91,9 @@ def _corr(xs, ys):
 
 class SpoofDetector(object):
 
-    def __init__(self, parser):
+    def __init__(self, parser, time_tolerance_ms=TIME_JUMP_MS):
         self.parser = parser
+        self.time_tolerance_ms = time_tolerance_ms  # raise when the GPS link delays RMC (low baud)
         self.state = OK
         self.reason = ''
         self.warm_fixes = 0
@@ -163,7 +164,7 @@ class SpoofDetector(object):
         if self._prev_time is not None and p.rx_ms is not None and self._prev_time[2] is not None:
             dt_gps = (p.utc_days - self._prev_time[0]) * _DAY_MS + (p.utc_ms - self._prev_time[1])
             dt_local = _ticks_diff(p.rx_ms, self._prev_time[2])
-            if dt_gps < 0 or (0 <= dt_local <= TIME_CHECK_MAX_MS and abs(dt_gps - dt_local) > TIME_JUMP_MS):
+            if dt_gps < 0 or (0 <= dt_local <= TIME_CHECK_MAX_MS and abs(dt_gps - dt_local) > self.time_tolerance_ms):
                 self._flag('T1', now_ms)
         self._prev_time = (p.utc_days, p.utc_ms, p.rx_ms)
 

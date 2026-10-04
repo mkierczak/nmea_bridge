@@ -3,7 +3,49 @@
 from machine import UART,Pin
 import utime
 
+import NMEA
+
 chars = '0123456789ABCDEF*'
+
+ALLOWED_BAUDRATES = (4800, 9600, 14400, 19200, 38400, 57600, 115200)
+_PROBE_ORDER = (9600, 4800, 115200, 57600, 38400, 19200, 14400)
+
+# Approximate NMEA line sizes in bytes (incl. CRLF) used to estimate UART load.
+_BASE_BYTES = 72 + 82 + 36            # RMC + GGA + ZDA, every fix
+_GSX_GPS_BYTES = 60 + 3 * 70          # GSA + ~3 GSV lines, GPS
+_GSX_BD_BYTES = 60 + 2 * 70           # GSA + ~2 GSV lines, BeiDou
+_GSX_EVERY = 5                        # SET_NMEA_OUTPUT sends GSA/GSV every 5th fix
+
+
+def _cycle_bytes(beidou):
+    """(bytes in an ordinary fix, extra bytes added on the GSA/GSV fix)."""
+    return _BASE_BYTES, _GSX_GPS_BYTES + (_GSX_BD_BYTES if beidou else 0)
+
+
+def nmea_load(baud, fix_interval_ms, beidou):
+    """Estimated UART load as fractions of capacity: (average, worst fix cycle). > 1.0 = overloaded."""
+    base, extra = _cycle_bytes(beidou)
+    capacity = baud / 10.0 * fix_interval_ms / 1000.0
+    return (base + extra / _GSX_EVERY) / capacity, (base + extra) / capacity
+
+
+def nmea_burst_ms(baud, beidou):
+    """Line time in ms of the largest fix cycle: how late the first sentence of a cycle can arrive."""
+    base, extra = _cycle_bytes(beidou)
+    return int((base + extra) * 10000 / baud)
+
+
+def baud_command(rate):
+    if rate not in ALLOWED_BAUDRATES:
+        raise ValueError('unsupported GPS baudrate {}'.format(rate))
+    return '$PMTK251,{}'.format(rate)
+
+
+def fix_interval_command(ms):
+    if not 100 <= ms <= 10000:
+        raise ValueError('fix interval must be 100..10000 ms')
+    return '$PMTK220,{}'.format(ms)
+
 
 class L76X(object):
     # Startup mode
@@ -77,9 +119,12 @@ class L76X(object):
 
     def __init__(self, uartx=_uart0, _baudrate=9600, tx=None, rx=None, verbose=False):
         self.verbose = verbose
+        self.baudrate = _baudrate
         self._open(uartx, _baudrate, tx, rx)
 
     def _open(self, uartx, baudrate, tx=None, rx=None):
+        self._uart_args = (uartx, tx, rx)
+        self.baudrate = baudrate
         d_tx, d_rx = self._default_pins[uartx]
         self.ser = UART(uartx, baudrate=baudrate,
                         tx=Pin(d_tx if tx is None else tx),
@@ -102,6 +147,53 @@ class L76X(object):
 
     def set_baudrate(self, _baudrate, uartx=_uart0, tx=None, rx=None):
         self._open(uartx, _baudrate, tx, rx)
+
+    def _listen(self, listen_ms):
+        """True if a complete NMEA sentence with a valid checksum arrives within listen_ms."""
+        buf = bytearray()
+        start = utime.ticks_ms()
+        while utime.ticks_diff(utime.ticks_ms(), start) < listen_ms:
+            n = self.ser.any()
+            if not n:
+                utime.sleep_ms(5)
+                continue
+            data = self.ser.read(n)
+            if data:
+                buf.extend(data)
+            parts = bytes(buf).split(b'\n')
+            rest = parts[-1]
+            for line in parts[:-1]:
+                text = ''.join(chr(b) for b in line if 32 <= b < 127)
+                if text.startswith('$') and NMEA.valid_checksum(text):
+                    return True
+            buf = bytearray(rest[-200:])  # keep the unfinished line (bounded)
+        return False
+
+    def configure_baudrate(self, target, listen_ms=1500):
+        """Make the module talk at 'target' baud and leave our UART at that rate.
+
+        Listens at the target first (module already configured: nothing is sent). Otherwise probes
+        the other rates, tells the module to switch with $PMTK251 and verifies. Returns the rate the
+        module was found at, or None if it was never heard (UART is then left at the target)."""
+        command = baud_command(target)  # validates the rate
+        uartx, tx, rx = self._uart_args
+        self._open(uartx, target, tx, rx)
+        if self._listen(listen_ms):
+            return target
+        for rate in _PROBE_ORDER:
+            if rate == target:
+                continue
+            self._open(uartx, rate, tx, rx)
+            if not self._listen(listen_ms):
+                continue
+            self.send_command(command)
+            utime.sleep(0.3)
+            self._open(uartx, target, tx, rx)
+            if self._listen(listen_ms):
+                return rate
+            self._open(uartx, rate, tx, rx)  # switch did not take effect: keep talking at the old rate
+        self._open(uartx, target, tx, rx)
+        return None
 
     def set_nmea_output(self, f_GLL = 1, f_RMC = 1, f_VTG = 1, f_GGA = 1, f_GSA = 1, f_GSV = 1, f_ZDA = 1, f_MCHN = 0):
         """

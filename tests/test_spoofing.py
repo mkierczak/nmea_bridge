@@ -218,3 +218,13 @@ def test_module_jamming_status_feeds_jam_detector():
         state = clk.step(det)
     assert state == jamming.JAM
     assert 'M' in det.reason
+
+
+def test_time_tolerance_is_configurable():
+    sim = Sim()
+    sim.warm()
+    assert sim.fix(gps_dt=0.8 + 1.0) == spoofing.ALERT   # 1 s mismatch exceeds the default 500 ms
+    sim = Sim()
+    sim.det.time_tolerance_ms = 2000                      # e.g. slow GPS link delaying RMC
+    sim.warm()
+    assert sim.fix(gps_dt=0.8 + 1.0) == spoofing.OK

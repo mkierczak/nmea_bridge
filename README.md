@@ -9,7 +9,7 @@ time, position, fix, satellites, DOP grades and stats.
 
 ## Hardware
 - Raspberry Pi Pico
-- Waveshare L76B GNSS module on UART0 (GP0/GP1), 9600 baud
+- Waveshare L76B GNSS module on UART0 (GP0/GP1), 4800 baud by default (`GPS_BAUDRATE`)
 - Waveshare 2-CH RS485 module on UART1 (GP4/GP5), 4800 baud, to the radio
 - SH1107 128x64 SPI OLED: SCK GP10, MOSI GP11, DC GP8, RST GP12, CS GP9
 - Buttons: UP GP15, DOWN GP17 (active low)
@@ -24,6 +24,22 @@ All pins and rates are constants at the top of `main.py`.
 Constants at the top of `main.py`. `FORWARD_TYPES` selects which sentence types are forwarded to the
 radio (default: RMC, GGA, GSA, GSV, ZDA; an empty tuple forwards nothing). The display always uses
 all parsed sentences regardless of this list.
+
+### GPS baudrate
+`GPS_BAUDRATE` (default 4800; allowed 4800, 9600, 14400, 19200, 38400, 57600, 115200). At boot the
+firmware listens at that rate; if the module is silent or garbled it probes the other rates, sends
+`$PMTK251,<rate>` to switch the module and verifies, so it works whether the module is still at its
+old rate (e.g. first boot after changing the setting) or already at the new one. Probing can take up
+to about 10 s; if the module is never heard the UART stays at `GPS_BAUDRATE`. (Whether the module
+keeps the rate across its own power cycle is not documented, which is why this runs on every boot.)
+
+At <= 4800 baud the fix interval is set to 1 s (`FIX_INTERVAL_MS`, otherwise 800 ms). 4800 baud is
+only about 480 B/s: GPS-only output fits (worst fix cycle roughly 460 B), but with `GNSS_MODE =
+'GPS+BD'` the cycle that carries GSA/GSV (every 5th fix) is roughly 660 B and exceeds one second of
+line time, so GSV/GSA may be delayed or dropped by the module (its behaviour when overloaded is not
+documented). With `DEBUG` on, the estimated load is printed at boot with a warning; if you see
+truncated sentences, raise `GPS_BAUDRATE` or use `GNSS_MODE = 'GPS'`. The spoofing time check (T1)
+widens its tolerance by the worst-case line time of a cycle so this delay does not raise false alarms.
 
 ## Jamming / signal-degradation indicator
 `jamming.py` watches per-satellite C/N0 from GSV and the fix status, learns a baseline of normal
@@ -63,7 +79,8 @@ false-alarm rate on recorded logs (`tools/replay.py`) before using `'block'`.
 `GNSS_MODE` selects GPS-only or GPS+BeiDou (the L76B supports no other constellations; BeiDou
 appears as `$BD…` sentences, which are not forwarded to the radio: see `FORWARD_TALKERS`). The module's
 own jamming detector (`$PMTK838,1`, reports `$PMTKSPF`) also feeds the jamming indicator (reason `M`).
-Module replies to the configuration commands (`$PMTK001`) are printed when `DEBUG` is on.
+Module replies to the configuration commands (`$PMTK001`: 251 baud, 286 AIC, 353 search mode, 838
+jamming detector) are printed when `DEBUG` is on.
 
 ## Buttons
 - UP short: next screen (main / stats); UP long: debug screen

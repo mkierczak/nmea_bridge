@@ -16,6 +16,20 @@ def _days_from_civil(y, m, d):
     return era * 146097 + doe - 719468
 
 
+def valid_checksum(sentence):
+    """True if 'sentence' ('$...*hh') carries a correct XOR checksum."""
+    body, star, cksum = sentence.partition('*')
+    if not star:
+        return False
+    csum = 0
+    for c in body.replace('$', ''):
+        csum ^= ord(c)
+    try:
+        return csum == int(cksum.strip(), 16)
+    except ValueError:
+        return False
+
+
 class Parser(object):
     
     def __init__(self):
@@ -256,14 +270,7 @@ class Parser(object):
         return csum
 
     def _valid_nmea_checksum(self, sentence):
-        tmp = sentence.split('*')
-        if len(tmp) < 2:
-            return False
-        csum = self._calculate_nmea_checksum(sentence)
-        try:
-            return csum == int(tmp[1].strip(), 16)
-        except ValueError:
-            return False
+        return valid_checksum(sentence)
 
     def _fix_sentence(self, sentence):
         if sentence.startswith('$GN'):
