@@ -7,6 +7,7 @@ import _thread
 import l76x
 import NMEA
 import screens
+import wifipass
 from jamming import JamDetector
 from spoofing import SpoofDetector, TIME_JUMP_MS
 import sh1107
@@ -32,7 +33,7 @@ FORWARD_TALKERS = ('GP', 'GN')    # talker IDs forwarded to the radio (BeiDou $B
 GNSS_MODE = 'GPS+BD'              # 'GPS' or 'GPS+BD' (L76B supports no other constellations)
 WIFI_ENABLE = True                # Pico W only: allow the NMEA-over-Wi-Fi access point (off at boot; hold UP to toggle)
 WIFI_SSID = 'nmea-bridge'
-WIFI_PASSWORD = 'change-me-please'  # WPA2, at least 8 characters: CHANGE THIS
+WIFI_PASSWORD = ''                # '' = random password made on first boot, stored in wifi_password.txt and shown on the Wi-Fi screen; or set your own (8+ characters)
 WIFI_PORT = 10110                 # NMEA 0183 over TCP (server) and UDP (broadcast)
 WIFI_MAX_CLIENTS = 4
 WIFI_FORWARD_TYPES = FORWARD_TYPES  # sentence types sent to Wi-Fi clients
@@ -173,6 +174,11 @@ def gather_stats():
     return stats
 
 broadcaster = None                # wifi.NmeaBroadcaster, created the first time Wi-Fi is switched on
+wifi_password = ''
+if WIFI_ENABLE:
+    wifi_password, wifi_pw_stored = wifipass.get_password(WIFI_PASSWORD)
+    if DEBUG and not wifi_pw_stored:
+        print('WARNING: could not store the Wi-Fi password; it changes at every boot')
 
 def set_wifi(on):
     """Start/stop the access point. wifi.py is imported lazily so the default footprint stays small."""
@@ -182,7 +188,7 @@ def set_wifi(on):
             import network
             import socket
             import wifi
-            broadcaster = wifi.NmeaBroadcaster(network, socket, WIFI_SSID, WIFI_PASSWORD,
+            broadcaster = wifi.NmeaBroadcaster(network, socket, WIFI_SSID, wifi_password,
                                                WIFI_PORT, WIFI_MAX_CLIENTS)
         gc.collect()
         try:
@@ -195,9 +201,9 @@ def set_wifi(on):
         gc.collect()
 
 def wifi_info():
-    if broadcaster:
-        return broadcaster.info()
-    return ('OFF', WIFI_SSID, '', 0, WIFI_MAX_CLIENTS)
+    state, ssid, ip, clients, max_clients = (broadcaster.info() if broadcaster
+                                             else ('OFF', WIFI_SSID, '', 0, WIFI_MAX_CLIENTS))
+    return state, ssid, ip, clients, max_clients, wifi_password
 
 def memreport(tag):
     gc.collect()

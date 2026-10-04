@@ -17,7 +17,7 @@ time, position, fix, satellites, DOP grades and stats.
 All pins and rates are constants at the top of `main.py`.
 
 ## Deploy
-`make deploy` (uses `mpremote`) copies `main.py`, `NMEA.py`, `l76x.py`, `screens.py`, `jamming.py`, `spoofing.py`, `wifi.py`,
+`make deploy` (uses `mpremote`) copies `main.py`, `NMEA.py`, `l76x.py`, `screens.py`, `jamming.py`, `spoofing.py`, `wifi.py`, `wifipass.py`,
 `sh1107.py`, `writer.py` and the font modules to the Pico. `main.py` runs on boot.
 
 `make deploy-mpy` precompiles the modules with `mpy-cross` and deploys `.mpy` files instead (less RAM to
@@ -31,11 +31,18 @@ all parsed sentences regardless of this list.
 
 ### Wi-Fi: NMEA over TCP and UDP (Pico W)
 The access point is **off at boot**. Hold the **UP button for 3 s** to switch it on or off (a 1-3 s
-press still opens the debug screen). The WPA2 network `WIFI_SSID` / `WIFI_PASSWORD` (set both in
-`main.py`; **change the default password**, open networks are not supported) serves the NMEA stream
-on port `WIFI_PORT` (10110) as a TCP server (up to `WIFI_MAX_CLIENTS`, slow or dead clients are dropped)
-and as UDP broadcast to the AP subnet (`192.168.4.255`). Connect OpenCPN, SignalK, Navionics etc. to
-`192.168.4.1:10110`. The short-press cycle has a Wi-Fi screen with state, SSID, IP and client count.
+press still opens the debug screen). The WPA2 network `WIFI_SSID` serves the NMEA stream on port
+`WIFI_PORT` (10110) as a TCP server (up to `WIFI_MAX_CLIENTS`, slow or dead clients are dropped) and as
+UDP broadcast to the AP subnet (`192.168.4.255`). Connect OpenCPN, SignalK, Navionics etc. to
+`192.168.4.1:10110`. The short-press cycle has a Wi-Fi screen with state, SSID, **password**, IP and
+client count.
+
+**Password:** with `WIFI_PASSWORD = ''` (default) a random 12-character password (no look-alike
+characters, from the Pico's hardware entropy) is generated on first boot, saved in `wifi_password.txt`
+on the board and shown on the Wi-Fi screen, even while the AP is off. Delete the file
+(`mpremote fs rm :wifi_password.txt`) and reboot for a new one. Setting `WIFI_PASSWORD` in `main.py`
+overrides it (8-63 characters; open networks are not supported). The password is stored in plain text
+on the board and shown on the OLED, so anyone with physical access to the device can read it.
 `WIFI_FORWARD_TYPES` / `WIFI_FORWARD_TALKERS` choose what is sent (default: the radio's types plus
 BeiDou talkers); when `SPOOF_ACTION = 'block'` is active the blocked sentences are not sent over Wi-Fi
 either. Everyone who joins the network can read the vessel's position.

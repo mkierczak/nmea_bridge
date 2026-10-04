@@ -38,11 +38,12 @@ def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None, spo
             oled.text("C/N0 {}/{} n{}/{}".format(round(mean), round(jam.base_mean), tracked,
                                                  round(jam.base_tracked)), 0, 56, 1)
     elif screen == SCREEN_WIFI:
-        state, ssid, ip, clients, max_clients = wifi if wifi else ('OFF', '', '', 0, 0)
+        state, ssid, ip, clients, max_clients, password = wifi if wifi else ('OFF', '', '', 0, 0, '')
         oled.text('WiFi: ' + state, 0, 0, 1)
-        oled.text(ssid[:16], 0, 12, 1)
-        oled.text(('IP ' + ip) if ip else 'IP -', 0, 24, 1)
-        oled.text('TCP clients {}/{}'.format(clients, max_clients), 0, 36, 1)
+        oled.text(ssid[:16], 0, 10, 1)
+        oled.text('PW ' + password[:13], 0, 20, 1)
+        oled.text(('IP ' + ip) if ip else 'IP -', 0, 30, 1)
+        oled.text('TCP clients {}/{}'.format(clients, max_clients), 0, 40, 1)
         oled.text('UP 3s: toggle', 0, 54, 1)
     elif screen == SCREEN_DEBUG:
         oled.text(parser.last_valid_sentence.strip()[:16], 0, 0, 1)
