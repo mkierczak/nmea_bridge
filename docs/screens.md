@@ -177,7 +177,7 @@ OTHER:0     why:CN
 ## 8. Wi-Fi
 
 ```
-WiFi: ON
+WiFi: ON sta0
 NMEABridge-AB12
 PW k4x9mhq2
 IP 192.168.4.1
@@ -187,7 +187,7 @@ UP 3s: toggle
 
 | Item | Meaning |
 |---|---|
-| `WiFi: <state>` | `OFF`, `ON`, or `ERR` (the access point could not start). Off after every boot. |
+| `WiFi: <state>` | `OFF`, `ON sta<n>`, or `ERR` (the access point could not start). Off after every boot. `sta<n>` is the number of phones associated with the access point at the Wi-Fi level, before any TCP connection: if a join attempt fails but this number briefly shows 1, the phone reached the radio and failed later (address or password stage). |
 | SSID | Network name: `NMEABridge-` plus four characters derived from the board ID. |
 | `PW` | The WPA2 password (8 characters, no look-alike characters such as `0/o` or `1/l`). Generated on first boot and stored; menu Wi-Fi > New password makes a new one. A phone that saved the network with an older password must forget it first. |
 | `IP` | The access point's address (`-` while off). Connect clients to this address, TCP port 10110 (or receive UDP broadcasts on that port). |

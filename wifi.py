@@ -9,6 +9,7 @@ MAX_UDP_PAYLOAD = 1400   # keep datagrams under a typical MTU; split on line bou
 STRIKES_MAX = 5          # consecutive "buffer full" results before a slow TCP client is dropped
 PENDING_MAX = 2048       # bytes queued for one slow client before it is dropped
 _EAGAIN = 11
+SECURITY_WPA2_AES = 0x00400004   # CYW43_AUTH_WPA2_AES_PSK: plain WPA2-PSK, which every phone accepts
 
 
 def broadcast_address(ip, mask):
@@ -36,13 +37,15 @@ def chunk_lines(data, limit=MAX_UDP_PAYLOAD):
 
 class NmeaBroadcaster(object):
 
-    def __init__(self, network, socket, ssid, password, port=10110, max_clients=4):
+    def __init__(self, network, socket, ssid, password, port=10110, max_clients=4, country='', channel=None):
         self._network = network
         self._socket = socket
         self.ssid = ssid
         self._password = password
         self.port = port
         self.max_clients = max_clients
+        self.country = country
+        self.channel = channel
         self.active = False
         self.error = ''
         self.ip = ''
@@ -61,9 +64,17 @@ class NmeaBroadcaster(object):
     def client_count(self):
         return len(self._clients)
 
+    def stations(self):
+        """Phones associated with the access point (Wi-Fi level, before any TCP connection): shows whether
+        a join attempt gets as far as the radio."""
+        try:
+            return len(self._wlan.status('stations'))
+        except (AttributeError, ValueError, OSError, TypeError):
+            return 0
+
     def info(self):
         """(state, ssid, ip, clients, max_clients) for the display."""
-        state = 'ERR' if self.error else 'ON' if self.active else 'OFF'
+        state = 'ERR' if self.error else 'ON sta{}'.format(self.stations()) if self.active else 'OFF'
         return state, self.ssid, self.ip, len(self._clients), self.max_clients
 
     def start(self, feed=None, wait_ms=5000, sleep_ms=None):
@@ -77,8 +88,22 @@ class NmeaBroadcaster(object):
             net, sock = self._network, self._socket
             if feed:
                 feed()
+            if self.country:    # the default 'XX' (worldwide) regulatory domain made an Android phone fail to join
+                try:
+                    net.country(self.country)
+                except (ValueError, OSError, AttributeError):
+                    pass
             wlan = net.WLAN(net.AP_IF)
             wlan.config(essid=self.ssid, password=self._password)
+            if self.channel:
+                try:
+                    wlan.config(channel=self.channel)
+                except (ValueError, OSError, TypeError):
+                    pass
+            try:                # do not rely on the firmware's default (newer builds offer WPA2/WPA3 mixed mode,
+                wlan.config(security=SECURITY_WPA2_AES)   # which some Android phones refuse at once)
+            except (ValueError, OSError, TypeError):
+                pass            # a build without the option keeps its default
             wlan.active(True)
             waited = 0
             while not wlan.active() and waited < wait_ms:

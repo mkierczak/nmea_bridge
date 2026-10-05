@@ -99,6 +99,9 @@ class FakeNetwork:
     def __init__(self):
         self.wlan = FakeWLAN()
 
+    def country(self, code=None):
+        self.country_set = code
+
     def WLAN(self, mode):
         return self.wlan
 
@@ -128,10 +131,10 @@ def test_broadcast_address_and_chunking():
 def test_start_configures_wpa2_ap_and_sockets():
     b, net, sock, tcp, udp = started()
     assert net.wlan.is_active
-    assert net.wlan.cfg == {'essid': 'nmea-bridge', 'password': 'secret123'}
+    assert net.wlan.cfg == {'essid': 'nmea-bridge', 'password': 'secret123', 'security': wifi.SECURITY_WPA2_AES}
     assert tcp.bound == ('0.0.0.0', 10110)
     assert b.active and b.ip == '192.168.4.1'
-    assert b.info() == ('ON', 'nmea-bridge', '192.168.4.1', 0, 4)
+    assert b.info() == ('ON sta0', 'nmea-bridge', '192.168.4.1', 0, 4)
 
 
 def test_short_password_rejected_open_network_not_possible():
@@ -252,3 +255,36 @@ def test_udp_error_does_not_raise():
         raise OSError(113, 'EHOSTUNREACH')
     udp.sendto = boom
     b.send('$X*00\r\n')
+
+
+def test_a_build_without_the_security_option_still_starts():
+    b, net, sock = make()
+    original = net.wlan.config
+
+    def config(**kw):
+        if 'security' in kw:
+            raise ValueError('unknown config param')
+        original(**kw)
+    net.wlan.config = config
+    b.start()
+    assert b.active and 'security' not in net.wlan.cfg
+
+
+def test_country_and_channel_are_applied_before_the_ap_comes_up():
+    net, sock = FakeNetwork(), FakeSocketModule()
+    b = NmeaBroadcaster(net, sock, 'x', 'secret123', country='SE', channel=6)
+    b.start()
+    assert net.country_set == 'SE' and net.wlan.cfg['channel'] == 6
+
+
+def test_no_country_or_channel_leaves_the_firmware_defaults():
+    b, net, sock = make()
+    b.start()
+    assert not hasattr(net, 'country_set') and 'channel' not in net.wlan.cfg
+
+
+def test_associated_phones_are_counted_for_the_display():
+    b, net, sock = make()
+    b.start()
+    net.wlan.status = lambda what=None: [b'\x01' * 6, b'\x02' * 6]
+    assert b.stations() == 2 and b.info()[0] == 'ON sta2'

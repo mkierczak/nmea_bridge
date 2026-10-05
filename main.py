@@ -52,6 +52,8 @@ GNSS_MODE = 'GPS+BD'              # 'GPS' or 'GPS+BD' (L76B supports no other co
 WIFI_ENABLE = True                # Pico W only: allow the NMEA-over-Wi-Fi access point (off at boot; hold UP to toggle)
 WIFI_SSID = ''                    # '' = 'NMEABridge-XXXX' with 4 characters derived from the board's unique ID; or set your own
 WIFI_PASSWORD = ''                # '' = random password made on first boot, stored in wifi_password.txt and shown on the Wi-Fi screen; or set your own (8+ characters)
+WIFI_COUNTRY = 'SE'               # two-letter regulatory domain of the access point (the firmware default 'XX' failed with Android)
+WIFI_CHANNEL = 6                  # 2.4 GHz channel 1-11 (0 = firmware default)
 WIFI_PORT = 10110                 # NMEA 0183 over TCP (server) and UDP (broadcast)
 WIFI_MAX_CLIENTS = 4
 WIFI_FORWARD_TALKERS = ('GP', 'GN', 'BD')
@@ -222,7 +224,7 @@ def set_wifi(on):
             import socket
             import wifi
             core.broadcaster = wifi.NmeaBroadcaster(network, socket, wifi_ssid, wifi_password,
-                                                    WIFI_PORT, WIFI_MAX_CLIENTS)
+                                                    WIFI_PORT, WIFI_MAX_CLIENTS, WIFI_COUNTRY, WIFI_CHANNEL)
         gc.collect()
         try:
             core.broadcaster.start(feed=wdt.feed if wdt else None, sleep_ms=utime.sleep_ms)
