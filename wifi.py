@@ -7,6 +7,7 @@ are injected so the logic can be tested on a desktop; call all methods from the 
 
 MAX_UDP_PAYLOAD = 1400   # keep datagrams under a typical MTU; split on line boundaries
 STRIKES_MAX = 5          # consecutive "buffer full" results before a slow TCP client is dropped
+PENDING_MAX = 2048       # bytes queued for one slow client before it is dropped
 _EAGAIN = 11
 
 
@@ -50,7 +51,7 @@ class NmeaBroadcaster(object):
         self._listener = None
         self._udp = None
         self._bcast = None
-        self._clients = []          # [connection, strikes]
+        self._clients = []          # [connection, strikes, pending bytes not yet accepted]
 
     def set_password(self, password):
         """Use a new password the next time the AP is started."""
@@ -157,7 +158,7 @@ class NmeaBroadcaster(object):
             except OSError:
                 self._close(conn)
                 continue
-            self._clients.append([conn, 0])
+            self._clients.append([conn, 0, b''])
 
     def send(self, text):
         """Send one batch (str or bytes, whole NMEA lines) to all TCP clients and as UDP broadcast."""
@@ -167,20 +168,20 @@ class NmeaBroadcaster(object):
         alive = []
         for entry in self._clients:
             conn = entry[0]
+            out = entry[2] + data           # bytes the client has not taken yet go first, in order
             try:
-                n = conn.send(data)
-                if n is None or n < len(data):
-                    entry[1] += 1       # partial/blocked write: the client is falling behind
-                else:
-                    entry[1] = 0
-                    self.bytes_sent += n
+                n = conn.send(out)
+                if n is None:
+                    n = 0
             except OSError as e:
-                if _errno(e) == _EAGAIN:
-                    entry[1] += 1
-                else:                   # reset, broken pipe, ...
+                if _errno(e) != _EAGAIN:    # reset, broken pipe, ...
                     self._close(conn)
                     continue
-            if entry[1] >= STRIKES_MAX:
+                n = 0
+            self.bytes_sent += n
+            entry[2] = out[n:]              # never drop the tail: a client must not see a cut sentence
+            entry[1] = entry[1] + 1 if entry[2] else 0
+            if entry[1] >= STRIKES_MAX or len(entry[2]) > PENDING_MAX:
                 self._close(conn)
                 continue
             alive.append(entry)

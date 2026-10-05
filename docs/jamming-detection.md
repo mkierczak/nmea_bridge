@@ -1,7 +1,7 @@
 # Jamming / signal-degradation detection
 
 Implementation: [`jamming.py`](../jamming.py) (class `JamDetector`). Inputs come from
-[`NMEA.py`](../NMEA.py) (`Parser`), wiring is in [`main.py`](../main.py), the user interface is in
+[`NMEA.py`](../NMEA.py) (`Parser`), the radio-path wiring is in [`bridge.py`](../bridge.py) (set up by [`main.py`](../main.py)), the user interface is in
 [`screens.py`](../screens.py) and the thresholds can be changed in the menu
 (see [Parameters](#6-parameters)). See also [spoofing detection](spoofing-detection.md).
 
@@ -82,14 +82,14 @@ The module is configured (see `l76x.SET_NMEA_OUTPUT`) to send GSV every 5th fix,
 | Fix available | main loop | `fix_ok = not no_fix` (see below) | indicator F, baseline gating |
 | Module's own jamming status | `$PMTKSPF,n` | `module_jam_status` (0 unknown, 1 healthy, 2 warning, 3 critical) | indicator M |
 
-`fix_ok` is computed in `main.py`: there is **no** fix if the last GGA reported fix type 0 (`NO`), or no
-valid GGA/RMC has been received yet, or the last valid position is older than `FIX_STALE_TIMEOUT`
+`fix_ok` is computed in `bridge.py` (`Bridge.no_fix`): there is **no** fix if the last GGA reported fix type 0 (`NO`), or no
+valid GGA/RMC has been received yet, or the last valid position is older than `FIX_STALE_TIMEOUT_MS`
 (10 s).
 
 ## 4. Algorithm at a glance
 
 ```
-every JAM_EVAL_PERIOD (2 s) the main loop calls evaluate(now, fix_ok)
+every JAM_EVAL_PERIOD_MS (2 s) Bridge.step() calls evaluate(now, fix_ok)
 
  new settled GSV cycle, or new module status?  --no-->  data stale for >= STALE_MS (20 s)
         | yes                                    and baseline valid?   | no -> return unchanged state
@@ -117,7 +117,7 @@ every JAM_EVAL_PERIOD (2 s) the main loop calls evaluate(now, fix_ok)
 
 ### 5.1 Sampling
 
-`main.py` calls `JamDetector.evaluate(now_ms, fix_ok)` every `JAM_EVAL_PERIOD` (2 s). The call does
+`bridge.py` calls `JamDetector.evaluate(now_ms, fix_ok)` every `JAM_EVAL_PERIOD_MS` (2 s). The call does
 real work only when the parser has new GSV data **that has settled** (a cycle completed and no
 constellation finished another one for `GSV_SETTLE_MS`, 800 ms, so GPS and BeiDou are evaluated
 together, once, instead of twice on half-updated data), when the module reported a new
@@ -390,8 +390,9 @@ settings that map to the thresholds in `tests/test_settings.py`.
 | Detector, thresholds, state machine | `jamming.py`: `JamDetector.evaluate`, `_learn`, constants |
 | GSV parsing, C/N0 statistics | `NMEA.py`: `Parser._parse_gsv`, `cn0_stats`, `cn0_version` |
 | `$PMTKSPF` / `$PMTK001` parsing | `NMEA.py`: `Parser._parse_pmtk` |
-| Module commands (`PMTK838`, `PMTK286`, GSV rate) | `l76x.py`, `main.py` (`gps_thread`) |
-| Scheduling, `fix_ok`, create/destroy at runtime | `main.py` (`detector`, `apply_setting`) |
+| Module commands (`PMTK838`, `PMTK286`, GSV rate) | `l76x.py`, `main.py` (`gps_init`) |
+| Scheduling, `fix_ok` | `bridge.py` (`Bridge._periodic`, `no_fix`) |
+| Create/destroy at runtime | `main.py` (`apply_setting`) |
 | Display | `screens.py`: main page label, `_draw_signal`, stats page |
 | Threshold settings | `settings.py`: `SCHEMA`, `apply_thresholds` |
 

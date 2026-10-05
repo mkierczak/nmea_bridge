@@ -6,6 +6,8 @@ Kept separate from wifi.py so it can be imported at boot (tiny) while the networ
 loaded when the access point is first switched on.
 """
 
+import os
+
 # 31 symbols without look-alikes (no 0/o, 1/l/i): easy to type from a small OLED
 ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'
 PASSWORD_LENGTH = 12                          # ~59 bits; fits one 16-character OLED line after "PW "
@@ -55,6 +57,31 @@ def valid_password(pw):
     return 8 <= len(pw) <= 63 and all(32 <= ord(c) < 127 for c in pw)
 
 
+_EEXIST = 17
+
+
+def _write_atomic(path, text):
+    """Write via a temp file and rename, so a power cut cannot leave an empty or half-written file
+    (which would silently change the displayed password at the next boot). The old file is only
+    removed when the filesystem explicitly cannot rename over an existing file (FAT); any other
+    failure leaves it untouched."""
+    tmp = path + '.tmp'
+    with open(tmp, 'w') as f:
+        f.write(text)
+    try:
+        os.rename(tmp, path)
+    except OSError as e:
+        if e.args and e.args[0] == _EEXIST:
+            os.remove(path)
+            os.rename(tmp, path)
+        else:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            raise
+
+
 def _load_or_create(path, is_valid, make):
     """Return (value, persisted): the stored value if usable, else a new one that is saved."""
     try:
@@ -66,8 +93,7 @@ def _load_or_create(path, is_valid, make):
         pass  # first boot: no file yet
     value = make()
     try:
-        with open(path, 'w') as f:
-            f.write(value)
+        _write_atomic(path, value)
     except OSError:
         return value, False
     return value, True
@@ -83,11 +109,12 @@ def _default_urandom(urandom):
 def get_password(configured='', path=PASSWORD_FILE, urandom=None):
     """Return (password, persisted).
 
-    A non-empty 'configured' password (the WIFI_PASSWORD constant) wins and is never stored.
-    Otherwise the stored password is used; if there is none (first boot) or it is unusable, a new
+    A non-empty, valid (WPA2: 8-63 printable ASCII) 'configured' password (the WIFI_PASSWORD constant)
+    wins and is never stored; an invalid one is ignored (the caller can notice the returned password
+    differs from what it passed in). Otherwise the stored password is used; if there is none (first boot) or it is unusable, a new
     random one is generated and saved. If saving fails it still works until the next reboot and
     'persisted' is False. Delete the file to get a new password."""
-    if configured:
+    if configured and valid_password(configured):
         return configured, True
     urandom = _default_urandom(urandom)
     return _load_or_create(path, valid_password, lambda: generate_password(urandom))
@@ -110,8 +137,7 @@ def regenerate_password(path=PASSWORD_FILE, urandom=None):
     urandom = _default_urandom(urandom)
     pw = generate_password(urandom)
     try:
-        with open(path, 'w') as f:
-            f.write(pw)
+        _write_atomic(path, pw)
     except OSError:
         return pw, False
     return pw, True

@@ -123,7 +123,16 @@ class L76X(object):
         self._open(uartx, _baudrate, tx, rx)
 
     def _open(self, uartx, baudrate, tx=None, rx=None):
-        self._uart_args = (uartx, tx, rx)
+        args = (uartx, tx, rx)
+        ser = getattr(self, 'ser', None)
+        if ser is not None and args == getattr(self, '_uart_args', None):
+            try:                          # probing rates: change the baud rate in place, keep the buffers
+                ser.init(baudrate=baudrate)
+                self.baudrate = baudrate
+                return
+            except (AttributeError, TypeError, ValueError, OSError):
+                pass                      # not supported by this build: create a fresh UART below
+        self._uart_args = args
         self.baudrate = baudrate
         d_tx, d_rx = self._default_pins[uartx]
         self.ser = UART(uartx, baudrate=baudrate,

@@ -126,3 +126,40 @@ def test_ssid_and_password_are_independent():
         pw, _ = wificreds.get_password('', os.path.join(d, 'pw.txt'), os.urandom)
     ssid = wificreds.get_ssid('', os.urandom(8))
     assert pw not in ssid and ssid[len('NMEABridge-'):] not in pw.upper()
+
+
+def test_password_file_is_written_atomically_and_leaves_no_temp_file():
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, 'pw.txt')
+        pw, stored = wificreds.get_password('', path, os.urandom)
+        assert stored and open(path).read() == pw
+        assert os.listdir(d) == ['pw.txt']                    # the temp file was renamed away
+        pw2, _ = wificreds.regenerate_password(path, os.urandom)
+        assert pw2 != pw and open(path).read() == pw2 and os.listdir(d) == ['pw.txt']
+
+
+def test_failed_write_keeps_the_old_password_file_untouched(monkeypatch=None):
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, 'pw.txt')
+        wificreds.get_password('', path, os.urandom)
+        old = open(path).read()
+        real_rename = os.rename
+
+        def boom(a, b):
+            raise OSError(5, 'io error')
+        os.rename = boom
+        try:
+            pw, stored = wificreds.regenerate_password(path, os.urandom)
+        finally:
+            os.rename = real_rename
+        assert not stored and wificreds.valid_password(pw)
+        assert open(path).read() == old                       # the previous password was not destroyed
+
+
+def test_invalid_configured_password_is_ignored():
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, 'pw.txt')
+        for bad in ('short', 'x' * 64, 'has\x01control'):
+            pw, stored = wificreds.get_password(bad, path, os.urandom)
+            assert pw != bad and wificreds.valid_password(pw)
+        assert wificreds.get_password('my-own-secret', path, os.urandom) == ('my-own-secret', True)

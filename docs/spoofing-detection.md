@@ -2,7 +2,7 @@
 
 Implementation: [`spoofing.py`](../spoofing.py) (class `SpoofDetector`). Inputs come from
 [`NMEA.py`](../NMEA.py) (`Parser`), wiring and the optional "block" action are in
-[`main.py`](../main.py), the user interface is in [`screens.py`](../screens.py), and thresholds can be
+[`bridge.py`](../bridge.py) (set up by [`main.py`](../main.py)), the user interface is in [`screens.py`](../screens.py), and thresholds can be
 changed in the menu (see [Parameters](#8-parameters)). See also
 [jamming detection](jamming-detection.md).
 
@@ -522,9 +522,10 @@ the page rendering by `tests/test_screens.py`, and the link-rate arithmetic by `
 | Altitude (K3) | `spoofing.py`: `_on_altitude` |
 | Position/time/speed/altitude parsing | `NMEA.py`: `Parser._store_fix`, `_parse_rmc`, `_parse_gga`, `_to_units`, `_days_from_civil` |
 | GSV per-satellite data | `NMEA.py`: `Parser._parse_gsv` (`sats_by_talker`) |
-| Arrival timestamp | `main.py`: `gps_thread` / `publish` (`rx_ms` at end of line) |
+| Arrival timestamp | `bridge.py`: `GpsReader.step` / `SentenceFramer` (`rx_ms` when the line ends) |
 | T1 tolerance from the link rate | `l76x.py`: `nmea_burst_ms`, `nmea_load`; `main.py`: `make_spoof` |
-| Block action, scheduling, runtime enable | `main.py`: forwarding loop, `apply_setting` |
+| Block action, scheduling | `bridge.py`: `Bridge._handle_sentence`, `forward_decision`, `_periodic` |
+| Runtime enable/disable | `main.py`: `apply_setting` |
 | Display | `screens.py`: main page label, `_draw_spoof` |
 | Threshold settings | `settings.py`: `SCHEMA`, `apply_thresholds` |
 | Replay tool | `tools/replay.py` |

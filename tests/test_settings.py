@@ -168,3 +168,50 @@ def test_apply_thresholds_pushes_values_and_defaults_are_neutral():
     finally:
         for (m, n), v in saved.items():
             setattr(m, n, v)
+
+
+def test_failed_rename_keeps_the_old_settings_file_and_removes_the_temp_file():
+    with tempfile.TemporaryDirectory() as d:
+        cfg = make(d)
+        cfg.set('contrast', 30)
+        cfg.save()
+        old = open(os.path.join(d, 'settings.json')).read()
+        cfg.set('contrast', 45)
+        real = os.rename
+
+        def boom(a, b):
+            raise OSError(5, 'io error')
+        os.rename = boom
+        try:
+            try:
+                cfg.save()
+            except OSError:
+                pass
+            else:
+                raise AssertionError('save should have failed')
+        finally:
+            os.rename = real
+        assert open(os.path.join(d, 'settings.json')).read() == old
+        assert os.listdir(d) == ['settings.json']
+
+
+def test_rename_over_existing_file_fallback_only_for_eexist():
+    with tempfile.TemporaryDirectory() as d:
+        cfg = make(d)
+        cfg.set('contrast', 30)
+        cfg.save()
+        cfg.set('contrast', 45)
+        real = os.rename
+        calls = {'n': 0}
+
+        def fat_like(a, b):
+            calls['n'] += 1
+            if calls['n'] == 1:
+                raise OSError(17, 'exists')
+            real(a, b)
+        os.rename = fat_like
+        try:
+            cfg.save()
+        finally:
+            os.rename = real
+        assert json.load(open(os.path.join(d, 'settings.json'))) == {'contrast': 45}

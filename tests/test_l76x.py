@@ -38,6 +38,11 @@ class FakeUART:
         self._last = Clock.now
         FakeUART.instances.append(self)
 
+    def init(self, baudrate=None, **kwargs):
+        if baudrate is not None:
+            self.baudrate = baudrate
+        self._buf = b''
+
     def any(self):
         if Clock.now - self._last >= 200:  # the module emits a sentence every 200 virtual ms
             self._last = Clock.now
@@ -170,3 +175,11 @@ def test_valid_checksum_helper():
     assert not NMEA.valid_checksum('$GPGGA,1,2*00')
     assert not NMEA.valid_checksum('$GPGGA,1,2')
     assert not NMEA.valid_checksum('$GPGGA,1,2*ZZ')
+
+
+def test_probing_reuses_one_uart_instead_of_creating_one_per_rate():
+    _reset(baud=115200)
+    gps = new_gps()
+    assert gps.configure_baudrate(9600) == 115200
+    assert len(FakeUART.instances) == 1                    # was one new UART (and 1 KB buffer) per probe
+    assert FakeUART.instances[0].baudrate == 9600

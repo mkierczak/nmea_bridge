@@ -45,11 +45,14 @@ def test_up_long_opens_menu_then_events_are_forwarded():
     assert not n.in_menu and n.handle(UP_SHORT) is None and n.page != nav.PAGE_MAIN
 
 
-def test_wifi_event_works_everywhere():
+def test_wifi_gesture_toggles_outside_the_menu_but_is_a_long_up_inside_it():
     n = Navigator()
-    assert n.handle(WIFI) == nav.TOGGLE_WIFI
-    n.handle(UP_LONG)
-    assert n.handle(WIFI) == nav.TOGGLE_WIFI and n.in_menu
+    assert n.normalize(WIFI) == WIFI and n.handle(n.normalize(WIFI)) == nav.TOGGLE_WIFI
+    n.handle(UP_LONG)                                  # open the menu
+    ev = n.normalize(WIFI)
+    assert ev == UP_LONG                               # a slightly long confirm is just a confirm
+    assert n.handle(ev) == nav.TO_MENU and n.in_menu
+    assert n.normalize(DN_SHORT) == DN_SHORT
 
 
 def test_custom_page_list_and_unknown_page():
@@ -60,3 +63,57 @@ def test_custom_page_list_and_unknown_page():
     n.page = nav.PAGE_WIFI                            # not in this build's list
     n.handle(UP_SHORT)
     assert n.page == nav.PAGE_MAIN
+
+
+def test_button_tracker_pairs_press_and_release_and_classifies():
+    b = nav.ButtonTracker('UP')
+    assert b.edge(0, 1000) is None
+    assert b.edge(1, 1200) == UP_SHORT
+    assert b.edge(0, 2000) is None and b.edge(1, 3100) == UP_LONG
+    assert b.edge(0, 5000) is None and b.edge(1, 8100) == WIFI
+    d = nav.ButtonTracker('DN')
+    d.edge(0, 0)
+    assert d.edge(1, 1500) == DN_LONG
+
+
+def test_button_tracker_ignores_bounce():
+    b = nav.ButtonTracker('UP')
+    assert b.edge(0, 1000) is None
+    assert b.edge(1, 1005) is None                     # bounce right after the press edge
+    assert b.edge(0, 1012) is None
+    assert b.edge(1, 1300) == UP_SHORT                 # the real release, exactly one event
+    assert b.edge(0, 2000) is None
+    assert b.edge(1, 2400) == UP_SHORT
+    assert b.edge(1, 2410) is None                     # bounce after the release: no second event
+    assert b.edge(0, 2415) is None                     # ... and it must not start a phantom press
+    assert b.edge(0, 3000) is None                     # a later, real press still works
+    assert b.edge(1, 3200) == UP_SHORT
+
+
+def test_release_without_a_press_is_ignored():
+    b = nav.ButtonTracker('UP')
+    assert b.edge(1, 123456789) is None                # used to be classified as a WIFI hold of "uptime" length
+    assert b.edge(0, 200000000) is None
+    assert b.edge(1, 200000100) == UP_SHORT
+
+
+def test_button_tracker_survives_tick_wrap():
+    saved = nav._ticks_diff
+    nav._ticks_diff = lambda a, b: ((a - b + (1 << 29)) & ((1 << 30) - 1)) - (1 << 29)
+    try:
+        b = nav.ButtonTracker('UP')
+        b.edge(0, (1 << 30) - 100)
+        assert b.edge(1, 400) == UP_SHORT              # 500 ms across the wrap
+    finally:
+        nav._ticks_diff = saved
+
+
+def test_event_queue_fifo_full_and_empty():
+    q = nav.EventQueue(4)
+    assert q.get() is None and q.drain() == []
+    assert q.put('a') and q.put('b') and q.put('c')
+    assert not q.put('d')                              # one slot is kept free: full, newest dropped
+    assert q.drain() == ['a', 'b', 'c']
+    for i in range(10):                                # wraps around many times
+        assert q.put(i) and q.get() == i
+    assert q.drain() == []

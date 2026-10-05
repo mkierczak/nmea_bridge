@@ -229,3 +229,60 @@ def test_screen_off_value_formatting():
     assert menu._fmt('screen_off_s', 30) == '30s'
     assert menu._fmt('screen_off_s', 60) == '1m' and menu._fmt('screen_off_s', 300) == '5m'
     assert menu._fmt('jam_detect', True) == 'on' and menu._fmt('gps_baud', 4800) == '4800'
+
+
+def test_failed_save_does_not_crash_and_is_reported():
+    r = Rig()
+
+    def boom():
+        raise OSError(28, 'no space left')
+    r.cfg.save = boom
+    r.go('Detection')
+    r.go('Jamming')                                    # bool toggle triggers a save
+    assert r.cfg.get('jam_detect') is False            # stays active in RAM
+    assert r.menu.message == 'save failed'
+    oled = FakeOled()
+    r.menu.draw(oled)
+    assert 'save failed' in oled.texts()
+    r.send(DN_SHORT)
+    assert r.menu.message == ''                        # cleared by the next key
+
+
+def test_failed_save_while_confirming_an_edit_leaves_edit_mode():
+    r = Rig()
+
+    def boom():
+        raise OSError(28, 'no space left')
+    r.cfg.save = boom
+    r.go('Display')
+    r.go('Contrast')
+    r.send(UP_SHORT)
+    r.send(UP_LONG)                                    # confirm -> save fails
+    assert r.menu.edit is None and r.menu.message == 'save failed'
+    assert r.cfg.get('contrast') == 15
+
+
+def test_cancel_reverts_an_unconfirmed_edit_and_closes_dialogs():
+    r = Rig()
+    r.go('Display')
+    r.go('Contrast')
+    r.send(UP_SHORT, UP_SHORT)
+    assert r.cfg.get('contrast') == 30
+    r.menu.cancel()                                    # what the menu timeout does
+    assert r.cfg.get('contrast') == 0 and r.menu.edit is None
+    assert r.log[-1] == ('apply', 'contrast') and r.saved() == {}
+    r.menu.name = 'System'
+    r.menu.confirm = ('Reboot now?', lambda: r.log.append(('reboot',)))
+    r.menu.cancel()
+    assert r.menu.confirm is None and ('reboot',) not in r.log
+
+
+def test_parent_cursor_is_restored_by_identity_when_the_banner_appears():
+    r = Rig()
+    r.go('GPS')                                        # cursor was on GPS (index 0, no banner)
+    r.go('Baudrate')
+    r.send(UP_SHORT)                                   # 9600: reboot pending -> banner entry appears at the top
+    r.send(UP_LONG)
+    r.send(DN_LONG)                                    # back to the root
+    item = r.menu.items()[r.menu.cursor]
+    assert item == ('sub', 'GPS'), item                # not the "Reboot now" entry that shifted into index 0

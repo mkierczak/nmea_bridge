@@ -28,12 +28,13 @@ class Menu(object):
     def __init__(self, cfg, hooks):
         self.cfg = cfg
         self.hooks = hooks
-        self.stack = []              # [(name, cursor, top)] of the parent menus
+        self.stack = []              # [(name, selected item, top)] of the parent menus
         self.name = ''               # '' = root
         self.cursor = 0
         self.top = 0
         self.edit = None             # (key, value before editing)
         self.confirm = None          # (question, callable)
+        self.message = ''            # one-line notice (e.g. 'save failed') shown until the next key
 
     # --- structure -------------------------------------------------------------------------
     def items(self):
@@ -72,6 +73,7 @@ class Menu(object):
     # --- input -----------------------------------------------------------------------------
     def handle(self, event):
         """Process one key event; returns 'close' when the menu should be left, else None."""
+        self.message = ''
         if self.confirm:
             _, action = self.confirm
             if event == UP_LONG:
@@ -93,7 +95,10 @@ class Menu(object):
         elif event == DN_LONG:
             if not self.stack:
                 return 'close'
-            self.name, self.cursor, self.top = self.stack.pop()
+            self.name, item, self.top = self.stack.pop()
+            items = self.items()
+            # restore by identity: the reboot banner may have been added/removed at the top meanwhile
+            self.cursor = items.index(item) if item in items else 0
         self._scroll()
         return None
 
@@ -108,7 +113,7 @@ class Menu(object):
     def _select(self, item):
         kind = item[0]
         if kind == 'sub':
-            self.stack.append((self.name, self.cursor, self.top))
+            self.stack.append((self.name, item, self.top))
             self.name, self.cursor, self.top = item[1], 0, 0
         elif kind == 'wifi':
             self.hooks['wifi_toggle']()
@@ -118,9 +123,26 @@ class Menu(object):
             key = item[1]
             if S.spec(key)[2] == S.BOOL:
                 self._set(key, not self.cfg.get(key))
-                self.cfg.save()
+                self._save()
             else:
                 self.edit = (key, self.cfg.get(key))
+
+    def _save(self):
+        """Persist the settings; a full or read-only filesystem must not take the menu (or the loop) down."""
+        try:
+            self.cfg.save()
+            return True
+        except OSError:
+            self.message = 'save failed'   # the change stays active until the next reboot
+            return False
+
+    def cancel(self):
+        """Abandon an unconfirmed edit and any dialog (used when the menu times out)."""
+        if self.edit:
+            key, original = self.edit
+            self._set(key, original)
+            self.edit = None
+        self.confirm = None
 
     def _set(self, key, value):
         if self.cfg.set(key, value) and S.spec(key)[4] == S.LIVE:
@@ -132,7 +154,7 @@ class Menu(object):
             direction = 1 if event == UP_SHORT else -1
             self._set(key, S.next_value(key, self.cfg.get(key), direction))
         elif event == UP_LONG:
-            self.cfg.save()
+            self._save()
             self.edit = None
         elif event == DN_LONG:
             self._set(key, original)
@@ -157,4 +179,4 @@ class Menu(object):
             label, value = self._row(items[idx])
             line = label[:15 - len(value)].ljust(15 - len(value)) + value
             oled.text(('>' if idx == self.cursor else ' ') + line, 0, 11 + 10 * i, 1)
-        oled.text(EDIT_HINT if self.edit else BROWSE_HINT, 0, 56, 1)
+        oled.text(self.message or (EDIT_HINT if self.edit else BROWSE_HINT), 0, 56, 1)

@@ -18,7 +18,7 @@ All pins and rates are constants at the top of `main.py`.
 
 ## Deploy
 `make deploy` (uses `mpremote`) copies `main.py`, `NMEA.py`, `l76x.py`, `screens.py`, `jamming.py`, `spoofing.py`, `wifi.py`, `wificreds.py`,
-`settings.py`, `nav.py`, `menu.py`, `sh1107.py`, `writer.py` and the font modules to the Pico. `main.py` runs on boot.
+`settings.py`, `nav.py`, `menu.py`, `bridge.py`, `ui.py`, `sh1107.py`, `writer.py` and the font modules to the Pico. `main.py` runs on boot.
 
 `make deploy-mpy` precompiles the modules with `mpy-cross` and deploys `.mpy` files instead (less RAM to
 load them, faster boot; `mpy-cross` must match the firmware version). With `DEBUG` on, the free/used heap
@@ -151,10 +151,28 @@ own jamming detector (`$PMTK838,1`, reports `$PMTKSPF`) also feeds the jamming i
 Module replies to the configuration commands (`$PMTK001`: 251 baud, 286 AIC, 353 search mode, 838
 jamming detector) are printed when `DEBUG` is on.
 
-## Watchdog
-The watchdog is armed when the first GPS sentence arrives (so there is no reboot loop on the bench
-without a GPS) and is fed only while sentences keep arriving. If nothing arrives for
-`GPS_SILENCE_TIMEOUT` (30 s) afterwards, the board resets.
+## Reliability
+The radio path is deliberately separated from everything else (`bridge.py`, tested on a desktop):
+- **Forwarding never depends on the display parser.** A sentence with a correct checksum is forwarded
+  even if a field of it could not be read for the display (counted in `parse_errors`, not as invalid).
+- **Failures are contained.** Detectors, Wi-Fi, logging and statistics each run inside a guard: an
+  exception is counted, shown on the REPL, and after repeated failures the part is switched off for 30 s
+  and retried. The UI loop is independent of the radio path. Only a persistently failing sentence path
+  (20 consecutive unexpected failures) resets the board.
+- **Stale positions are not sent.** After a stall (Wi-Fi start, flash write) RMC/GGA sentences that waited
+  more than 3 s are dropped instead of being sent late as if they were current.
+- **Watchdog.** It is armed by the first *checksum-valid* GPS sentence (line noise never arms it, and a
+  bench without a GPS does not reboot-loop) and is fed only while valid sentences keep arriving
+  (`GPS_SILENCE_TIMEOUT_MS`, 30 s, in `bridge.py`) and the GPS thread is healthy.
+- **GPS thread.** It catches and reports its own exceptions and restarts (backing off 1 s). If it is dead
+  before the first sentence the board resets after 5 s. If no valid sentence arrives for 30 s it looks for
+  the module again (baud probe plus configuration), at most once a minute: a module that was power-cycled
+  falls back to 9600 baud and its default settings.
+- **Buttons** are debounced (30 ms); a release without a recorded press is ignored; the Wi-Fi gesture
+  (hold UP 3 s) is only a long press inside the menu.
+- **Saving settings** on a full or read-only filesystem shows `save failed` instead of crashing; the
+  change stays active until the next reboot. Settings and the Wi-Fi password file are written via a
+  temporary file and rename.
 
 ## Tests
 The parser has no hardware dependency; run on a desktop:

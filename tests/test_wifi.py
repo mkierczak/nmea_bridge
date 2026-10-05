@@ -187,7 +187,7 @@ def test_reset_client_dropped_others_unaffected():
     assert good.sent == b'$X*00\r\n'
 
 
-def test_slow_client_dropped_after_strikes_without_blocking():
+def test_blocked_client_dropped_after_strikes_without_blocking():
     b, net, sock, tcp, udp = started()
     slow, fine = FakeConn('eagain'), FakeConn()
     tcp.pending.extend([slow, fine])
@@ -197,12 +197,39 @@ def test_slow_client_dropped_after_strikes_without_blocking():
     assert b.client_count == 2 and not slow.closed
     b.send('$X*00\r\n')
     assert slow.closed and b.client_count == 1
-    partial = FakeConn('partial')
-    tcp.pending.append(partial)
+    assert fine.sent == b'$X*00\r\n' * wifi.STRIKES_MAX
+
+
+def test_partial_sends_never_cut_a_sentence_in_the_middle():
+    b, net, sock, tcp, udp = started()
+    conn = FakeConn('partial')                       # accepts 3 bytes per send call
+    tcp.pending.append(conn)
+    b.poll()
+    stream = b''
+    for i in range(3):
+        line = '$GPGGA,%d*00\r\n' % i
+        stream += line.encode()
+        b.send(line)
+    assert stream.startswith(conn.sent)              # what arrived is an exact, gap-free prefix of the stream
+    assert len(conn.sent) == 9 and not conn.closed   # 3 calls x 3 bytes, the rest is queued, not lost
+    conn.mode = 'ok'                                 # the client recovers: the backlog is flushed first
+    b.send('$LAST*00\r\n')
+    assert conn.sent == stream + b'$LAST*00\r\n'
+
+
+def test_client_that_never_catches_up_is_dropped_on_backlog_or_strikes():
+    b, net, sock, tcp, udp = started()
+    conn = FakeConn('partial')
+    tcp.pending.append(conn)
     b.poll()
     for _ in range(wifi.STRIKES_MAX):
         b.send('$X*00\r\n')
-    assert partial.closed
+    assert conn.closed and b.client_count == 0
+    big = FakeConn('eagain')
+    tcp.pending.append(big)
+    b.poll()
+    b.send('x' * (wifi.PENDING_MAX + 1))             # a single batch larger than the cap
+    assert big.closed
 
 
 def test_stop_closes_everything_and_send_is_noop():

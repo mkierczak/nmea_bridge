@@ -157,9 +157,13 @@ class Settings(object):
             json.dump(overrides, f)
         try:
             os.rename(tmp, self.path)
-        except OSError:  # some filesystems refuse to overwrite
-            self._remove(self.path)
-            os.rename(tmp, self.path)
+        except OSError as e:
+            if e.args and e.args[0] == 17:  # EEXIST: this filesystem cannot rename over a file (FAT)
+                self._remove(self.path)
+                os.rename(tmp, self.path)
+            else:                            # anything else: keep the old file, drop the temp file
+                self._remove(tmp)
+                raise
 
     def reset(self):
         self.values = dict(self.defaults)
