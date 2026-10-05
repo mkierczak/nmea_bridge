@@ -107,6 +107,8 @@ truncated sentences, raise `GPS_BAUDRATE` or use `GNSS_MODE = 'GPS'`. The spoofi
 widens its tolerance by the worst-case line time of a cycle so this delay does not raise false alarms.
 
 ## Jamming / signal-degradation indicator
+Full algorithm description: [docs/jamming-detection.md](docs/jamming-detection.md).
+
 `jamming.py` watches per-satellite C/N0 from GSV and the fix status, learns a baseline of normal
 conditions, and shows `OK` / `LOW` / `JAM?` at the top right of the main screen (blank while the
 baseline is still being learned). Details (mean vs baseline C/N0, tracked satellites, reason letters
@@ -118,7 +120,9 @@ enable Active Interference Cancellation (`$PMTK286,1`); the debug screen shows `
 `AIC-` (rejected) or `AIC?` (no reply, probably unsupported on the L76B).
 
 ## Spoofing-suspicion indicator
-`spoofing.py` raises `SPF?` (suspect) or `SPF!` (alert, latched for 10 min) at the top right of the
+Full algorithm description: [docs/spoofing-detection.md](docs/spoofing-detection.md).
+
+`spoofing.py` raises `SPF?` (suspect) or `SPF!` (alert, held for about 11 min) at the top right of the
 main screen. It is **heuristic**: the L76B gives NMEA only (no raw measurements, no RAIM, no signal
 authentication), so a careful spoofer (smooth drift, consistent time, realistic power) will pass.
 Treat it as "spoofing suspected", never as proof or protection. Indicators (letters on the debug
