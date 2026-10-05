@@ -43,6 +43,8 @@ to settings you never touched. `FORWARD_TYPES` (default RMC, GGA, GSA, GSV, ZDA)
 types are forwarded to the radio and over Wi-Fi; the display always uses all parsed sentences.
 
 ## Controls and menu
+
+Every page and menu item, with the meaning of each displayed value: [docs/screens.md](docs/screens.md).
 Two keys, classified when released: short (< 1 s) and long (>= 1 s).
 
 | | UP | DOWN |
