@@ -5,7 +5,7 @@ FILES = main.py NMEA.py l76x.py screens.py jamming.py spoofing.py wifi.py wificr
 # Modules that can be precompiled (everything except main.py); roboto14 is the font main.py imports
 MPY_MODULES = NMEA l76x screens jamming spoofing wifi wificreds settings nav menu bridge ui linkcalc sh1107 writer roboto14
 
-.PHONY: deploy deploy-mpy mpy test lint docs-check check version
+.PHONY: deploy deploy-mpy mpy test lint docs-check check check-clean version
 
 # version.py is generated (and git-ignored): the git revision shown on the System page
 version:
@@ -39,3 +39,10 @@ docs-check:
 # Everything CI runs on every push (see .github/workflows/test.yml)
 check: test lint docs-check mpy
 	mpy-cross -o build/main.mpy main.py
+
+# `make check` inside a clean copy of the repository files (tracked plus untracked-but-not-ignored): catches
+# anything that only works because of generated or ignored files in your working tree, as CI would see it
+check-clean:
+	rm -rf build/clean && mkdir -p build/clean
+	git ls-files -co --exclude-standard | tar -cf - -T - | tar -xf - -C build/clean
+	$(MAKE) -C build/clean check

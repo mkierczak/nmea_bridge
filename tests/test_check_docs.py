@@ -44,3 +44,9 @@ def test_code_blocks_are_not_checked_and_external_links_are_ignored():
 
 def test_the_real_docs_are_clean():
     assert check_docs.main() == 0
+
+
+def test_generated_files_may_be_mentioned_but_other_missing_files_may_not():
+    assert 'version.py' in check_docs.GENERATED
+    assert check_text('# T\nThe System page shows `version.py` after `make deploy`.\n') == []
+    assert len(check_text('# T\nSee `not_generated_and_missing.py`.\n')) == 1

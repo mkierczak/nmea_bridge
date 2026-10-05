@@ -200,6 +200,7 @@ The logic is hardware-free and tested on a desktop. Install the tools once and r
     pip install -r requirements-dev.txt
     make check          # pytest, ruff, documentation link check, mpy-cross compile of all modules
 
-or individually `make test`, `make lint`, `make docs-check`, `make mpy`. `tools/mpy_smoke.py` runs the
+or individually `make test`, `make lint`, `make docs-check`, `make mpy`. `make check-clean` runs `make check` in a
+clean copy of the repository files, the way CI sees them (generated files such as `version.py` are absent). `tools/mpy_smoke.py` runs the
 same pure logic under real MicroPython (`micropython tools/mpy_smoke.py`, unix port); CI runs it as a
 non-blocking job.

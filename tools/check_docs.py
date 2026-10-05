@@ -7,6 +7,8 @@ import sys
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 SEARCH_DIRS = ('', 'tools', 'tests', 'docs')
+# Files the docs may mention although a clean checkout does not contain them (generated, git-ignored)
+GENERATED = ('version.py',)
 
 
 def slug(heading):
@@ -47,6 +49,8 @@ def check(path):
             problems.append('missing anchor: #' + anchor)
     for m in re.finditer(r'`([A-Za-z0-9_./-]+\.py)`', prose):
         name = m.group(1)
+        if name in GENERATED:
+            continue
         if not any(os.path.exists(os.path.join(ROOT, d, name)) for d in SEARCH_DIRS) and \
                 not os.path.exists(os.path.normpath(os.path.join(here, name))):
             problems.append('mentions a file that does not exist: ' + name)
