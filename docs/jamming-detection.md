@@ -91,19 +91,16 @@ valid GGA/RMC has been received yet, or the last valid position is older than `F
 ```
 every JAM_EVAL_PERIOD (2 s) the main loop calls evaluate(now, fix_ok)
 
- new GSV cycle completed?  --no-->  data stale for >= STALE_MS (20 s) and baseline valid?
-        | yes                                   | no -> return unchanged state
-        v                                       | yes -> treat as "0 satellites tracked"
- tracked, mean = cn0_stats()   <----------------+
+ new settled GSV cycle, or new module status?  --no-->  data stale for >= STALE_MS (20 s)
+        | yes                                    and baseline valid?   | no -> return unchanged state
+        v                                                              | yes -> treat as "0 satellites tracked"
+ tracked, mean = cn0_stats()   <---------------------------------------+
         |
         v
- baseline valid? --no--> learn(tracked, mean) -> return INIT
-        | yes
-        v
- indicators:  C = mean    < baseline_mean - CN0_DROP_DB
-              N = tracked < TRACKED_DROP_FRACTION * baseline_tracked
-              F = no fix  AND  satellites in view >= HIGH_VIEW_MIN
-              M = module reports warning/critical
+ indicators:  F = no fix  AND  satellites in view >= HIGH_VIEW_MIN                     (always)
+              M = module reports warning/critical                                      (always)
+              C = mean    < baseline_mean - CN0_DROP_DB          (only with a valid baseline)
+              N = tracked < TRACKED_DROP_FRACTION * baseline_tracked   (only with a valid baseline)
         |
         v
  raw level (0 OK / 1 LOW / 2 JAM) from the indicators      (section 5.4)
@@ -113,7 +110,7 @@ every JAM_EVAL_PERIOD (2 s) the main loop calls evaluate(now, fix_ok)
                         better for EXIT_CYCLES in a row -> state improves   (section 5.5)
         |
         v
- level OK and nothing bad -> slowly update the baseline (EMA)             (section 5.2)
+ healthy sample -> learn it into the baseline (running mean, then slow EMA)   (section 5.2)
 ```
 
 ## 5. The algorithm step by step
@@ -121,11 +118,17 @@ every JAM_EVAL_PERIOD (2 s) the main loop calls evaluate(now, fix_ok)
 ### 5.1 Sampling
 
 `main.py` calls `JamDetector.evaluate(now_ms, fix_ok)` every `JAM_EVAL_PERIOD` (2 s). The call does
-real work only when the parser's `cn0_version` has changed since the previous call (a GSV cycle
-completed) or when data has gone stale (5.6). Multiple GSV completions between two calls count as
-**one** sample. With the default settings one sample therefore arrives roughly every 4-5 s, and
-every "cycle" count below (`ENTER_CYCLES`, `EXIT_CYCLES`, `BASELINE_MIN_SAMPLES`) is measured in such
-samples.
+real work only when the parser has new GSV data **that has settled** (a cycle completed and no
+constellation finished another one for `GSV_SETTLE_MS`, 800 ms, so GPS and BeiDou are evaluated
+together, once, instead of twice on half-updated data), when the module reported a new
+`$PMTKSPF` status, or when data has gone stale (5.6). With the default settings one sample therefore
+arrives roughly every 4-5 s (plus up to 2 s of polling delay), and every "cycle" count below
+(`ENTER_CYCLES`, `EXIT_CYCLES`, `BASELINE_MIN_SAMPLES`) is measured in such samples.
+
+The parser also protects the input: a GSV cycle with a lost or out-of-order message is discarded as a
+whole (it never produces a short, misleading "complete" cycle), and the data of a constellation that
+has not completed a cycle for 20 s (`TALKER_TTL_MS`) is dropped, so a silent constellation's last
+values do not linger.
 
 ### 5.2 The baseline: learning what "normal" is
 
@@ -149,8 +152,12 @@ otherwise    :  a = 1 / (samples + 1)
 samples += 1
 ```
 
-While the baseline is not valid the state is `INIT` and **no alert can be raised**. This takes about
-25 s of good data after boot (5 samples x 4-5 s).
+While the baseline is not valid the state is `INIT`, and the **C and N indicators cannot be raised**
+(there is nothing to compare with). The F and M indicators *are* evaluated during this time, so a unit
+that boots under interference (no fix with many satellites overhead, or the module reporting a warning or
+critical state) shows `LOW` or `JAM?` instead of staying blank. A sample on which F or M is active is
+never learned into the baseline. Learning the baseline takes about 25 s of good data after boot
+(5 samples x 4-5 s).
 
 **Steady state.** Once valid, the baseline keeps adapting slowly with an exponential moving average
 (`BASELINE_ALPHA = 0.05`, i.e. about 20 samples of memory, roughly 100 s):
@@ -313,7 +320,7 @@ mitigation, not a detector, and it does not help against wide-band jamming.
 | Antenna cable fault, loose connector | `LOW`/`JAM?` | Same. Actually a useful fault detector. |
 | Own electronics (Wi-Fi radio, switching supplies, VHF/AIS transmitters near the antenna) | `LOW`/`JAM?` or a lower baseline | Local interference is real interference. Compare C/N0 with the equipment on and off. |
 | Slow, steady degradation over hours | Not detected | The baseline follows it (EMA). |
-| Jamming that is already present when the system starts | Not detected as a change; baseline learns the degraded state | There is no earlier "normal" to compare with. The module's own detector (M) and the F indicator can still help. |
+| Jamming that is already present when the system starts | C and N cannot fire (no earlier "normal"), and the baseline learns the degraded state if the receiver still gets a fix | The F and M indicators work from the first sample: no fix with many satellites in view, or the module's own warning, raises `LOW`/`JAM?` immediately. |
 | Narrow-band jamming absorbed by AIC | Little or no effect on C/N0 -> no alarm | Nothing to see; that is the point of AIC. |
 | Very short bursts (< `ENTER_CYCLES` samples, ~10 s) | Not shown | Debounce. Lower `Jam enter` to catch them (more false alarms). |
 | Jamming plus spoofing (jam to break lock, then spoof) | Jamming indicator fires first; spoofing detector may follow | See [spoofing detection](spoofing-detection.md); the two run independently. |
@@ -325,8 +332,8 @@ mitigation, not a detector, and it does not help against wide-band jamming.
   in its usual, clear position. A baseline taken during interference makes the detector blind to it.
 * **Thresholds are first guesses** that have not been validated against real recordings. Record logs
   and use `tools/replay.py` (section 12) before trusting the alarms operationally.
-* **Sampling is coarse** (about one sample per 4-5 s). The state therefore changes in steps of
-  that size and short events can be missed.
+* **Sampling is coarse** (about one sample per 4-5 s, plus up to 2 s polling delay). The state therefore
+  changes in steps of that size and short events can be missed.
 * **Averages hide details.** `mean` is over all tracked satellites of all talkers. A constellation-specific
   effect (only BeiDou affected) is attenuated; the Signal page shows the per-constellation means for
   manual inspection.

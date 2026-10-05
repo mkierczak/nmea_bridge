@@ -228,3 +228,87 @@ def test_time_tolerance_is_configurable():
     sim.det.time_tolerance_ms = 2000                      # e.g. slow GPS link delaying RMC
     sim.warm()
     assert sim.fix(gps_dt=0.8 + 1.0) == spoofing.OK
+
+
+def test_s3_baseline_relearns_after_a_sustained_change():
+    sim = Sim()
+    sim.warm()
+    for _ in range(3):                                      # cold-start ramp: weak signals first
+        gsv(sim.p, [22, 21, 23, 22, 20, 24, 22, 21])
+        sim.local_ms += 5000
+        sim.det.evaluate(sim.local_ms)
+    for _ in range(40):                                     # then the normal sky level, for good
+        gsv(sim.p, [48, 44, 41, 38, 35, 31, 28, 25])
+        sim.local_ms += 5000
+        sim.det.evaluate(sim.local_ms)
+    assert 'S3' not in sim.det.active_codes()               # the old code flagged S3 for the whole run
+    assert abs(sim.det._mean_base - 36.25) < 1.0
+
+
+def test_s3_rise_still_flags_before_the_rebase():
+    sim = Sim()
+    sim.warm()
+    for _ in range(spoofing.BASELINE_MIN_SAMPLES + 2):
+        gsv(sim.p, [30, 29, 31, 28, 32, 27, 30, 29])
+        sim.det.evaluate(sim.local_ms)
+    gsv(sim.p, [45, 44, 46, 43, 47, 42, 45, 44])
+    sim.det.evaluate(sim.local_ms)
+    assert 'S3' in sim.det.active_codes()
+
+
+def test_baselines_do_not_learn_during_warmup():
+    sim = Sim()
+    for _ in range(5):
+        sim.fix()
+        gsv(sim.p, [40, 38, 42, 36, 41, 39, 37, 40])
+        sim.det.evaluate(sim.local_ms)
+    assert not sim.det.armed and sim.det._mean_samples == 0
+
+
+def test_circling_does_not_flag_k2_but_unexplained_movement_does():
+    import math
+    sim = Sim()
+    sim.warm()
+    center_lat, center_lon = sim.lat, sim.lon
+    states = []
+    for i in range(30):                                     # 15 m radius circle at a reported 12 kn
+        ang = i * 0.8 / 15.0 * 6.17
+        sim.lat = center_lat + 15 * math.sin(ang) / 111320.0
+        sim.lon = center_lon + 15 * math.cos(ang) / (111320.0 * math.cos(math.radians(59.0)))
+        states.append(sim.fix(east_kn=0.0, sog=12.0))
+    assert set(states) == {spoofing.OK}, states
+    assert 'K2' not in sim.det.active_codes()
+    sim2 = Sim()                                            # control: low reported speed still flags
+    sim2.warm()
+    assert spoofing.SUSPECT in [sim2.fix(east_kn=30.0, sog=0.0) for _ in range(20)]
+
+
+def test_antimeridian_crossing_is_not_a_jump():
+    a = (0, 107999970, 0, 0)                                # 179.99995 degrees east
+    b = (0, -107999970, 0, 800)                             # 179.99995 degrees west
+    assert 5 < spoofing._dist_m(a, b) < 20                  # about 11 m the short way round
+    sim = Sim(lat=0.0, lon=179.99995)
+    sim.warm()                                              # the boat sails east and passes 180 degrees
+    sim.lon -= 360.0                                        # same place, written as west longitude
+    states = [sim.fix(), sim.fix(), sim.fix()]
+    assert set(states) == {spoofing.OK}, states
+
+
+def test_gps_and_beidou_are_evaluated_together_once_per_cycle():
+    sim = Sim()
+    sim.warm()
+    calls = {'n': 0}
+    original = sim.det._on_gsv
+
+    def counted(now):
+        calls['n'] += 1
+        return original(now)
+    sim.det._on_gsv = counted
+    t = sim.local_ms
+    gsv(sim.p, [45, 40, 36, 30, 28, 25, 22, 20], talker='GP', rx_ms=t)
+    sim.det.evaluate(t + 100)
+    gsv(sim.p, [43, 38, 34, 28], talker='BD', rx_ms=t + 300)
+    sim.det.evaluate(t + 400)
+    assert calls['n'] == 0                                  # still settling
+    sim.det.evaluate(t + 300 + 800)
+    assert calls['n'] == 1                                  # one evaluation with both constellations

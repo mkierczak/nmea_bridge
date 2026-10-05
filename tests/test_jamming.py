@@ -15,14 +15,14 @@ def with_checksum(body):
     return '${}*{:02X}'.format(body, csum)
 
 
-def gsv(parser, cn0_list, talker='GP', in_view=None):
+def gsv(parser, cn0_list, talker='GP', in_view=None, rx_ms=None):
     """Feed one complete GSV cycle with the given per-satellite C/N0 values."""
     groups = [cn0_list[i:i + 4] for i in range(0, len(cn0_list), 4)] or [[]]
     in_view = len(cn0_list) if in_view is None else in_view
     for m, group in enumerate(groups, 1):
         fields = ''.join(',{:02d},40,083,{}'.format(i + 1, c if c else '') for i, c in enumerate(group))
         assert parser.parse_sentence(with_checksum(
-            '{}GSV,{},{},{:02d}{}'.format(talker, len(groups), m, in_view, fields)))
+            '{}GSV,{},{},{:02d}{}'.format(talker, len(groups), m, in_view, fields)), rx_ms)
 
 
 class Clock:
@@ -143,3 +143,44 @@ def test_stale_detection_survives_ticks_wrap():
     finally:
         if saved is not None:
             jamming._ticks_diff = saved
+
+
+def test_jamming_at_boot_without_fix_is_not_hidden_by_missing_baseline():
+    p = NMEA.Parser()
+    det = JamDetector(p)
+    p.parse_sentence(with_checksum('PMTKSPF,3'))            # the module reports a critical state
+    states = []
+    for i in range(6):
+        gsv(p, [0] * 9, in_view=9)                          # nine satellites overhead, none tracked
+        states.append(det.evaluate(4000 * (i + 1), False)[0])
+    assert states[0] == jamming.INIT and states[-1] == jamming.JAM, states
+    assert 'F' in det.reason and 'M' in det.reason
+    assert det.samples == 0                                 # trouble is never learned as "normal"
+
+
+def test_module_warning_alone_shows_low_before_baseline_and_clears():
+    p = NMEA.Parser()
+    det = JamDetector(p)
+    p.parse_sentence(with_checksum('PMTKSPF,2'))
+    for i in range(3):
+        gsv(p, [40, 38, 42, 36, 41, 39, 37, 40])
+        state = det.evaluate(4000 * (i + 1), True)[0]
+    assert state == jamming.LOW and det.reason == 'M'
+    p.parse_sentence(with_checksum('PMTKSPF,1'))            # healthy again
+    for i in range(3, 3 + jamming.EXIT_CYCLES + 1):
+        gsv(p, [40, 38, 42, 36, 41, 39, 37, 40])
+        state = det.evaluate(4000 * (i + 1), True)[0]
+    assert state == jamming.INIT and det.samples >= 1       # back to learning
+
+
+def test_gps_and_beidou_are_one_sample_per_settled_cycle():
+    p = NMEA.Parser()
+    det = JamDetector(p)
+    gsv(p, [40, 38, 42, 36], talker='GP', rx_ms=1000)
+    gsv(p, [39, 37, 41, 35], talker='BD', rx_ms=1300)       # BeiDou finishes 300 ms after GPS
+    det.evaluate(1500, True)
+    assert det.samples == 0                                 # not settled yet: no half-updated sample
+    det.evaluate(2200, True)
+    assert det.samples == 1
+    det.evaluate(2400, True)
+    assert det.samples == 1                                 # and it is not counted twice

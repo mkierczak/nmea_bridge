@@ -35,6 +35,7 @@ class JamDetector(object):
         self.base_tracked = 0.0
         self.samples = 0
         self._seen_version = parser.cn0_version
+        self._seen_spf = parser.spf_version
         self._last_gsv_ms = None
         self._up = 0
         self._down = 0
@@ -45,7 +46,10 @@ class JamDetector(object):
 
     @property
     def state(self):
-        return _STATES[self.level] if self.baseline_valid else INIT
+        if self.baseline_valid:
+            return _STATES[self.level]
+        # before the baseline exists only F (no fix, sky full of satellites) and M (module) can speak
+        return _STATES[self.level] if self.level > 0 else INIT
 
     def label(self):
         """Short text for the main screen; blank until the baseline is trusted."""
@@ -55,33 +59,37 @@ class JamDetector(object):
         return (self.state, self.reason, round(self.base_mean), round(self.base_tracked))
 
     def evaluate(self, now_ms, fix_ok):
-        """Call periodically. Only acts once per completed GSV cycle (or when data goes stale)."""
+        """Call periodically. Acts once per settled GSV cycle, on a new module status, or when data
+        goes stale; otherwise returns the current state unchanged."""
         p = self.parser
-        fresh = p.cn0_version != self._seen_version
+        fresh = p.cn0_version != self._seen_version and p.cn0_settled(now_ms)
+        module_new = p.spf_version != self._seen_spf
+        stale = False
         if fresh:
             self._seen_version = p.cn0_version
             self._last_gsv_ms = now_ms
-        elif (self._last_gsv_ms is None or
-              _ticks_diff(now_ms, self._last_gsv_ms) < STALE_MS or not self.baseline_valid):
-            return self.state, self.reason
-        else:
+        elif not module_new:
+            if (self._last_gsv_ms is None or _ticks_diff(now_ms, self._last_gsv_ms) < STALE_MS
+                    or not self.baseline_valid):
+                return self.state, self.reason
             self._last_gsv_ms = now_ms  # count a stale period once per STALE_MS
+            stale = True
+        self._seen_spf = p.spf_version
 
-        tracked, mean, _ = p.cn0_stats() if fresh else (0, 0, 0)
-        if not self.baseline_valid:
-            self._learn(tracked, mean, fix_ok)
-            return self.state, self.reason
-
-        c = mean < self.base_mean - CN0_DROP_DB
-        n = tracked < TRACKED_DROP_FRACTION * self.base_tracked
+        tracked, mean, _ = (0, 0, 0) if stale else p.cn0_stats()
         f = (not fix_ok) and p.birds_in_view >= HIGH_VIEW_MIN
+        m = p.module_jam_status  # $PMTKSPF from the module's own detector: 2 warning, 3 critical
+        if self.baseline_valid:
+            c = mean < self.base_mean - CN0_DROP_DB
+            n = tracked < TRACKED_DROP_FRACTION * self.base_tracked
+        else:
+            c = n = False  # nothing to compare with yet
         if (c and n) or (f and (c or n)):
             level = 2
         elif c or n or f:
             level = 1
         else:
             level = 0
-        m = p.module_jam_status  # $PMTKSPF from the module's own detector: 2 warning, 3 critical
         if m >= 2:
             level = max(level, 1 if m == 2 else 2)
         self.reason = ('C' if c else '') + ('N' if n else '') + ('F' if f else '') + ('M' if m >= 2 else '')
@@ -99,7 +107,10 @@ class JamDetector(object):
         else:
             self._up = self._down = 0
 
-        if level == 0 and self.level == 0 and fix_ok and tracked > 0:
+        if self.baseline_valid:
+            if level == 0 and self.level == 0 and fix_ok and tracked > 0:
+                self._learn(tracked, mean, fix_ok)
+        elif not f and m < 2:  # never learn "normal" from a sample that already looks like trouble
             self._learn(tracked, mean, fix_ok)
         return self.state, self.reason
 

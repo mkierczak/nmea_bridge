@@ -107,7 +107,8 @@ distance = sqrt(dlat^2 + dlon^2)
 ```
 
 adequate for the tens of kilometres these checks cover (the longest compared gap is 10 min at
-60 kn, about 18 km).
+60 kn, about 18 km). The longitude difference is wrapped to +/-180 degrees, so a vessel crossing the
+antimeridian is not mistaken for one that jumped across the planet.
 
 ## 4. Architecture at a glance
 
@@ -121,7 +122,7 @@ GPS thread (core 1)              main loop (core 0)
 evaluate(now):
    new RMC fix?        -> _on_fix      : T1, K1, K2   (kinematics, once per fix)
    new GGA altitude?   -> _on_altitude : K3
-   new GSV cycle done? -> _on_gsv      : S1, S2, S3, C1  (signal statistics)
+   new GSV cycle settled? -> _on_gsv   : S1, S2, S3, C1  (signal statistics, once per cycle)
    _update_state(now)  -> prune evidence older than WINDOW_MS, apply decision rule, latch
 ```
 
@@ -131,7 +132,15 @@ is then derived from the set of codes younger than 60 s.
 **Warm-up (armed).** Indicators are ignored until `WARMUP_FIXES` (30) valid fixes have been seen
 since boot (about 30 s at 1 Hz). A receiver's first fixes after a cold start can be coarse and then
 jump as the solution converges; flagging that would be a false alarm. The statistical baselines
-(S3, C1) *do* learn during warm-up; only the flagging is suppressed.
+(S3, C1) do **not** learn during warm-up either: a receiver that is still acquiring satellites
+would otherwise set the baseline (the first samples are often unrepresentative).
+
+**One evaluation per settled GSV cycle.** `_on_gsv` runs only once a cycle has *settled*: a GSV cycle
+counts as finished when no constellation completed another one for `GSV_SETTLE_MS` (800 ms). With GPS+BeiDou
+both constellations are therefore evaluated together, once per cycle, on complete data (the earlier
+behaviour was one evaluation per constellation on half-updated data). The parser also discards a GSV cycle
+with a lost or out-of-order message and drops the data of a constellation that has been silent for
+20 s (`TALKER_TTL_MS`), so a partial or dead constellation never reaches the detector.
 
 ## 5. The indicators in detail
 
@@ -223,13 +232,16 @@ the position change with the mean of the reported SOG values sampled in that win
 ```
 implied = distance(anchor, now) / elapsed * 1.943844            [kn]
 sog     = mean of RMC speeds in the window                      [kn]
-flag K2 if |implied - sog| > max(K2_ABS_KN (3 kn), K2_REL (0.5) * max(implied, sog))
+flag K2 if  implied - sog > max(K2_ABS_KN (3 kn), K2_REL (0.5) * max(implied, sog))
 ```
 
-The window is skipped if it spans more than 3x the window (30 s, a fix gap) and restarts after each
-evaluation. The absolute (3 kn) and relative (50 %) conditions together keep GNSS noise, turning
-manoeuvres and a stationary boat's wander from triggering it. `cog_deg` is not used (direction is not
-compared).
+Only movement that the reported speed does **not explain** is flagged (implied above reported). The
+opposite case, implied below reported, is normal: when a boat circles, turns or zig-zags the straight
+line between the window's endpoints is shorter than the distance sailed, so the chord-based speed is lower
+than SOG. The signature of a position spoof (position moves while the speed stays low) is
+kept. The window is skipped if it spans more than 3x the window (30 s, a fix gap) and restarts after each
+evaluation. The absolute (3 kn) and relative (50 %) conditions together keep GNSS noise from triggering it.
+`cog_deg` is not used (direction is not compared).
 
 ### K3 - altitude step (weak)
 
@@ -270,9 +282,13 @@ C/N0 jumps; and the set of satellites being tracked can change abruptly.
 
 *Rule (two conditions, either flags S3).*
 1. **Power rise.** The mean C/N0 of all tracked satellites (all constellations) exceeds a slowly
-   adapting baseline by more than `CN0_RISE_DB` (8 dB). The baseline is an EMA (`BASELINE_ALPHA`
-   0.05) learned from normal samples; a flagged sample is not learned (no baseline chasing). The
-   comparison is only active after `BASELINE_MIN_SAMPLES` (5) samples.
+   adapting baseline by more than `CN0_RISE_DB` (8 dB). The baseline is a running mean for the first
+   `BASELINE_MIN_SAMPLES` (5) cycles and an EMA (`BASELINE_ALPHA` 0.05) afterwards, learned only
+   once the detector is armed. While S3 fires the flagged samples are not learned (no baseline
+   chasing), but after `REBASE_AFTER` (10) consecutive flagged cycles the new level is accepted as
+   normal and the baseline jumps to it (otherwise a genuine, lasting change, such as the
+   end of a cold-start ramp, would leave S3 firing for the rest of the run). The comparison is only active
+   after `BASELINE_MIN_SAMPLES` samples.
 2. **Set change.** With at least `JACCARD_MIN_SATS` (6) tracked satellites in both the previous and the
    current evaluation, the Jaccard similarity of the two sets `{(talker, PRN)}` is below `JACCARD_MIN`
    (0.5): `|A intersect B| / |A union B|`. Satellites rise and set gradually, so consecutive
@@ -287,8 +303,9 @@ so the detector uses the **difference of the means** relative to a learned basel
 
 *Rule.* With at least `CROSS_MIN_SATS` (3) tracked satellites from both groups (`GP`/`GN` and `BD`/`GB`),
 `offset = mean(GPS C/N0) - mean(BeiDou C/N0)`. After `BASELINE_MIN_SAMPLES` samples, flag C1 when
-`|offset - baseline offset| > CROSS_SHIFT_DB` (8 dB). The baseline is an EMA (alpha 0.05) and flagged
-samples are not learned. Requires `GNSS_MODE = GPS+BD`; with GPS-only there is nothing to compare.
+`|offset - baseline offset| > CROSS_SHIFT_DB` (8 dB). The baseline learns exactly like the S3 baseline
+(running mean, then EMA, only when armed; flagged samples are not learned; rebased after `REBASE_AFTER`
+consecutive flagged cycles). Requires `GNSS_MODE = GPS+BD`; with GPS-only there is nothing to compare.
 
 *Why only statistics and not position.* The L76B outputs one combined position solution; separate
 GPS-only and BeiDou-only positions are not available over NMEA. A time-sliced approach that switches
@@ -365,6 +382,7 @@ live (stored in `settings.json`).
 | `JACCARD_MIN` / `JACCARD_MIN_SATS` | 0.5 / 6 | - | set-change test (S3) |
 | `CROSS_SHIFT_DB` / `CROSS_MIN_SATS` | 8 / 3 | - | GPS-BeiDou offset shift (C1) |
 | `BASELINE_ALPHA` / `BASELINE_MIN_SAMPLES` | 0.05 / 5 | - | statistical baselines (S3, C1) |
+| `REBASE_AFTER` | 10 | - | consecutive flagged cycles after which S3/C1 accept the new level as normal |
 | `WARMUP_FIXES` | 30 | *Warm-up* (`warmup_fixes`, 10-120) | valid fixes before any indicator may fire |
 | `WINDOW_MS` | 60000 | - | how long an indicator counts |
 | `LATCH_MS` | 600000 | *Latch min* (`latch_min`, 1-60 minutes) | ALERT hold time, counted from the end of the 60 s evidence window (so the total is `WINDOW_MS` + `LATCH_MS`) |
@@ -381,8 +399,8 @@ T1 tolerance).
 | K1 | on the **second** fix at the new position (about one fix interval after the jump; 1 s by default) |
 | K3 | on the next GGA with the altitude step |
 | K2 | at the end of the 10 s window (up to about 10-30 s after the movement starts) |
-| S1, S3, C1 | on the next completed GSV cycle (about 4-5 s) |
-| S2 | three evaluations in a row (see note in section 13: about 1.5 GSV cycles with GPS+BeiDou) |
+| S1, S3, C1 | on the next settled GSV cycle (about 4-5 s plus the 0.8 s settling time) |
+| S2 | three settled GSV cycles in a row (about 12-15 s) |
 | Alert clears | about 11 minutes after the last alerting evidence (60 s window + `LATCH_MS` of 10 min); `SUSPECT` clears when the evidence is older than 60 s |
 
 ## 10. Worked examples
@@ -451,16 +469,12 @@ raises the state above `OK`. A second weak indicator (for example S2) would give
 
 ## 13. Known limitations and implementation notes
 
-* **Sampling units for the signal statistics.** `evaluate()` is called after every valid RMC, GGA
-  and GSV sentence, and `_on_gsv` runs whenever a GSV cycle of *any* constellation completes. With
-  GPS+BeiDou that is **twice per GSV cycle** (once after GP, once after BD; verified by test), each
-  time with the other constellation's data from the previous cycle. Consequences: the "samples" for
-  S3/C1 baselines (5) and "evaluations" for S2 (3) are counted per completion, so they take about half
-  as many GSV cycles as the names suggest; the Jaccard comparison sees partly updated sets.
-* **Baselines learn from whatever they see** while no indicator has flagged. Start the device in
-  normal conditions.
-* **Two armed-time subtleties.** Only RMC fixes with status `A` advance the warm-up counter; the
-  statistical baselines keep learning during warm-up but flags are suppressed until armed.
+* **Baselines learn from whatever they see** while no indicator has flagged, once the detector is armed.
+  Start the device in normal conditions. After `REBASE_AFTER` consecutive flagged cycles a lasting change
+  is accepted as the new normal, which also means a spoofer that stays in place long enough stops
+  being flagged by S3/C1 (the strong kinematic indicators and the alert latch are not affected).
+* **Only RMC fixes with status `A` advance the warm-up counter;** until the detector is armed no flag is
+  raised and no statistical baseline is learned.
 * **Position model.** Flat-earth distance (fine at these ranges; less so near the poles).
 * **`cog_deg` is parsed but unused.** Course consistency (COG versus the direction of position change)
   would be a natural extra check.

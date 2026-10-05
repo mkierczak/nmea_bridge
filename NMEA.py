@@ -1,3 +1,14 @@
+try:
+    from utime import ticks_diff as _ticks_diff
+except ImportError:
+    def _ticks_diff(a, b):
+        return a - b
+
+TALKER_TTL_MS = 20 * 1000     # per-talker GSV/GSA data older than this is dropped (talker went silent)
+GSV_SETTLE_MS = 800           # a GSV cycle counts as complete once no talker finished for this long
+_HEX = '0123456789abcdefABCDEF'
+
+
 def _to_units(value, hemisphere, deg_digits):
     """'ddmm.mmmm' / 'dddmm.mmmm' -> signed integer in 1e-4 arc-minutes (exact, no float rounding)."""
     deg = int(value[:deg_digits])
@@ -17,17 +28,16 @@ def _days_from_civil(y, m, d):
 
 
 def valid_checksum(sentence):
-    """True if 'sentence' ('$...*hh') carries a correct XOR checksum."""
-    body, star, cksum = sentence.partition('*')
-    if not star:
+    """True if 'sentence' ('$...*hh') has exactly two hex digits after '*' matching the XOR of the body."""
+    if not sentence.startswith('$'):
+        return False
+    body, star, cksum = sentence[1:].partition('*')
+    if not star or len(cksum) != 2 or cksum[0] not in _HEX or cksum[1] not in _HEX:
         return False
     csum = 0
-    for c in body.replace('$', ''):
+    for c in body:
         csum ^= ord(c)
-    try:
-        return csum == int(cksum.strip(), 16)
-    except ValueError:
-        return False
+    return csum == int(cksum, 16)
 
 
 class Parser(object):
@@ -60,6 +70,8 @@ class Parser(object):
         self.sentences_invalid = 0
         self.sentences_parsed = 0
         self.sentences_ignored = 0
+        self.parse_errors = 0       # valid envelope but a field the display parser could not read
+        self.sentence_last_error_type = ''
         self.sentence_last_parsed_type = ''
         self.sentence_last_valid_type = ''
         self.sentence_last_invalid_type = ''
@@ -72,6 +84,11 @@ class Parser(object):
         self.module_jam_status = 0  # $PMTKSPF: 0 unknown, 1 healthy, 2 warning, 3 critical
         self.sats_by_talker = {}    # talker -> [(prn, elevation or None, cn0)] of last complete GSV cycle
         self._sats_partial = {}
+        self._gsv_next = {}         # talker -> next expected GSV message number (0 = wait for message 1)
+        self._cn0_ms = {}           # talker -> rx time of its last completed GSV cycle
+        self._gsa_ms = {}           # talker -> rx time of its last GSA
+        self.cn0_ms = None          # rx time of the last completed GSV cycle (or data expiry), None in tests
+        self.spf_version = 0        # bumped whenever the module reports $PMTKSPF
         self.birds_BD = 0
         # fix data for plausibility checks (valid RMC / GGA only)
         self.fix_count = 0          # bumped on every valid (status A) RMC
@@ -108,30 +125,54 @@ class Parser(object):
                 self.cn0_stats(), self.pmtk_acks.get(286))
 
     def parse_sentence(self, sentence, rx_ms=None):
-        """Parse one sentence. Returns True if it was valid (last_valid_sentence updated).
+        """Parse one sentence. Returns True if the *envelope* is valid ('$', checksum, length): such a
+        sentence is safe to forward (last_valid_sentence holds it, GN rewritten to GP) even when a field
+        of it could not be read for the display, which is only counted in parse_errors.
 
-        rx_ms is the local ticks_ms at which the sentence arrived (used for time checks)."""
+        rx_ms is the local ticks_ms at which the sentence arrived (used for time checks and expiry)."""
         sentence = sentence.strip()
         self._rx_ms = rx_ms
         self.sentences_received += 1
-        if self._validate_nmea(sentence):
-            try:
-                self._dispatch(sentence)
-            except (ValueError, IndexError):
-                # well-formed envelope but broken payload
-                self.sentences_invalid += 1
-                self.sentence_last_invalid_type = sentence[3:6]
-                return False
-            self.sentences_valid += 1
-            self.last_valid_sentence = self._fix_sentence(sentence) + '\r\n'
-            return True
-        self.sentence_last_invalid_type = sentence[3:6]
-        self.sentences_invalid += 1
-        return False
+        if not self._validate_nmea(sentence):
+            self.sentence_last_invalid_type = sentence[3:6]
+            self.sentences_invalid += 1
+            return False
+        self.sentences_valid += 1
+        self.sentence_last_valid_type = sentence[3:6]
+        self.last_valid_sentence = self._fix_sentence(sentence) + '\r\n'
+        try:
+            self._dispatch(sentence)
+        except (ValueError, IndexError):
+            self.parse_errors += 1
+            self.sentence_last_error_type = sentence[3:6]
+        if rx_ms is not None:
+            self._expire(rx_ms)
+        return True
+
+    def cn0_settled(self, now_ms):
+        """True when the last GSV cycle is old enough that all talkers have finished (or no timing known)."""
+        return self.cn0_ms is None or _ticks_diff(now_ms, self.cn0_ms) >= GSV_SETTLE_MS
+
+    def _expire(self, now_ms):
+        """Drop data of talkers that stopped sending so their last values do not linger."""
+        changed = False
+        for talker in list(self._cn0_ms):
+            if _ticks_diff(now_ms, self._cn0_ms[talker]) > TALKER_TTL_MS:
+                for d in (self._cn0_ms, self.cn0_by_talker, self.sats_by_talker, self._view_by_talker,
+                          self._cn0_partial, self._sats_partial, self._gsv_next):
+                    d.pop(talker, None)
+                changed = True
+        if changed:
+            self.birds_in_view = sum(self._view_by_talker.values())
+            self.cn0_version += 1
+            self.cn0_ms = now_ms
+        for talker in list(self._gsa_ms):
+            if _ticks_diff(now_ms, self._gsa_ms[talker]) > TALKER_TTL_MS:
+                del self._gsa_ms[talker]
+                self._set_birds(talker, [])
 
     def _dispatch(self, sentence):
         sentence_type = sentence[3:6]
-        self.sentence_last_valid_type = sentence_type
         handler = self._handlers.get(sentence_type)
         if handler is None:
             self.sentence_last_ignored_type = sentence_type
@@ -204,17 +245,27 @@ class Parser(object):
                          int(el) if el else None,
                          int(payload[base + 3]) if payload[base + 3] else 0))
         cn0 = [c for _, _, c in sats]
-        if msg_no == 1 or talker not in self._cn0_partial:
+        # a GSV cycle is messages 1..total in order; a gap (a lost message) discards the partial cycle
+        if msg_no == 1:
             self._cn0_partial[talker] = []
             self._sats_partial[talker] = []
+            self._gsv_next[talker] = 2
+        elif self._gsv_next.get(talker) == msg_no:
+            self._gsv_next[talker] = msg_no + 1
+        else:
+            self._gsv_next[talker] = 0
+            self._cn0_partial.pop(talker, None)
+            self._sats_partial.pop(talker, None)
+            return
         self._cn0_partial[talker].extend(cn0)
         self._sats_partial[talker].extend(sats)
         if msg_no == total_msgs:
-            self.cn0_by_talker[talker] = self._cn0_partial[talker]
-            self.sats_by_talker[talker] = self._sats_partial[talker]
-            self._cn0_partial[talker] = []
-            self._sats_partial[talker] = []
+            self.cn0_by_talker[talker] = self._cn0_partial.pop(talker)
+            self.sats_by_talker[talker] = self._sats_partial.pop(talker)
+            self._gsv_next[talker] = 0
             self.cn0_version += 1
+            if self._rx_ms is not None:
+                self._cn0_ms[talker] = self.cn0_ms = self._rx_ms
 
     def cn0_stats(self):
         """(tracked satellite count, mean C/N0, max C/N0) over the last complete GSV cycles."""
@@ -228,6 +279,9 @@ class Parser(object):
             self.pmtk_acks[int(payload[1])] = int(payload[2])
         elif payload[0] == '$PMTKSPF':  # module's jamming detector status (PMTK838)
             self.module_jam_status = int(payload[1])
+            self.spf_version += 1
+
+    _SYSTEM_TALKER = {1: 'GP', 2: 'GL', 4: 'BD'}   # NMEA 4.10 GSA system ID -> talker
 
     def _parse_gsa(self, payload):
         mode = int(payload[2])
@@ -235,8 +289,17 @@ class Parser(object):
         self.HDOP = payload[16]
         self.VDOP = payload[17]
         talker = payload[0][1:3]
+        if talker == 'GN' and len(payload) > 18 and payload[18]:
+            # a combined talker with a system ID: count each system on its own so the GSA of one
+            # system does not overwrite the other's
+            talker = self._SYSTEM_TALKER.get(int(payload[18]), 'GN')
         prns = [int(bird) for bird in payload[3:15] if len(bird) > 0]
         self.mode = {2: '2D', 3: '3D'}.get(mode, '')
+        self._set_birds(talker, prns)
+        if self._rx_ms is not None:
+            self._gsa_ms[talker] = self._rx_ms
+
+    def _set_birds(self, talker, prns):
         if talker == 'BD' or talker == 'GB':   # BeiDou (L76B: GPS and BeiDou only)
             self.birds_BD = len(prns)
         elif talker == 'GL':
@@ -263,7 +326,7 @@ class Parser(object):
 
     def _calculate_nmea_checksum(self, sentence):
         tmp = sentence.split('*')
-        chksumdata = tmp[0].replace('$', '')
+        chksumdata = tmp[0][1:] if tmp[0].startswith('$') else tmp[0]
         csum = 0
         for c in chksumdata:
             csum ^= ord(c)

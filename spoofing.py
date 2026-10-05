@@ -44,6 +44,7 @@ CROSS_SHIFT_DB = 8           # GPS-BeiDou mean C/N0 offset change from baseline
 CROSS_MIN_SATS = 3
 BASELINE_ALPHA = 0.05
 BASELINE_MIN_SAMPLES = 5     # GSV cycles before statistical baselines are trusted
+REBASE_AFTER = 10            # consecutive flagged cycles after which the new level is accepted as normal
 WARMUP_FIXES = 30            # valid fixes after boot before any indicator may fire
 WINDOW_MS = 60 * 1000        # indicators count while younger than this
 LATCH_MS = 10 * 60 * 1000    # ALERT stays up this long after the last strong evidence
@@ -57,12 +58,29 @@ _KN_PER_MS = 1.943844        # knots per (m/s)
 _DAY_MS = 86400000
 
 
+_HALF_TURN_U = 108000000     # 180 degrees in 1e-4 arc-minutes
+_FULL_TURN_U = 216000000
+
+
 def _dist_m(a, b):
     """Distance between two (lat_u, lon_u, ...) positions in 1e-4 arc-minutes."""
     dlat = (b[0] - a[0]) * 0.1852
+    dlon_u = b[1] - a[1]
+    if dlon_u > _HALF_TURN_U:       # across the antimeridian the short way round
+        dlon_u -= _FULL_TURN_U
+    elif dlon_u < -_HALF_TURN_U:
+        dlon_u += _FULL_TURN_U
     mid_deg = (a[0] + b[0]) / 1200000.0
-    dlon = (b[1] - a[1]) * 0.1852 * math.cos(math.radians(mid_deg))
+    dlon = dlon_u * 0.1852 * math.cos(math.radians(mid_deg))
     return math.sqrt(dlat * dlat + dlon * dlon)
+
+
+def _learn(base, n, value):
+    """Running mean while the baseline is young, slow EMA afterwards. Returns (base, n)."""
+    if base is None:
+        return value, 1
+    a = BASELINE_ALPHA if n >= BASELINE_MIN_SAMPLES else 1.0 / (n + 1)
+    return base + a * (value - base), n + 1
 
 
 def _dt_ms(a, b):
@@ -114,8 +132,10 @@ class SpoofDetector(object):
         # signal statistics
         self._mean_base = None
         self._mean_samples = 0
+        self._mean_flagged = 0
         self._offset_base = None
         self._offset_samples = 0
+        self._offset_flagged = 0
         self._prev_prns = None
         self._elev_bad = 0
 
@@ -148,7 +168,7 @@ class SpoofDetector(object):
         if p.alt_version != self._alt_seen:
             self._alt_seen = p.alt_version
             self._on_altitude(now_ms)
-        if p.cn0_version != self._cn0_seen:
+        if p.cn0_version != self._cn0_seen and p.cn0_settled(now_ms):
             self._cn0_seen = p.cn0_version
             self._on_gsv(now_ms)
         return self._update_state(now_ms)
@@ -208,7 +228,9 @@ class SpoofDetector(object):
                 if self._sog_n and dt <= 3 * K2_WINDOW_MS:
                     implied = _dist_m(self._anchor, self._trusted) / (dt / 1000.0) * _KN_PER_MS
                     sog = self._sog_sum / self._sog_n
-                    if abs(implied - sog) > max(K2_ABS_KN, K2_REL * max(implied, sog)):
+                    # only movement that the reported speed does not explain: circling or manoeuvring
+                    # makes the chord shorter than the path, which is normal and must not flag
+                    if implied - sog > max(K2_ABS_KN, K2_REL * max(implied, sog)):
                         self._flag('K2', now_ms)
                 self._anchor, self._sog_sum, self._sog_n = self._trusted, 0.0, 0
 
@@ -243,13 +265,15 @@ class SpoofDetector(object):
 
         # S3: sudden power rise, or the set of tracked satellites changes abruptly
         mean = _mean([cn for _, _, _, cn in tracked])
-        rise = (self._mean_samples >= BASELINE_MIN_SAMPLES and mean > self._mean_base + CN0_RISE_DB)
-        if rise:
+        if self._mean_samples >= BASELINE_MIN_SAMPLES and mean > self._mean_base + CN0_RISE_DB:
             self._flag('S3', now_ms)
+            self._mean_flagged += 1
+            if self._mean_flagged >= REBASE_AFTER:   # it stayed: this is the new normal
+                self._mean_base, self._mean_flagged = mean, 0
         else:
-            self._mean_base = mean if self._mean_base is None else \
-                self._mean_base + BASELINE_ALPHA * (mean - self._mean_base)
-            self._mean_samples += 1
+            self._mean_flagged = 0
+            if self.armed:
+                self._mean_base, self._mean_samples = _learn(self._mean_base, self._mean_samples, mean)
         prns = set((t, prn) for t, prn, _, _ in tracked)
         if (self._prev_prns is not None and len(prns) >= JACCARD_MIN_SATS and
                 len(self._prev_prns) >= JACCARD_MIN_SATS):
@@ -265,10 +289,14 @@ class SpoofDetector(object):
             if self._offset_samples >= BASELINE_MIN_SAMPLES and \
                     abs(offset - self._offset_base) > CROSS_SHIFT_DB:
                 self._flag('C1', now_ms)
+                self._offset_flagged += 1
+                if self._offset_flagged >= REBASE_AFTER:
+                    self._offset_base, self._offset_flagged = offset, 0
             else:
-                self._offset_base = offset if self._offset_base is None else \
-                    self._offset_base + BASELINE_ALPHA * (offset - self._offset_base)
-                self._offset_samples += 1
+                self._offset_flagged = 0
+                if self.armed:
+                    self._offset_base, self._offset_samples = _learn(
+                        self._offset_base, self._offset_samples, offset)
 
     # --- decision ---------------------------------------------------------------------------
     def _update_state(self, now_ms):
