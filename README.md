@@ -18,7 +18,7 @@ All pins and rates are constants at the top of `main.py`.
 
 ## Deploy
 `make deploy` (uses `mpremote`; it first writes `version.py` from `git describe`, which the System page shows) copies `main.py`, `NMEA.py`, `l76x.py`, `screens.py`, `jamming.py`, `spoofing.py`, `wifi.py`, `wificreds.py`,
-`settings.py`, `nav.py`, `menu.py`, `bridge.py`, `ui.py`, `sh1107.py`, `writer.py` and the font modules to the Pico. `main.py` runs on boot.
+`settings.py`, `nav.py`, `menu.py`, `bridge.py`, `ui.py`, `sh1107.py`, `writer.py` and the `roboto14.py` font to the Pico. `main.py` runs on boot.
 
 `make deploy-mpy` precompiles the modules with `mpy-cross` and deploys `.mpy` files instead (less RAM to
 load them, faster boot; `mpy-cross` must match the firmware version). With `DEBUG` on, the free/used heap
