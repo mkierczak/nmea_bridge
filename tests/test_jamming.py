@@ -114,3 +114,32 @@ def test_pmtk_ack_parsed_and_not_forwardable_type():
     assert p.parse_sentence(with_checksum('PMTK001,286,3'))
     assert p.pmtk_acks[286] == 3
     assert p.sentence_last_valid_type == 'TK0'
+
+
+def mp_ticks_diff(a, b):
+    """MicroPython's ticks_diff: ticks_ms() wraps at 2**30, differences are taken modulo that."""
+    return ((a - b + (1 << 29)) & ((1 << 30) - 1)) - (1 << 29)
+
+
+def test_stale_detection_survives_ticks_wrap():
+    saved = getattr(jamming, '_ticks_diff', None)
+    jamming._ticks_diff = mp_ticks_diff           # behave like the board
+    try:
+        p = NMEA.Parser()
+        det = JamDetector(p)
+        wrap = lambda t: t % (1 << 30)            # what utime.ticks_ms() would return
+        t = (1 << 30) - 30000                     # 30 s before ticks_ms() wraps around
+        for _ in range(jamming.BASELINE_MIN_SAMPLES):
+            gsv(p, [40, 38, 42, 36, 41, 39, 37, 40])
+            t += 4000
+            det.evaluate(wrap(t), True)
+        assert det.state == jamming.OK
+        states = []
+        for _ in range(jamming.ENTER_CYCLES + 1):  # GSV stops; time runs on across the wrap
+            t += jamming.STALE_MS + 1000
+            states.append(det.evaluate(wrap(t), True)[0])
+        assert t >= (1 << 30)                     # the clock really did wrap during the test
+        assert states[-1] == jamming.JAM, states
+    finally:
+        if saved is not None:
+            jamming._ticks_diff = saved

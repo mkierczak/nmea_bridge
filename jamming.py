@@ -5,6 +5,12 @@ same as jamming. States therefore say "signal low" / "jamming possible", never "
 No hardware imports: runs on MicroPython and CPython (tests, tools/replay.py).
 """
 
+try:
+    from utime import ticks_diff as _ticks_diff   # ticks_ms() wraps (about every 12.4 days)
+except ImportError:
+    def _ticks_diff(a, b):
+        return a - b
+
 # Thresholds (tune with tools/replay.py on recorded logs)
 CN0_DROP_DB = 6              # mean C/N0 this far below baseline => indicator C
 TRACKED_DROP_FRACTION = 0.6  # tracked satellites below this fraction of baseline => indicator N
@@ -56,7 +62,7 @@ class JamDetector(object):
             self._seen_version = p.cn0_version
             self._last_gsv_ms = now_ms
         elif (self._last_gsv_ms is None or
-              now_ms - self._last_gsv_ms < STALE_MS or not self.baseline_valid):
+              _ticks_diff(now_ms, self._last_gsv_ms) < STALE_MS or not self.baseline_valid):
             return self.state, self.reason
         else:
             self._last_gsv_ms = now_ms  # count a stale period once per STALE_MS

@@ -220,7 +220,9 @@ A jammed receiver may stop producing useful GSV cycles. If **no** new GSV cycle 
 `tracked = 0, mean = 0`. That satisfies C and N (and usually F as well), so the raw level is 2. A
 stale period is counted once per `STALE_MS`, so `ENTER_CYCLES = 2` stale periods (about 42 s) are
 needed to reach `JAM?`. When GSV returns, normal hysteresis applies (`EXIT_CYCLES` good samples).
-Stale handling is inactive while the baseline is not yet valid.
+Stale handling is inactive while the baseline is not yet valid. The elapsed time is computed with
+`ticks_diff`, so it keeps working when MicroPython's millisecond counter wraps (about every 12.4 days;
+covered by a regression test).
 
 ### 5.7 Outputs
 
@@ -328,11 +330,6 @@ mitigation, not a detector, and it does not help against wide-band jamming.
 * **Averages hide details.** `mean` is over all tracked satellites of all talkers. A constellation-specific
   effect (only BeiDou affected) is attenuated; the Signal page shows the per-constellation means for
   manual inspection.
-* **Tick wrap.** The stale-data check in `evaluate()` subtracts millisecond tick values with plain
-  subtraction. MicroPython's `ticks_ms()` wraps after about 12.4 days of uptime; after a wrap the
-  difference is briefly negative, so stale-data detection (not the other indicators) can be inactive
-  until the next GSV cycle arrives. The spoofing detector uses `ticks_diff` and is not affected. This
-  is a candidate for a small fix.
 * **Sticky module status.** `module_jam_status` keeps its last value until another `$PMTKSPF` arrives.
 * **`birds_in_view` can be stale** for a constellation that stops sending GSV (each talker's last total
   is kept). It only influences indicator F.
