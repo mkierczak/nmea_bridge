@@ -21,8 +21,19 @@ All pins and rates are constants at the top of `main.py`.
 `settings.py`, `nav.py`, `menu.py`, `bridge.py`, `ui.py`, `sh1107.py`, `writer.py` and the `roboto14.py` font to the Pico. `main.py` runs on boot.
 
 `make deploy-mpy` precompiles the modules with `mpy-cross` and deploys `.mpy` files instead (less RAM to
-load them, faster boot; `mpy-cross` must match the firmware version). With `DEBUG` on, the free/used heap
-is printed at boot and every minute (`MEM ...`): check it before and after enabling Wi-Fi.
+load them, faster boot; `mpy-cross` must match the firmware version: the bytecode of `mpy-cross` 1.29 loads
+on firmware 1.24.1). With `DEBUG` on, the free/used heap is printed at boot and every minute (`MEM ...`).
+On a Pico W with the whole app loaded about 100 KB of the 185 KB heap stay free, and the Wi-Fi access
+point costs about 3 KB more.
+
+**Deploying to (or poking at) a board that is running the app.** Two things matter once the GPS has armed
+the 5 s hardware watchdog. `mpremote` soft-resets the board on connect; with the GPS thread on the second
+core every later flash write then hangs until the watchdog resets the board. And interrupting the app stops
+it feeding the watchdog. So `make deploy` / `make deploy-mpy` use `mpremote resume` (no soft reset), first
+start a small timer that feeds the watchdog while files are copied, install `main.py` last, and end with a
+hard reset that starts the new version. For your own diagnostics use `mpremote connect PORT resume exec`
+(a plain `exec` loses the program's variables and can trigger the same hang) and keep the watchdog fed
+for sessions longer than 5 s, for example with the timer from the `maintenance` target in the Makefile.
 
 ## Configuration
 The constants at the top of `main.py` are the **defaults**. Everything you will want to change while
@@ -168,6 +179,12 @@ The radio path is deliberately separated from everything else (`bridge.py`, test
   before the first sentence the board resets after 5 s. If no valid sentence arrives for 30 s it looks for
   the module again (baud probe plus configuration), at most once a minute: a module that was power-cycled
   falls back to 9600 baud and its default settings.
+- **Module configuration is acknowledged.** Each PMTK command is sent, its `$PMTK001` acknowledgement is
+  awaited and the command is resent if it is lost. On a real L76B the module silently drops commands that
+  arrive while it restarts its engine (after the fix-interval, power-mode, search-mode and EASY
+  commands): with the old 100 ms spacing only 4 of the 11 commands took effect, so the fix interval stayed
+  at 800 ms and BeiDou was never enabled. Commands that still fail are listed in `gps.config_failed`
+  (printed with `DEBUG`).
 - **Buttons** are debounced (30 ms); a release without a recorded press is ignored; the Wi-Fi gesture
   (hold UP 3 s) is only a long press inside the menu.
 - **Saving settings** on a full or read-only filesystem shows `save failed` instead of crashing; the

@@ -12,17 +12,26 @@ class Clock:
     now = 0
 
 
+ENGINE_COMMANDS = (869, 220, 225, 353)   # after these the real module ignores commands for about a second
+
+
 class Module:
-    """Simulated L76B: talks only at its own baud, switches on $PMTK251,<n>."""
+    """Simulated L76B: talks only at its own baud, switches on $PMTK251,<n>, acknowledges PMTK commands
+    with $PMTK001 and drops commands that arrive while it is busy restarting its engine."""
     baud = 9600
     present = True
     commands = []
     rx = b''
+    busy_until = -1
+    flags = {}            # command number -> flag to answer with (default 3)
+    silent = ()           # command numbers that never get a reply
+    accepted = []         # command numbers the module actually processed
 
 
 def _reset(baud=9600, present=True):
     Clock.now = 0
     Module.baud, Module.present, Module.commands, Module.rx = baud, present, [], b''
+    Module.busy_until, Module.flags, Module.silent, Module.accepted = -1, {}, (), []
     FakeUART.instances = []
 
 
@@ -65,6 +74,19 @@ class FakeUART:
             Module.commands.append(text)
             if text.startswith('$PMTK251,'):
                 Module.baud = int(text[9:].split('*')[0])
+            elif text.startswith('$PMTK'):
+                self._pmtk(text)
+
+    def _pmtk(self, text):
+        cmd = int(text[5:].split(',')[0].split('*')[0])
+        if Clock.now < Module.busy_until:
+            return                                    # busy: the command is silently lost
+        Module.accepted.append(cmd)
+        if cmd in ENGINE_COMMANDS:
+            Module.busy_until = Clock.now + 1000
+        if cmd in Module.silent:
+            return
+        self._buf += (with_checksum('PMTK001,%d,%d' % (cmd, Module.flags.get(cmd, 3))) + '\r\n').encode()
 
 
 def _fake_modules():
@@ -183,3 +205,90 @@ def test_probing_reuses_one_uart_instead_of_creating_one_per_rate():
     assert gps.configure_baudrate(9600) == 115200
     assert len(FakeUART.instances) == 1                    # was one new UART (and 1 KB buffer) per probe
     assert FakeUART.instances[0].baudrate == 9600
+
+
+SEQUENCE = ['$PMTK352,0', '$PMTK313,1', '$PMTK301,2', '$PMTK869,1,1', '$PMTK220,1000', '$PMTK225,0',
+            '$PMTK353,1,0,0,0,1', '$PMTK255,1', '$PMTK314,0,1,0,1,5,5,0,0,0,0,0,0,0,0,0,0,0,1,0',
+            '$PMTK286,1', '$PMTK838,1']
+
+
+def test_command_helpers():
+    assert l76x.command_number('$PMTK220,1000') == 220 and l76x.command_number('$PMTK838,1') == 838
+    assert l76x.command_number('$PMTK101') == 101
+    assert l76x.command_number('$PQ1PPS,1') is None and l76x.command_number('$PMTKxyz') is None
+    assert l76x.ack_flag(with_checksum('PMTK001,220,3,1000'), 220) == 3
+    assert l76x.ack_flag(with_checksum('PMTK001,220,3,1000'), 225) is None      # an ack for another command
+    assert l76x.ack_flag(with_checksum('PMTK001,353,1'), 353) == 1
+    assert l76x.ack_flag('$PMTK001,220,3*00', 220) is None                       # bad checksum
+    assert l76x.ack_flag(with_checksum('PMTKSPF,1'), 220) is None
+    assert l76x.ack_flag(with_checksum('GPGGA,1,2'), 220) is None
+
+
+def test_the_old_fire_and_forget_sequence_loses_commands_on_a_module_that_restarts_its_engine():
+    _reset(baud=4800)
+    gps = new_gps()
+    for cmd in SEQUENCE:                                   # what the app used to do: 100 ms apart, no waiting
+        gps.send_command(cmd)
+    assert len(Module.accepted) < len(SEQUENCE)            # some commands never took effect (as on the board)
+    assert 220 not in Module.accepted or 353 not in Module.accepted or 838 not in Module.accepted
+
+
+def test_acknowledged_commands_all_take_effect_even_when_the_module_is_busy():
+    _reset(baud=4800)
+    gps = new_gps()
+    failed = gps.send_commands(SEQUENCE)
+    assert failed == []
+    for cmd in (352, 313, 301, 869, 220, 225, 353, 255, 314, 286, 838):
+        assert cmd in Module.accepted, cmd                 # every command was processed by the module
+    assert Clock.now < 30000                               # and the whole sequence stays quick (virtual ms)
+
+
+def test_a_command_is_resent_when_the_module_did_not_hear_it():
+    _reset(baud=4800)
+    Module.busy_until = 600                                # busy right now: the first attempt is lost
+    gps = new_gps()
+    assert gps.send_command_acked('$PMTK220,1000') == 3
+    sent = [c for c in Module.commands if c.startswith('$PMTK220')]
+    assert len(sent) >= 2 and Module.accepted == [220]     # resent, processed once
+
+
+def test_an_unanswered_command_is_reported_after_bounded_retries():
+    _reset(baud=4800)
+    Module.silent = (838,)
+    gps = new_gps()
+    start = Clock.now
+    assert gps.send_command_acked('$PMTK838,1', timeout_ms=500, retries=3) is None
+    assert len([c for c in Module.commands if c.startswith('$PMTK838')]) == 3
+    assert Clock.now - start < 3000
+    assert gps.send_commands(['$PMTK838,1', '$PMTK286,1'], timeout_ms=500, retries=2) == [('$PMTK838,1', None)]
+
+
+def test_unsupported_and_failed_flags():
+    _reset(baud=4800)
+    Module.flags = {405: 1, 286: 2}
+    gps = new_gps()
+    assert gps.send_command_acked('$PMTK405') == 1                         # unsupported: not retried
+    assert len([c for c in Module.commands if c.startswith('$PMTK405')]) == 1
+    assert gps.send_command_acked('$PMTK286,1', timeout_ms=400, retries=2) == 2   # valid but failed: retried
+    assert len([c for c in Module.commands if c.startswith('$PMTK286')]) == 2
+    failed = gps.send_commands(['$PMTK405', '$PMTK313,1'], timeout_ms=400, retries=2)
+    assert failed == [('$PMTK405', 1)]
+
+
+def test_acks_that_arrive_between_ordinary_sentences_are_found():
+    _reset(baud=4800)
+    gps = new_gps()
+    assert gps.send_command_acked('$PMTK313,1') == 3       # the fake also emits a GGA every 200 ms meanwhile
+
+
+def test_acknowledgements_are_handed_on_so_the_parser_still_sees_them():
+    import NMEA
+    _reset(baud=4800)
+    gps = new_gps()
+    lines = []
+    assert gps.send_commands(['$PMTK220,1000', '$PMTK286,1'], on_ack=lines.append) == []
+    assert len(lines) == 2 and all(line.startswith('$PMTK001,') for line in lines)
+    parser = NMEA.Parser()
+    for line in lines:
+        assert parser.parse_sentence(line)
+    assert parser.pmtk_acks == {220: 3, 286: 3}            # what the Debug page's AIC status reads

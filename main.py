@@ -171,17 +171,29 @@ def gps_init():
         print('GPS link load: avg {:.0f}%, worst cycle {:.0f}%'.format(avg_load * 100, worst_load * 100))
         if avg_load > 0.8 or worst_load > 1.0:
             print('WARNING: GPS link may be overloaded; raise GPS_BAUDRATE or use GNSS_MODE = GPS')
-    gps.send_command(gps.PMTK_API_SET_STOP_QZSS)  # disable Japanese QZSS
-    gps.send_command(gps.PMTK_API_SET_SBAS_ENABLED)
-    gps.send_command(gps.PMTK_API_SET_DGPS_MODE)
-    gps.send_command(gps.PMTK_ENABLE_EASY)
-    gps.send_command(l76x.fix_interval_command(FIX_INTERVAL_MS))
-    gps.send_command(gps.SET_NORMAL_MODE)
-    gps.send_command(gps.SET_GPS_BEIDOU_SEARCH_MODE if GNSS_MODE == 'GPS+BD' else gps.SET_GPS_SEARCH_MODE)
-    gps.send_command(gps.SET_SYNC_PPS_NMEA_ON)
-    gps.send_command(gps.SET_NMEA_OUTPUT)
-    gps.send_command(gps.PMTK_SET_AIC)  # acks ($PMTK001,<cmd>,3) are parsed by NMEA.Parser
-    gps.send_command(gps.PMTK_JAM_DETECT_ON)  # module jamming detector -> $PMTKSPF
+    if found is None:               # nobody answered: nothing to configure, and the reader will look again later
+        gps.config_failed = []
+        return None
+    # Each command waits for the module's acknowledgement (and is resent if it is lost): the module drops
+    # commands that arrive while it restarts its engine. The acknowledgements are handed on as ordinary
+    # sentences, so the parser records them (module acks, AIC status).
+    failed = gps.send_commands([
+        gps.PMTK_API_SET_STOP_QZSS,                 # disable Japanese QZSS
+        gps.PMTK_API_SET_SBAS_ENABLED,
+        gps.PMTK_API_SET_DGPS_MODE,
+        gps.PMTK_ENABLE_EASY,
+        l76x.fix_interval_command(FIX_INTERVAL_MS),
+        gps.SET_NORMAL_MODE,
+        gps.SET_GPS_BEIDOU_SEARCH_MODE if GNSS_MODE == 'GPS+BD' else gps.SET_GPS_SEARCH_MODE,
+        gps.SET_SYNC_PPS_NMEA_ON,
+        gps.SET_NMEA_OUTPUT,
+        gps.PMTK_SET_AIC,
+        gps.PMTK_JAM_DETECT_ON,                     # module jamming detector -> $PMTKSPF
+    ], on_ack=lambda line: rx_queue.push((utime.ticks_ms(), line + '\r\n')))
+    gps.config_failed = failed
+    if DEBUG:
+        for command, flag in failed:
+            print('GPS module did not accept {} (reply: {})'.format(command, flag))
     return found
 
 

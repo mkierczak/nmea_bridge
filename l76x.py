@@ -13,6 +13,27 @@ _PROBE_ORDER = (9600, 4800, 115200, 57600, 38400, 19200, 14400)
 from linkcalc import nmea_load, nmea_burst_ms  # noqa: F401  (pure helpers, re-exported for callers)
 
 
+def command_number(data):
+    """'$PMTK220,1000' -> 220 (None for anything that is not a PMTK command)."""
+    if not data.startswith('$PMTK'):
+        return None
+    try:
+        return int(data[5:].split(',')[0])
+    except ValueError:
+        return None
+
+
+def ack_flag(text, cmd):
+    """The flag of a '$PMTK001,<cmd>,<flag>[,...]*cs' acknowledgement for command cmd, else None."""
+    if not text.startswith('$PMTK001,') or not NMEA.valid_checksum(text):
+        return None
+    try:
+        parts = text[1:text.index('*')].split(',')
+        return int(parts[2]) if int(parts[1]) == cmd else None
+    except (ValueError, IndexError):
+        return None
+
+
 def baud_command(rate):
     if rate not in ALLOWED_BAUDRATES:
         raise ValueError('unsupported GPS baudrate {}'.format(rate))
@@ -135,8 +156,9 @@ class L76X(object):
     def set_baudrate(self, _baudrate, uartx=_uart0, tx=None, rx=None):
         self._open(uartx, _baudrate, tx, rx)
 
-    def _listen(self, listen_ms):
-        """True if a complete NMEA sentence with a valid checksum arrives within listen_ms."""
+    def _scan(self, listen_ms, match):
+        """Read lines for up to listen_ms and return the first non-None match(text) (text = the line as
+        printable ASCII), or None. Everything else received meanwhile is discarded."""
         buf = bytearray()
         start = utime.ticks_ms()
         while utime.ticks_diff(utime.ticks_ms(), start) < listen_ms:
@@ -151,10 +173,55 @@ class L76X(object):
             rest = parts[-1]
             for line in parts[:-1]:
                 text = ''.join(chr(b) for b in line if 32 <= b < 127)
-                if text.startswith('$') and NMEA.valid_checksum(text):
-                    return True
+                result = match(text)
+                if result is not None:
+                    return result
             buf = bytearray(rest[-200:])  # keep the unfinished line (bounded)
-        return False
+        return None
+
+    def _listen(self, listen_ms):
+        """True if a complete NMEA sentence with a valid checksum arrives within listen_ms."""
+        return bool(self._scan(listen_ms, lambda text: text.startswith('$') and NMEA.valid_checksum(text) or None))
+
+    def send_command_acked(self, data, timeout_ms=1500, retries=3, on_ack=None):
+        """Send a PMTK command and wait for the module's $PMTK001 acknowledgement, resending if it does not
+        come: the module silently drops commands that arrive while it is busy (for about a second after
+        commands that restart its engine, such as the fix interval or search mode).
+
+        Returns the acknowledgement flag: 3 = done, 2 = valid but failed (retried), 1 = unsupported,
+        0 = invalid, None = no reply. on_ack(line) is called with the acknowledgement sentence so the
+        caller can still hand it to the normal sentence path (it is consumed here while waiting)."""
+        cmd = command_number(data)
+        if cmd is None:
+            self.send_command(data)
+            return None
+        flag = None
+        seen = []
+
+        def match(text):
+            result = ack_flag(text, cmd)
+            if result is not None:
+                seen.append(text)
+            return result
+
+        for _ in range(retries):
+            self.send_command(data)
+            flag = self._scan(timeout_ms, match)
+            if flag is not None and on_ack is not None and seen:
+                on_ack(seen[-1])
+            if flag is not None and flag != 2:
+                return flag
+        return flag
+
+    def send_commands(self, commands, timeout_ms=1500, retries=3, on_ack=None):
+        """Send commands one by one, each acknowledged. Returns [(command, flag)] for those that did not
+        end in success (flag None = the module never answered)."""
+        failed = []
+        for data in commands:
+            flag = self.send_command_acked(data, timeout_ms, retries, on_ack)
+            if flag != 3:
+                failed.append((data, flag))
+        return failed
 
     def configure_baudrate(self, target, listen_ms=1500):
         """Make the module talk at 'target' baud and leave our UART at that rate.
