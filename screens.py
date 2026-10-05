@@ -100,14 +100,16 @@ def _tracked(parser):
 
 
 def _draw_sats(oled, parser):
+    """Column labels (aligned with the data below), a rule, then the five strongest satellites:
+    id (G = GPS, B = BeiDou + PRN), elevation, a C/N0 bar and the C/N0 value in dB-Hz."""
     rows = _tracked(parser)
-    oled.text('G{} B{}  el  dB'.format(sum(1 for r in rows if r[1] == 'G'),
-                                          sum(1 for r in rows if r[1] == 'B')), 0, 0, 1)
+    oled.text('sat  el C/N0', 0, 0, 1)
+    oled.hline(0, 9, 128, 1)
     if not rows:
         oled.text('no satellites', 0, 24, 1)
     for i, (cn, grp, prn, el) in enumerate(rows[:5]):
-        y = 10 + 10 * i
-        oled.text('{}{:02d} {}'.format(grp, prn, '--' if el is None else el), 0, y, 1)
+        y = 12 + 10 * i
+        oled.text('{:<4}{:>3}'.format('{}{:02d}'.format(grp, prn), '--' if el is None else el), 0, y, 1)
         oled.fill_rect(64, y, min(36, cn * 36 // 50), 7, 1)
         oled.text(str(cn), 104, y, 1)
 

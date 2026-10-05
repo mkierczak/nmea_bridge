@@ -112,7 +112,7 @@ def test_sats_page_sorted_strongest_first_and_caps_at_five():
     assert len(rows) == 12
     oled = Oled()
     screens.draw(oled, FakeWriter(), nav.PAGE_SATS, p, STATS, 0, False, None, None, WIFI, INFO)
-    assert oled.calls[0][0] == 'G8 B4  el  dB'
+    assert oled.calls[0][0] == 'sat  el C/N0'
 
 
 def test_spoof_page_shows_indicator_names_and_latch():
@@ -296,3 +296,30 @@ def test_stats_page_rows_are_evenly_spaced_with_the_cn_row_clearly_below():
     assert ys[:5] == [0, 10, 20, 30, 40]                    # rx line and the four val/inv/par/ign rows
     assert ys[5] == 54 and ys[5] - ys[4] >= 9 + 5           # the CN row is set apart, not squeezed under ign
     assert rows[5][1].startswith('CN ')
+
+
+def test_satellites_page_header_is_separated_and_aligned_with_the_columns():
+    p = populated_parser()
+    oled = Oled()
+    lines = []
+    oled.hline = lambda *args: lines.append(args)
+    screens.draw(oled, FakeWriter(), nav.PAGE_SATS, p, STATS, 0, False, None, None, WIFI, INFO)
+    header = oled.calls[0]
+    first = next(c for c in oled.calls[1:] if c[0].startswith(('G', 'B')))
+    assert header == ('sat  el C/N0', 0, 0) and first[2] == 12     # first satellite row well below the header
+    assert lines == [(0, 9, 128, 1)]                                # and a rule between them
+    assert header[2] + 7 < 9 < first[2]                             # the rule lies in the gap
+    # the elevation digits sit under 'el' (columns 5-6) and the bar starts under 'C/N0' (column 8)
+    assert first[0][5:7].strip().isdigit() or first[0][5:7] == '--'
+    assert header[0].index('el') == 5 and header[0].index('C/N0') * 8 == 64 == oled.rects[0][0]
+    ys = sorted(y for text, x, y in oled.calls[1:] if text[:1] in 'GB')
+    assert ys == [12, 22, 32, 42, 52]                               # five rows, the last ends at y=58
+
+
+def test_satellites_page_rows_without_elevation_keep_their_columns():
+    p = NMEA.Parser()
+    p.sats_by_talker['GP'] = [(5, None, 40), (193, 7, 33)]
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_SATS, p, STATS, 0, False, None, None, WIFI, INFO)
+    rows = [text for text, x, y in oled.calls if text[:1] in 'GB' and y >= 12]
+    assert rows == ['G05  --', 'G193  7']                            # fixed-width columns, no crash on None
