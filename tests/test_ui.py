@@ -102,18 +102,20 @@ def test_system_info_is_only_gathered_for_the_pages_that_need_it():
     assert r.system_calls >= 1 and r.draws[-1] == (nav.PAGE_SYSTEM, True)
 
 
-def test_menu_opens_and_closes_with_long_presses():
+def test_menu_opens_with_a_long_down_press_on_the_main_page_and_closes_the_same_way():
     r = Rig()
     r.press(UP_LONG)
+    assert r.ui.menu is None                           # a long UP does nothing on a page
+    r.press(DN_LONG)
     assert r.ui.menu is not None and r.navigator.in_menu
-    assert r.oled.texts()[0] == 'Menu'                     # the menu drew itself
-    r.press(DN_LONG)                                       # back at the top level: leave
+    assert r.oled.texts()[0] == 'Menu'                 # the menu drew itself
+    r.press(DN_LONG)                                   # back at the top level: leave
     assert r.ui.menu is None and not r.navigator.in_menu
 
 
 def test_menu_timeout_reverts_an_unconfirmed_edit_and_closes():
     r = Rig(menu_timeout_ms=60000)
-    r.press(UP_LONG)
+    r.press(DN_LONG)
     for _ in range(3):
         r.press(DN_SHORT)                                  # root: GPS, Detection, Radio output, Display
     r.press(UP_LONG)                                       # into Display
@@ -130,7 +132,7 @@ def test_wifi_gesture_toggles_outside_the_menu_but_only_confirms_inside_it():
     r = Rig()
     r.press(WIFI)
     assert r.toggles == 1
-    r.press(UP_LONG)                                       # open the menu
+    r.press(DN_LONG)                                       # open the menu
     r.press(WIFI)                                          # a slightly long hold on "GPS"
     assert r.toggles == 1 and r.ui.menu.name == 'GPS'      # it entered the submenu like a normal confirm
 

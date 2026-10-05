@@ -35,9 +35,11 @@ def test_dn_long_returns_to_main():
     assert n.page == nav.PAGE_MAIN
 
 
-def test_up_long_opens_menu_then_events_are_forwarded():
+def test_long_down_on_the_main_page_opens_the_menu_then_events_are_forwarded():
     n = Navigator()
-    assert n.handle(UP_LONG) == nav.OPEN_MENU and n.in_menu
+    assert n.page == nav.PAGE_MAIN
+    assert n.handle(UP_LONG) is None and not n.in_menu         # a long UP has no function on the pages
+    assert n.handle(DN_LONG) == nav.OPEN_MENU and n.in_menu
     for ev in (UP_SHORT, DN_SHORT, UP_LONG, DN_LONG):
         assert n.handle(ev) == nav.TO_MENU
     assert n.page == nav.PAGE_MAIN                    # pages untouched while in the menu
@@ -48,7 +50,7 @@ def test_up_long_opens_menu_then_events_are_forwarded():
 def test_wifi_gesture_toggles_outside_the_menu_but_is_a_long_up_inside_it():
     n = Navigator()
     assert n.normalize(WIFI) == WIFI and n.handle(n.normalize(WIFI)) == nav.TOGGLE_WIFI
-    n.handle(UP_LONG)                                  # open the menu
+    n.handle(DN_LONG)                                  # open the menu (long DOWN on the Main page)
     ev = n.normalize(WIFI)
     assert ev == UP_LONG                               # a slightly long confirm is just a confirm
     assert n.handle(ev) == nav.TO_MENU and n.in_menu
@@ -117,3 +119,15 @@ def test_event_queue_fifo_full_and_empty():
     for i in range(10):                                # wraps around many times
         assert q.put(i) and q.get() == i
     assert q.drain() == []
+
+
+def test_long_down_elsewhere_goes_back_to_main_and_only_then_opens_the_menu():
+    n = Navigator()
+    n.handle(UP_SHORT)
+    n.handle(UP_SHORT)
+    assert n.page != nav.PAGE_MAIN
+    assert n.handle(DN_LONG) is None and n.page == nav.PAGE_MAIN and not n.in_menu
+    assert n.handle(DN_LONG) == nav.OPEN_MENU and n.in_menu     # the second long press enters the menu
+    n.handle(DN_LONG)                                           # in the menu it is "back"
+    n.close_menu()
+    assert n.handle(DN_LONG) == nav.OPEN_MENU                   # and again from the Main page

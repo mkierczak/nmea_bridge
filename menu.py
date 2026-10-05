@@ -178,6 +178,8 @@ class Menu(object):
             if idx >= len(items):
                 break
             label, value = self._row(items[idx])
-            line = label[:15 - len(value)].ljust(15 - len(value)) + value
+            width = 15 - len(value)
+            text = label[:width]
+            line = text + ' ' * (width - len(text)) + value   # (MicroPython's str has no ljust)
             oled.text(('>' if idx == self.cursor else ' ') + line, 0, 11 + 10 * i, 1)
         oled.text(self.message or (EDIT_HINT if self.edit else BROWSE_HINT), 0, 56, 1)

@@ -163,3 +163,16 @@ def test_invalid_configured_password_is_ignored():
             pw, stored = wificreds.get_password(bad, path, os.urandom)
             assert pw != bad and wificreds.valid_password(pw)
         assert wificreds.get_password('my-own-secret', path, os.urandom) == ('my-own-secret', True)
+
+
+def test_generated_passwords_are_eight_characters_the_wpa2_minimum():
+    assert wificreds.PASSWORD_LENGTH == 8
+    for _ in range(100):
+        pw = wificreds.generate_password(os.urandom)
+        assert len(pw) == 8 and wificreds.valid_password(pw)
+    with tempfile.TemporaryDirectory() as d:
+        pw, stored = wificreds.get_password('', os.path.join(d, 'pw.txt'), os.urandom)
+        assert stored and len(pw) == 8
+        old = os.path.join(d, 'old.txt')
+        open(old, 'w').write('abcdefghjkmn')                  # a 12-character password from an older version
+        assert wificreds.get_password('', old, os.urandom) == ('abcdefghjkmn', True)   # stays until regenerated

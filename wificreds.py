@@ -1,7 +1,7 @@
 """Per-device Wi-Fi credentials, both unique to the board and shown on the Wi-Fi screen.
 
 SSID: 'NMEABridge-' plus 4 characters derived from the board's unique ID (stable across reflashes,
-nothing stored). Password: 12 random characters made on first boot and stored in a file.
+nothing stored). Password: 8 random characters made on first boot and stored in a file.
 Kept separate from wifi.py so it can be imported at boot (tiny) while the networking code is only
 loaded when the access point is first switched on.
 """
@@ -10,7 +10,7 @@ import os
 
 # 31 symbols without look-alikes (no 0/o, 1/l/i): easy to type from a small OLED
 ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'
-PASSWORD_LENGTH = 12                          # ~59 bits; fits one 16-character OLED line after "PW "
+PASSWORD_LENGTH = 8                           # WPA2's minimum; about 40 bits from the 31-symbol alphabet
 PASSWORD_FILE = 'wifi_password.txt'
 SSID_PREFIX = 'NMEABridge-'
 SSID_SUFFIX_LENGTH = 4                        # 31^4 = ~920k combinations: unique enough among nearby boats

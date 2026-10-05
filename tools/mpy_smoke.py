@@ -81,6 +81,42 @@ queue.put('a')
 check(queue.drain() == ['a'], 'event queue')
 check(ui.REFRESH_MS > 0 and menu.ROWS == 4, 'ui/menu constants')
 
+# the menu must draw every page on MicroPython (a missing str method once froze the UI): walk the whole tree
+class Oled(object):
+    def __init__(self):
+        self.lines = []
+
+    def fill(self, c):
+        self.lines = []
+
+    def text(self, s, x, y, c=1):
+        self.lines.append(s)
+
+    def hline(self, *args):
+        pass
+
+
+defaults = {}
+for key, label, kind, group, when, extra in settings.SCHEMA:
+    defaults[key] = True if kind == settings.BOOL else extra[0]
+cfg = settings.Settings(defaults, '/nonexistent/settings.json')
+hooks = {'apply': lambda k: None, 'reset': lambda: None, 'reboot': lambda: None,
+         'wifi_active': lambda: False, 'wifi_toggle': lambda: None, 'regen_password': lambda: None}
+screen = Oled()
+walker = menu.Menu(cfg, hooks)
+pages_drawn = 0
+for top in range(len(walker.items())):
+    walker = menu.Menu(cfg, hooks)
+    for _ in range(top):
+        walker.handle(nav.DN_SHORT)
+    walker.handle(nav.UP_LONG)                    # enter the submenu
+    for _ in range(len(walker.items()) + 1):      # visit every row (and wrap around)
+        walker.draw(screen)
+        check(screen.lines and all(len(line) <= 16 for line in screen.lines), 'menu page too wide')
+        pages_drawn += 1
+        walker.handle(nav.DN_SHORT)
+check(pages_drawn > 20, 'menu walk drew too few pages')
+
 # credentials and link maths
 check(wificreds.uid_suffix(bytes([1, 2, 3, 4, 5, 6, 7, 8])) == 'PW96', 'ssid suffix')
 check(len(wificreds.generate_password(lambda n: bytes(range(n)))) == wificreds.PASSWORD_LENGTH, 'password')

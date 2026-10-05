@@ -13,10 +13,14 @@ def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None, spo
     oled.fill(0)
     if screen == PAGE_MAIN:
         oled.text(parser.get_time_string(), 0, 3, 1)  # UTC
-        if jam:
-            oled.text(jam.label(), 64, 3, 1)  # '', OK, LOW or JAM?
-        if spoof:
-            oled.text(spoof.label(), 96, 3, 1)  # '', SPF? or SPF!
+        jam_label = jam.label() if jam else ''        # '', OK, LOW or JAM?
+        spoof_label = spoof.label() if spoof else ''  # '', SPF? or SPF!
+        if jam_label:
+            oled.text(jam_label, 72, 3, 1)            # one character of space after the time
+        if spoof_label:
+            if 72 + 8 * len(jam_label) >= 128 - 8 * len(spoof_label):
+                spoof_label = 'S' + spoof_label[-1]   # both at once: 'S?' / 'S!' so they never touch
+            oled.text(spoof_label, 128 - 8 * len(spoof_label), 3, 1)
         oled.hline(0, 14, 128, 1)
         if no_fix:
             oled.text('NO FIX', 40, 28, 1)
@@ -37,11 +41,11 @@ def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None, spo
                                            ('inv', parser.sentence_last_invalid_type),
                                            ('par', parser.sentence_last_parsed_type),
                                            ('ign', parser.sentence_last_ignored_type)), 1):
-            oled.text(key + ": " + str(round(stats[key] / rcv * 100)) + '% ' + last, 0, row * 12, 1)
+            oled.text(key + ": " + str(round(stats[key] / rcv * 100)) + '% ' + last, 0, row * 10, 1)
         if jam:
             tracked, mean, _ = parser.cn0_stats()
             oled.text('CN {}/{} n{}/{}'.format(round(mean), round(jam.base_mean), tracked,
-                                               round(jam.base_tracked)), 0, 56, 1)   # 16 chars at most
+                                               round(jam.base_tracked)), 0, 54, 1)   # 16 chars at most
     elif screen == PAGE_WIFI:
         state, ssid, ip, clients, max_clients, password = wifi if wifi else ('OFF', '', '', 0, 0, '')
         oled.text('WiFi: ' + state, 0, 0, 1)

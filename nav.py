@@ -119,11 +119,11 @@ class Navigator(object):
         elif event == DN_SHORT:
             self._step(-1)
         elif event == DN_LONG:
-            self.page = self.pages[0]
-        elif event == UP_LONG:
-            self.in_menu = True
-            return OPEN_MENU
-        return None
+            if self.page == self.pages[0]:       # on the top (Main) page a long DOWN opens the menu
+                self.in_menu = True
+                return OPEN_MENU
+            self.page = self.pages[0]            # anywhere else it goes back to the Main page
+        return None                              # (a long UP has no function on the pages)
 
     def close_menu(self):
         self.in_menu = False

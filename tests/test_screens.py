@@ -79,8 +79,8 @@ def check_fits(drawn):
             assert 0 <= y <= 56, (page, text, y)
         for i, (t1, x1, y1) in enumerate(oled.calls):
             for t2, x2, y2 in oled.calls[i + 1:]:
-                if abs(y1 - y2) < 8:                       # rows closer than a glyph height
-                    assert x1 + 8 * len(t1) <= x2 or x2 + 8 * len(t2) <= x1, (page, t1, t2)
+                if not (x1 + 8 * len(t1) <= x2 or x2 + 8 * len(t2) <= x1):   # they share columns
+                    assert abs(y1 - y2) >= 9, (page, t1, t2)                   # so a pixel of gap between rows
         for x, y, w, h in oled.rects:
             assert 0 <= x and x + w <= 128 and 0 <= y and y + h <= 64
 
@@ -247,3 +247,52 @@ def test_cn0_jitter_in_the_decimals_does_not_change_the_signature_but_real_chang
     sig = p.display_signature()
     gsv(p, [44, 40, 40, 40, 40])                           # one more satellite tracked
     assert p.display_signature() != sig
+
+
+class Label:
+    """Stand-in for a detector on the main page, which only asks for its label."""
+    def __init__(self, text):
+        self.text = text
+
+    def label(self):
+        return self.text
+
+
+def title_row(jam_label, spoof_label):
+    oled = Oled()
+    jam = Label(jam_label) if jam_label is not None else None
+    spoof = Label(spoof_label) if spoof_label is not None else None
+    screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, NMEA.Parser(), STATS, 0, True, jam, spoof)
+    return [(text, x) for text, x, y in oled.calls if y == 3]
+
+
+def test_main_page_title_row_has_a_space_after_the_time_and_labels_never_touch():
+    for jam in (None, '', 'OK', 'LOW', 'JAM?'):
+        for spoof in (None, '', 'SPF?', 'SPF!'):
+            row = title_row(jam, spoof)
+            assert row[0] == ('--:--:--', 0)
+            end = 64                                         # the time ends at column 64
+            for text, x in row[1:]:
+                assert x >= end + 8, (jam, spoof, row)       # at least one blank character between texts
+                assert x + 8 * len(text) <= 128, (jam, spoof, row)
+                end = x + 8 * len(text)
+
+
+def test_main_page_title_row_typical_cases():
+    assert title_row('OK', '') == [('--:--:--', 0), ('OK', 72)]
+    assert title_row('OK', 'SPF!') == [('--:--:--', 0), ('OK', 72), ('SPF!', 96)]
+    assert title_row('JAM?', 'SPF?') == [('--:--:--', 0), ('JAM?', 72), ('S?', 112)]   # both: the spoof label is shortened
+    assert title_row('LOW', 'SPF!') == [('--:--:--', 0), ('LOW', 72), ('S!', 112)]
+
+
+def test_stats_page_rows_are_evenly_spaced_with_the_cn_row_clearly_below():
+    p = populated_parser()
+    jam = JamDetector(p)
+    jam.base_mean, jam.base_tracked = 30.0, 10.0
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_STATS, p, STATS, 0, False, jam)
+    rows = sorted((y, text) for text, x, y in oled.calls)
+    ys = [y for y, _ in rows]
+    assert ys[:5] == [0, 10, 20, 30, 40]                    # rx line and the four val/inv/par/ign rows
+    assert ys[5] == 54 and ys[5] - ys[4] >= 9 + 5           # the CN row is set apart, not squeezed under ign
+    assert rows[5][1].startswith('CN ')

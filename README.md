@@ -47,7 +47,7 @@ Two keys, classified when released: short (< 1 s) and long (>= 1 s).
 
 | | UP | DOWN |
 |---|---|---|
-| **Pages** | short: next page; long: open the menu; **hold 3 s: Wi-Fi on/off** | short: previous page; long: back to Main |
+| **Pages** | short: next page; **hold 3 s: Wi-Fi on/off** (a shorter long press does nothing) | short: previous page; long: back to Main, and **on the Main page: open the menu** |
 | **Menu** | short: cursor up; long: select / toggle / start editing | short: cursor down; long: back (leaves the menu at the top level) |
 | **Editing a value** | short: increase / next; long: confirm | short: decrease / previous; long: cancel (value reverts) |
 
@@ -72,8 +72,8 @@ warm-up fixes), **System** (Log raw, reset all settings to defaults, reboot).
 - The menu code is loaded only while the menu is open (RAM).
 
 ### Wi-Fi: NMEA over TCP and UDP (Pico W)
-The access point is **off at boot**. Hold the **UP button for 3 s** to switch it on or off (a 1-3 s
-press opens the menu). The WPA2 network serves the NMEA stream on port `WIFI_PORT` (10110)
+The access point is **off at boot**. Hold the **UP button for 3 s** to switch it on or off (the menu is
+opened with a long DOWN press on the Main page). The WPA2 network serves the NMEA stream on port `WIFI_PORT` (10110)
 as a TCP server (up to `WIFI_MAX_CLIENTS`, slow or dead clients are dropped) and as UDP broadcast to the
 AP subnet (`192.168.4.255`). Connect OpenCPN, SignalK, Navionics etc. to `192.168.4.1:10110`. The
 short-press cycle has a Wi-Fi screen with state, **SSID, password**, IP and client count.
@@ -84,9 +84,12 @@ unique to the board and shown on the Wi-Fi screen, even while the AP is off:
   (`machine.unique_id()`), so it is the same after every reboot, reflash or file deletion and nothing is
   stored. The suffix is only about 20 bits (31^4, about 920,000 combinations): fine for boats within
   radio range, but two boards could in principle share a name; set `WIFI_SSID` to choose another.
-- **Password:** 12 random characters (no look-alike characters, from the Pico's hardware entropy)
-  generated on first boot and saved in `wifi_password.txt` on the board. Delete the file
-  (`mpremote fs rm :wifi_password.txt`) and reboot for a new one.
+- **Password:** 8 random characters (the WPA2 minimum; no look-alike characters, about 40 bits, from the
+  Pico's hardware entropy) generated on first boot and saved in `wifi_password.txt` on the board. A shorter
+  password is easier to type but weaker against an offline guess of a captured handshake; set a longer
+  `WIFI_PASSWORD` in `main.py` if that matters to you. A password made by an older version keeps its
+  length until you regenerate it: **Menu > Wi-Fi > New password**, or delete the file
+  (`mpremote fs rm :wifi_password.txt`) and reboot.
 
 Setting `WIFI_SSID` or `WIFI_PASSWORD` in `main.py` overrides the generated one (password 8-63
 characters; open networks are not supported). The password is stored in plain text on the board and
