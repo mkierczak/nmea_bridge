@@ -562,3 +562,37 @@ def test_tick_wrap_does_not_confuse_age_or_periodic_checks():
         assert b.stale_dropped == 0
     finally:
         B.ticks_diff = saved
+
+
+# --- raw logger ---------------------------------------------------------------------------------
+def test_raw_logger_prints_arrival_time_and_the_sentence_as_received():
+    lines, clock = [], Clock(0)
+    log = B.RawLogger(lines.append, clock)
+    log(123456, '$GNRMC,1*00\r\n')
+    log(123500, '$BDGSV,1,1,00*00\n')
+    assert lines == ['123456 $GNRMC,1*00', '123500 $BDGSV,1,1,00*00']   # replay.py reads this format
+    assert not log.disabled
+
+
+def test_raw_logger_switches_itself_off_when_the_console_is_slow():
+    clock = Clock(0)
+    seen, disabled = [], []
+
+    def slow_print(text):
+        seen.append(text)
+        clock.now += 500                                 # a console that is attached but not draining
+    log = B.RawLogger(slow_print, clock, max_ms=200, on_disable=lambda: disabled.append(True))
+    log(1, '$A*00')
+    assert log.disabled and disabled == [True]
+    log(2, '$B*00')
+    assert len(seen) == 1                                # nothing more is written once it gave up
+
+
+def test_bridge_calls_the_raw_logger_for_every_sentence_before_parsing():
+    b, clock = make_bridge()
+    seen = []
+    b.on_raw = lambda rx, s: seen.append((rx, s))
+    push(b, 'garbage')
+    push(b, BDGSV)
+    b.step(clock.now)
+    assert [s for _, s in seen] == ['garbage', BDGSV]    # invalid lines and BeiDou too, unmodified

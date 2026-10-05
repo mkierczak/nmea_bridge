@@ -12,7 +12,7 @@ import spoofing
 
 def full_defaults():
     d = {'gps_baud': 4800, 'gnss_mode': 'GPS+BD', 'jam_detect': True, 'spoof_detect': True,
-         'spoof_action': 'display', 'contrast': 0, 'screen_off_s': 0}
+         'spoof_action': 'display', 'contrast': 0, 'screen_off_s': 0, 'log_raw': False}
     d.update({'fwd_' + t: True for t in ('RMC', 'GGA', 'GSA', 'GSV', 'ZDA')})
     d.update(S.threshold_defaults(jamming, spoofing))
     return d

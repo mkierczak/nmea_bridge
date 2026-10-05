@@ -49,8 +49,9 @@ class Menu(object):
         if name == 'Wi-Fi':
             return [('wifi',), ('act', 'New password', 'regen_password', 'New Wi-Fi PW?')]
         if name == 'System':
-            return [('act', 'Reset defaults', 'reset', 'Reset all?'),
-                    ('act', 'Reboot now', 'reboot', 'Reboot now?')]
+            return ([('set', row[0]) for row in S.SCHEMA if row[3] == 'System'] +
+                    [('act', 'Reset defaults', 'reset', 'Reset all?'),
+                     ('act', 'Reboot now', 'reboot', 'Reboot now?')])
         return [('set', row[0]) for row in S.SCHEMA if row[3] == name]
 
     def _row(self, item):

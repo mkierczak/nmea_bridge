@@ -286,3 +286,12 @@ def test_parent_cursor_is_restored_by_identity_when_the_banner_appears():
     r.send(DN_LONG)                                    # back to the root
     item = r.menu.items()[r.menu.cursor]
     assert item == ('sub', 'GPS'), item                # not the "Reboot now" entry that shifted into index 0
+
+
+def test_system_menu_offers_log_raw_before_the_actions():
+    r = Rig()
+    r.go('System')
+    labels = [r.menu._row(i)[0] for i in r.menu.items()]
+    assert labels == ['Log raw', 'Reset defaults', 'Reboot now']
+    r.send(UP_LONG)                                    # cursor starts on Log raw: toggle it
+    assert r.cfg.get('log_raw') is True and r.log == [('apply', 'log_raw')] and r.saved() == {'log_raw': True}

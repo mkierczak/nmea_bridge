@@ -1,0 +1,4 @@
+# Desktop development and CI (the Pico itself needs none of these)
+pytest
+ruff
+mpy-cross

@@ -1,0 +1,6 @@
+# Lint: pyflakes rules (undefined names, unused imports/variables) plus syntax errors.
+# The vendored Waveshare/third-party material under doc/ is not ours to lint.
+exclude = ["doc", "build", ".git"]
+
+[lint]
+select = ["F", "E9"]

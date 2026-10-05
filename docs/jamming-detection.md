@@ -343,29 +343,36 @@ mitigation, not a detector, and it does not help against wide-band jamming.
 
 ## 12. Tuning and validation
 
-**Record a log.** Capture the NMEA stream as a text log, one sentence per line (for example from the
-REPL output with `DEBUG = True`, or from a serial terminal on the GPS UART). A line may optionally start
-with a local millisecond timestamp (`123456 $GNRMC,...`); without timestamps the replay tool
-synthesises the timing.
+**Record a log.** Switch on **Menu > System > Log raw** and capture the console on the computer with
+`mpremote repl | tee log.txt`. Every framed sentence of every talker is printed as
+`<arrival ms> <sentence>`, which is what the replay tool reads (BeiDou, `$PMTK...` and bad-checksum lines
+included, so all indicators can be tested). Logs without timestamps also work: the replay tool then
+derives the time from the GPS time of the RMC sentences.
 
 **Replay offline.**
 
 ```
-python3 tools/replay.py my_log.nmea [seconds_per_gsv_cycle]
+python3 tools/replay.py my_log.nmea [--baud 4800] [--gnss gps+bd] [--set KEY=VALUE ...] [-q]
 ```
 
-prints every change of the jamming and spoofing states with the time, reasons and C/N0 figures, for
-example:
+drives a real `Bridge` with the same detectors, the same evaluation cadence and GSV settling as the board
+(it steps the bridge between sentences like the board's 10 ms loop), prints every change of the jamming
+and spoofing states with the time, reasons and C/N0 figures, and ends with a summary, for example:
 
 ```
-     40.0s JAM   LOW   why=C    cn0=19.5/39.5 n=4/4
-     60.0s JAM   OK    why=     cn0=39.5/39.5 n=4/4
-     28.8s SPOOF ALERT   K1
+     40.0s JAM   LOW   why=C    cn0=19.5 base=39.5 n=4
+     60.0s JAM   OK    why=     cn0=39.5 base=39.5 n=4
+     41.0s SPOOF ALERT   K1K2
+--- summary ---
+log duration   3600 s (1h00m), 7200 sentences: 7190 valid, 10 invalid, 0 with unreadable fields
+jamming        INIT 0.7%  OK 98.9%  LOW 0.4%  JAM? 0.0%
+               alarm episodes: 2 (2.00 per hour)
 ```
 
-The second argument is the assumed time between GSV cycles
-(default 4 s) because plain logs carry no timestamps. Adjust constants in `jamming.py` (or via
-the menu on the device) and replay again to see the effect on the same data.
+`--set` overrides the advanced thresholds of the menu (`cn0_drop_db`, `tracked_drop_pct`,
+`jam_enter_cycles`, `jam_exit_cycles`, and the spoofing ones) so you can sweep them on the same data;
+the alarm episodes per hour on a log recorded in normal conditions are the false-alarm rate.
+`--baud` and `--gnss` only matter for the spoofing detector's GPS-time tolerance.
 
 **Provoke a controlled signal drop.** The only legitimate way to test the detector on hardware is to
 reduce the signal: cover the antenna with a metal box or foil, or unplug it briefly. **Never transmit

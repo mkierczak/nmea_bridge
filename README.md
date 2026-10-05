@@ -4,7 +4,7 @@ GPS to NMEA bridge for a Cobra Marine VHF radio (MicroPython, Raspberry Pi Pico)
 
 It reads NMEA 0183 from a Waveshare L76B GNSS module, validates each sentence's checksum, rewrites
 `$GN…` talker IDs to `$GP…` (recomputing the checksum) because the radio rejects `$GN`, and forwards
-every valid sentence once, `\r\n`-terminated, over RS-485 at 4800 baud. A 1.3" SH1107 OLED shows
+every valid sentence of the selected types (default RMC, GGA, GSA, GSV, ZDA, from the `GP`/`GN` talkers) once, `\r\n`-terminated, over RS-485 at 4800 baud. A 1.3" SH1107 OLED shows
 time, position, fix, satellites, DOP grades and stats.
 
 ## Hardware
@@ -50,7 +50,7 @@ Menu: **GPS** (baudrate, GNSS mode), **Detection** (jamming and spoofing on/off,
 display/block), **Radio output** (RMC/GGA/GSA/GSV/ZDA on/off), **Display** (contrast, screen-off timer),
 **Wi-Fi** (on/off now, new password), **Advanced** (detector thresholds: C/N0 drop, satellite drop,
 jamming enter/exit cycles, max speed, time jump, flat-C/N0 limit, altitude step, alert latch minutes,
-warm-up fixes), **System** (reset all settings to defaults, reboot).
+warm-up fixes), **System** (Log raw, reset all settings to defaults, reboot).
 - Most settings apply **immediately** (while editing a number you see the effect; cancelling reverts).
   Settings marked `*` (GPS baudrate, GNSS mode) change the GPS module configuration done at boot: the
   menu shows `*reboot` and a "Reboot now" entry at the top until you reboot.
@@ -174,7 +174,32 @@ The radio path is deliberately separated from everything else (`bridge.py`, test
   change stays active until the next reboot. Settings and the Wi-Fi password file are written via a
   temporary file and rename.
 
-## Tests
-The parser has no hardware dependency; run on a desktop:
+## Recording logs and replaying them
+`DEBUG` is **off** by default (printing to a USB console that is attached but not being read can block the
+main loop). To capture a log for tuning the detectors, switch on **Menu > System > Log raw**: every framed
+sentence of every talker (including `$BD...`, `$PMTK...` and sentences that fail their checksum) is printed
+as `<arrival ms> <sentence>`, before any rewriting. Capture it on the computer:
 
-    python3 -m pytest tests
+    mpremote repl | tee log.txt
+
+(if the console cannot keep up, logging switches itself off and `Log raw` shows `off` again). Then replay
+it through the same radio-path code the board runs, with the same detectors:
+
+    python3 tools/replay.py log.txt --baud 4800 --gnss gps+bd
+    python3 tools/replay.py log.txt --set cn0_drop_db=8 --set max_speed_kn=40 -q
+
+It prints every state change and a summary: time in each state and alarm episodes per hour, which for a
+log recorded in normal conditions is the false-alarm rate. `--set` takes the advanced thresholds from the
+menu; `--baud`/`--gnss` set the GPS link rate and mode (they determine the GPS-time check's tolerance).
+Details in [docs/jamming-detection.md](docs/jamming-detection.md) and
+[docs/spoofing-detection.md](docs/spoofing-detection.md).
+
+## Development and tests
+The logic is hardware-free and tested on a desktop. Install the tools once and run everything CI runs:
+
+    pip install -r requirements-dev.txt
+    make check          # pytest, ruff, documentation link check, mpy-cross compile of all modules
+
+or individually `make test`, `make lint`, `make docs-check`, `make mpy`. `tools/mpy_smoke.py` runs the
+same pure logic under real MicroPython (`micropython tools/mpy_smoke.py`, unix port); CI runs it as a
+non-blocking job.

@@ -486,14 +486,17 @@ raises the state above `OK`. A second weak indicator (for example S2) would give
 
 ## 14. Tuning and validation
 
-1. **Record logs** (NMEA text, one sentence per line, optionally prefixed with a local millisecond
-   timestamp) at the dock and under way, several hours each; include manoeuvres and different
-   sea states and equipment use.
-2. **Replay** them: `python3 tools/replay.py my_log.nmea` prints every spoofing and jamming state change
-   (`SPOOF ALERT K1` etc.). Without timestamps the tool synthesises the local clock from GPS time,
-   which disables T1; supply timestamps to test T1.
-3. **Adjust** thresholds in the menu (Advanced) or `spoofing.py`, and replay again until normal
-   operation produces no `SPF!` and few `SPF?`, with margin.
+1. **Record logs** with **Menu > System > Log raw** and `mpremote repl | tee log.txt`: every framed sentence
+   of every talker is printed as `<arrival ms> <sentence>` (several hours at the dock and under way,
+   including manoeuvres, different sea states and equipment use).
+2. **Replay** them: `python3 tools/replay.py log.txt --baud 4800 --gnss gps+bd` drives a real `Bridge` with
+   both detectors, prints every state change (`SPOOF ALERT K1K2` etc.) and ends with the time in each
+   state and the alarm episodes per hour. `--baud`/`--gnss` set the GPS-time check's tolerance as on the
+   board. Without timestamps the tool synthesises the arrival time from GPS time, which makes T1 meaningless;
+   keep the timestamps to test it.
+3. **Adjust** thresholds in the menu (Advanced) or sweep them offline with `--set KEY=VALUE` (for example
+   `--set max_speed_kn=40 --set time_jump_ms=800`) until normal operation produces no `SPF!` and few `SPF?`,
+   with margin.
 4. **Provoke events safely.** Never transmit spoofing signals: generating counterfeit GNSS signals
    outside a shielded test environment is illegal in most places and dangerous to others. Use
    recorded logs with injected changes (edit a copy of a log to insert a position jump or a time

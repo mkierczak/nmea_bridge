@@ -1,11 +1,11 @@
 # Deploy to a Raspberry Pi Pico W running MicroPython (needs `pip install mpremote`)
-FILES = main.py NMEA.py l76x.py screens.py jamming.py spoofing.py wifi.py wificreds.py settings.py nav.py menu.py bridge.py ui.py sh1107.py writer.py \
+FILES = main.py NMEA.py l76x.py screens.py jamming.py spoofing.py wifi.py wificreds.py settings.py nav.py menu.py bridge.py ui.py linkcalc.py sh1107.py writer.py \
         roboto14.py roboto12.py freesans11.py freesans20.py dogica_gps.py
 
 # Modules that can be precompiled (everything except main.py); roboto14 is the font main.py imports
-MPY_MODULES = NMEA l76x screens jamming spoofing wifi wificreds settings nav menu bridge ui sh1107 writer roboto14
+MPY_MODULES = NMEA l76x screens jamming spoofing wifi wificreds settings nav menu bridge ui linkcalc sh1107 writer roboto14
 
-.PHONY: deploy deploy-mpy mpy test
+.PHONY: deploy deploy-mpy mpy test lint docs-check check
 deploy:
 	mpremote cp $(FILES) :
 
@@ -21,5 +21,16 @@ deploy-mpy: mpy
 	mpremote cp main.py :
 	mpremote cp build/*.mpy :
 
+# Desktop checks (pip install -r requirements-dev.txt): tests, lint, docs links, MicroPython compile
 test:
-	python3 -m pytest tests -q
+	python3 -m pytest -q
+
+lint:
+	ruff check .
+
+docs-check:
+	python3 tools/check_docs.py
+
+# Everything CI runs on every push (see .github/workflows/test.yml)
+check: test lint docs-check mpy
+	mpy-cross -o build/main.mpy main.py

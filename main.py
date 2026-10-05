@@ -26,12 +26,12 @@ import spoofing
 import ui
 import wificreds
 import roboto14
-from bridge import Bridge, GpsReader, RxQueue
+from bridge import Bridge, GpsReader, RawLogger, RxQueue
 from jamming import JamDetector
 from spoofing import SpoofDetector
 
 # Variables
-DEBUG = True                      # echo forwarded sentences and module acks to the REPL
+DEBUG = False                     # echo forwarded sentences and module acks to the REPL (blocks if a USB host is attached but not reading)
 LONG_PRESS_THRESHOLD = 1 * 1000   # threshold in milliseconds to distinguish between short and long press
 WATCHDOG_TIMEOUT = 5 * 1000       # watchdog has to be fed every N milliseconds
 WIFI_TOGGLE_PRESS = 3 * 1000      # hold UP this long (ms) to switch the Wi-Fi access point on/off
@@ -67,7 +67,8 @@ RS485_TXBUF = 512                 # TX buffer so uart.write doesn't block the ma
 
 # User settings (menu): the constants above are the defaults, settings.json holds the user's overrides
 DEFAULTS = {'gps_baud': GPS_BAUDRATE, 'gnss_mode': GNSS_MODE, 'jam_detect': JAM_DETECT,
-            'spoof_detect': SPOOF_DETECT, 'spoof_action': SPOOF_ACTION, 'contrast': 0, 'screen_off_s': 0}
+            'spoof_detect': SPOOF_DETECT, 'spoof_action': SPOOF_ACTION, 'contrast': 0, 'screen_off_s': 0,
+            'log_raw': False}
 for _t in FORWARD_TYPES_ALL:
     DEFAULTS['fwd_' + _t] = _t in FORWARD_TYPES
 DEFAULTS.update(settings.threshold_defaults(jamming, spoofing))
@@ -140,6 +141,19 @@ core.spoof_action = cfg.get('spoof_action')
 core.forward_types = tuple(t for t in FORWARD_TYPES_ALL if cfg.get('fwd_' + t))
 if DEBUG:
     core.on_forward = lambda text: print(text.strip())
+
+
+def disable_raw_log():
+    cfg.set('log_raw', False)   # a console that does not drain would stall the loop: switch logging off (not saved)
+    core.on_raw = None
+    print('Log raw switched off: the console is not keeping up')
+
+
+def set_raw_log(on):
+    core.on_raw = RawLogger(print, utime.ticks_ms, on_disable=disable_raw_log) if on else None
+
+
+set_raw_log(cfg.get('log_raw'))
 
 
 def gps_init():
@@ -235,6 +249,8 @@ def apply_setting(key):
         core.forward_types = tuple(t for t in FORWARD_TYPES_ALL if cfg.get('fwd_' + t))
     elif key == 'contrast':
         oled.contrast(cfg.get(key))
+    elif key == 'log_raw':
+        set_raw_log(cfg.get(key))
     elif key != 'screen_off_s':   # read every loop; everything else is an advanced threshold
         settings.apply_thresholds(cfg, jamming, spoofing)
         if core.spoof:

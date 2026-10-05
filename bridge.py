@@ -203,6 +203,29 @@ class GpsReader(object):
                 sleep_ms(1000)
 
 
+class RawLogger(object):
+    """Prints '<arrival ms> <sentence>' for every framed sentence (all talkers, as received): the format
+    tools/replay.py reads. If a print takes longer than max_ms (a USB console that is attached but not being
+    read blocks writes) it switches itself off and calls on_disable, so logging can never stall the loop."""
+
+    def __init__(self, write, clock, max_ms=200, on_disable=None):
+        self.write = write
+        self.clock = clock
+        self.max_ms = max_ms
+        self.on_disable = on_disable
+        self.disabled = False
+
+    def __call__(self, rx_ms, sentence):
+        if self.disabled:
+            return
+        start = self.clock()
+        self.write('{} {}'.format(rx_ms, sentence.strip()))
+        if ticks_diff(self.clock(), start) > self.max_ms:
+            self.disabled = True
+            if self.on_disable:
+                self.on_disable()
+
+
 class Bridge(object):
     """Sentences in, radio/Wi-Fi/detectors/statistics out. Call step(now) from the main loop."""
 

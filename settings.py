@@ -27,6 +27,7 @@ SCHEMA = (
     ('fwd_ZDA', 'ZDA', BOOL, 'Radio output', LIVE, None),
     ('contrast', 'Contrast', INT, 'Display', LIVE, (0, 255, 15)),
     ('screen_off_s', 'Screen off', CHOICE, 'Display', LIVE, (0, 30, 60, 300)),
+    ('log_raw', 'Log raw', BOOL, 'System', LIVE, None),
     ('cn0_drop_db', 'CN0 drop', INT, 'Advanced', LIVE, (3, 15, 1)),
     ('tracked_drop_pct', 'Sats drop%', INT, 'Advanced', LIVE, (30, 90, 5)),
     ('jam_enter_cycles', 'Jam enter', INT, 'Advanced', LIVE, (1, 6, 1)),
