@@ -18,20 +18,51 @@ All pins and rates are constants at the top of `main.py`.
 
 ## Deploy
 `make deploy` (uses `mpremote`) copies `main.py`, `NMEA.py`, `l76x.py`, `screens.py`, `jamming.py`, `spoofing.py`, `wifi.py`, `wificreds.py`,
-`sh1107.py`, `writer.py` and the font modules to the Pico. `main.py` runs on boot.
+`settings.py`, `nav.py`, `menu.py`, `sh1107.py`, `writer.py` and the font modules to the Pico. `main.py` runs on boot.
 
 `make deploy-mpy` precompiles the modules with `mpy-cross` and deploys `.mpy` files instead (less RAM to
 load them, faster boot; `mpy-cross` must match the firmware version). With `DEBUG` on, the free/used heap
 is printed at boot and every minute (`MEM ...`): check it before and after enabling Wi-Fi.
 
 ## Configuration
-Constants at the top of `main.py`. `FORWARD_TYPES` selects which sentence types are forwarded to the
-radio (default: RMC, GGA, GSA, GSV, ZDA; an empty tuple forwards nothing). The display always uses
-all parsed sentences regardless of this list.
+The constants at the top of `main.py` are the **defaults**. Everything you will want to change while
+running can be changed in the on-device menu (see below) and is stored in `settings.json` on the board;
+only values that differ from the defaults are saved, so changing a default in `main.py` still applies
+to settings you never touched. `FORWARD_TYPES` (default RMC, GGA, GSA, GSV, ZDA) selects which sentence
+types are forwarded to the radio and over Wi-Fi; the display always uses all parsed sentences.
+
+## Controls and menu
+Two keys, classified when released: short (< 1 s) and long (>= 1 s).
+
+| | UP | DOWN |
+|---|---|---|
+| **Pages** | short: next page; long: open the menu; **hold 3 s: Wi-Fi on/off** | short: previous page; long: back to Main |
+| **Menu** | short: cursor up; long: select / toggle / start editing | short: cursor down; long: back (leaves the menu at the top level) |
+| **Editing a value** | short: increase / next; long: confirm | short: decrease / previous; long: cancel (value reverts) |
+
+Pages (short presses cycle through them): **Main**, **Stats** (link statistics), **Satellites**
+(per-satellite C/N0 bars for GPS and BeiDou), **Signal** (jamming detector detail: mean vs baseline
+C/N0, reasons in words, module jamming status, AIC), **Spoofing** (state, warm-up progress, active
+indicators by name, alert latch time left), **System** (uptime, free heap, drops, GPS baud found at
+boot, fix interval, board ID), **Debug**, **Wi-Fi**.
+
+Menu: **GPS** (baudrate, GNSS mode), **Detection** (jamming and spoofing on/off, spoof action
+display/block), **Radio output** (RMC/GGA/GSA/GSV/ZDA on/off), **Display** (contrast, screen-off timer),
+**Wi-Fi** (on/off now, new password), **Advanced** (detector thresholds: C/N0 drop, satellite drop,
+jamming enter/exit cycles, max speed, time jump, flat-C/N0 limit, altitude step, alert latch minutes,
+warm-up fixes), **System** (reset all settings to defaults, reboot).
+- Most settings apply **immediately** (while editing a number you see the effect; cancelling reverts).
+  Settings marked `*` (GPS baudrate, GNSS mode) change the GPS module configuration done at boot: the
+  menu shows `*reboot` and a "Reboot now" entry at the top until you reboot.
+- The menu closes itself after 60 s without a key press. The screen-off timer (Display menu) switches
+  the OLED off after the chosen idle time; the first key press only wakes it, and an active jamming or
+  spoofing alert wakes it and keeps it on.
+- Corrupt or invalid entries in `settings.json` are ignored; "Reset defaults" deletes the file.
+- The menu code is loaded only while the menu is open (RAM).
 
 ### Wi-Fi: NMEA over TCP and UDP (Pico W)
 The access point is **off at boot**. Hold the **UP button for 3 s** to switch it on or off (a 1-3 s
-press still opens the debug screen). The WPA2 network serves the NMEA stream on port `WIFI_PORT` (10110)
+press opens the menu). The WPA2 network serves the NMEA stream on port `WIFI_PORT` (10110)
 as a TCP server (up to `WIFI_MAX_CLIENTS`, slow or dead clients are dropped) and as UDP broadcast to the
 AP subnet (`192.168.4.255`). Connect OpenCPN, SignalK, Navionics etc. to `192.168.4.1:10110`. The
 short-press cycle has a Wi-Fi screen with state, **SSID, password**, IP and client count.
@@ -49,8 +80,8 @@ unique to the board and shown on the Wi-Fi screen, even while the AP is off:
 Setting `WIFI_SSID` or `WIFI_PASSWORD` in `main.py` overrides the generated one (password 8-63
 characters; open networks are not supported). The password is stored in plain text on the board and
 shown on the OLED, so anyone with physical access to the device can read it.
-`WIFI_FORWARD_TYPES` / `WIFI_FORWARD_TALKERS` choose what is sent (default: the radio's types plus
-BeiDou talkers); when `SPOOF_ACTION = 'block'` is active the blocked sentences are not sent over Wi-Fi
+The forwarded sentence types are the same as for the radio (Radio output menu); `WIFI_FORWARD_TALKERS`
+chooses the talker IDs (default GP, GN and BeiDou BD); when `SPOOF_ACTION = 'block'` is active the blocked sentences are not sent over Wi-Fi
 either. Everyone who joins the network can read the vessel's position.
 
 Resources (estimates, measure on your board): the app needs roughly 70-100 KB of heap; the Wi-Fi code is
@@ -79,7 +110,7 @@ widens its tolerance by the worst-case line time of a cycle so this delay does n
 `jamming.py` watches per-satellite C/N0 from GSV and the fix status, learns a baseline of normal
 conditions, and shows `OK` / `LOW` / `JAM?` at the top right of the main screen (blank while the
 baseline is still being learned). Details (mean vs baseline C/N0, tracked satellites, reason letters
-C/N/F) are on the stats and debug screens. NMEA exposes no RF/AGC data, so obstruction, indoor use or
+C/N/F/M) are on the Signal page. NMEA exposes no RF/AGC data, so obstruction, indoor use or
 an antenna fault look the same as jamming: treat `JAM?` as "signal degraded, jamming possible".
 Thresholds are constants at the top of `jamming.py`; tune them with `tools/replay.py` on a recorded
 NMEA log. Set `JAM_DETECT = False` in `main.py` to disable it. At init the module is also asked to
@@ -115,10 +146,6 @@ appears as `$BD…` sentences, which are not forwarded to the radio: see `FORWAR
 own jamming detector (`$PMTK838,1`, reports `$PMTKSPF`) also feeds the jamming indicator (reason `M`).
 Module replies to the configuration commands (`$PMTK001`: 251 baud, 286 AIC, 353 search mode, 838
 jamming detector) are printed when `DEBUG` is on.
-
-## Buttons
-- UP short: next screen (main / stats); UP long: debug screen
-- DOWN short: previous screen; DOWN long: main screen
 
 ## Watchdog
 The watchdog is armed when the first GPS sentence arrives (so there is no reboot loop on the bench

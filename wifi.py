@@ -52,6 +52,10 @@ class NmeaBroadcaster(object):
         self._bcast = None
         self._clients = []          # [connection, strikes]
 
+    def set_password(self, password):
+        """Use a new password the next time the AP is started."""
+        self._password = password
+
     @property
     def client_count(self):
         return len(self._clients)

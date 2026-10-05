@@ -125,6 +125,16 @@ class SpoofDetector(object):
     def signature(self):
         return (self.state, self.reason)
 
+    def active_codes(self):
+        """Indicator codes currently counting (younger than WINDOW_MS), in severity order."""
+        return [c for c in STRONG + MEDIUM + WEAK if c in self._events]
+
+    def latch_remaining_ms(self, now_ms):
+        """Milliseconds until a latched ALERT may clear (0 if not latched)."""
+        if self._alert_at is None:
+            return 0
+        return max(0, LATCH_MS - _ticks_diff(now_ms, self._alert_at))
+
     @property
     def armed(self):
         return self.warm_fixes >= WARMUP_FIXES

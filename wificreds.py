@@ -103,3 +103,15 @@ def get_ssid(configured='', uid=None):
         import machine
         uid = machine.unique_id()
     return SSID_PREFIX + uid_suffix(uid)
+
+
+def regenerate_password(path=PASSWORD_FILE, urandom=None):
+    """Replace the stored password with a new random one. Returns (password, persisted)."""
+    urandom = _default_urandom(urandom)
+    pw = generate_password(urandom)
+    try:
+        with open(path, 'w') as f:
+            f.write(pw)
+    except OSError:
+        return pw, False
+    return pw, True
