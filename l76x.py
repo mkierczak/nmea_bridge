@@ -223,12 +223,18 @@ class L76X(object):
                 failed.append((data, flag))
         return failed
 
-    def configure_baudrate(self, target, listen_ms=1500):
+    def configure_baudrate(self, target, listen_ms=1500, prepare=None):
         """Make the module talk at 'target' baud and leave our UART at that rate.
 
         Listens at the target first (module already configured: nothing is sent). Otherwise probes
         the other rates, tells the module to switch with $PMTK251 and verifies. Returns the rate the
-        module was found at, or None if it was never heard (UART is then left at the target)."""
+        module was found at, or None if it was never heard (UART is then left at the target).
+
+        prepare() is called once the module has been heard at another rate, before it is told to switch:
+        a module that has just lost power outputs far more than a slow link can carry and answers
+        $PMTK251 with 'failed' (flag 2) until its output has been reduced. If the switch is refused anyway
+        the UART stays at the rate the module talks at (degraded, but the data keeps flowing) and that
+        rate is returned."""
         command = baud_command(target)  # validates the rate
         uartx, tx, rx = self._uart_args
         self._open(uartx, target, tx, rx)
@@ -240,12 +246,19 @@ class L76X(object):
             self._open(uartx, rate, tx, rx)
             if not self._listen(listen_ms):
                 continue
-            self.send_command(command)
-            utime.sleep(0.3)
-            self._open(uartx, target, tx, rx)
-            if self._listen(listen_ms):
-                return rate
-            self._open(uartx, rate, tx, rx)  # switch did not take effect: keep talking at the old rate
+            if prepare is not None:
+                prepare()
+            for _ in range(2):
+                self.send_command(command)
+                utime.sleep(0.3)
+                self._open(uartx, target, tx, rx)
+                if self._listen(listen_ms):
+                    return rate
+                self._open(uartx, rate, tx, rx)  # switch did not take effect: keep talking at the old rate
+                if not self._listen(listen_ms):
+                    break                        # not heard at the old rate any more: it may have switched late
+            else:
+                return rate                      # refused twice: stay at the module's rate rather than go deaf
         self._open(uartx, target, tx, rx)
         return None
 

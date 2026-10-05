@@ -166,7 +166,8 @@ set_raw_log(cfg.get('log_raw'))
 
 def gps_init():
     """Find the GPS module's baud rate, switch it if needed and configure it. Returns the rate it was found at."""
-    found = gps.configure_baudrate(GPS_BAUDRATE)
+    configured = []
+    found = gps.configure_baudrate(GPS_BAUDRATE, prepare=lambda: configured.append(configure_module()))
     avg_load, worst_load = l76x.nmea_load(GPS_BAUDRATE, FIX_INTERVAL_MS, GNSS_MODE == 'GPS+BD')
     if DEBUG:
         print('GPS baud {}: module found at {}'.format(GPS_BAUDRATE, found))
@@ -176,9 +177,16 @@ def gps_init():
     if found is None:               # nobody answered: nothing to configure, and the reader will look again later
         gps.config_failed = []
         return None
-    # Each command waits for the module's acknowledgement (and is resent if it is lost): the module drops
-    # commands that arrive while it restarts its engine. The acknowledgements are handed on as ordinary
-    # sentences, so the parser records them (module acks, AIC status).
+    if not configured:
+        configure_module()
+    return found
+
+
+def configure_module():
+    """Send the configuration. Each command waits for the module's acknowledgement (and is resent if it is
+    lost): the module drops commands that arrive while it restarts its engine. The acknowledgements are handed
+    on as ordinary sentences, so the parser records them (module acks, AIC status). When the module is found
+    at another baud rate this runs before the switch (see l76x.configure_baudrate)."""
     failed = gps.send_commands([
         gps.PMTK_API_SET_STOP_QZSS,                 # disable Japanese QZSS
         gps.PMTK_API_SET_SBAS_ENABLED,
@@ -196,7 +204,6 @@ def gps_init():
     if DEBUG:
         for command, flag in failed:
             print('GPS module did not accept {} (reply: {})'.format(command, flag))
-    return found
 
 
 gps = l76x.L76X(uartx=UARTx, _baudrate=GPS_BAUDRATE, verbose=DEBUG)

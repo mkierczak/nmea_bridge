@@ -26,12 +26,14 @@ class Module:
     flags = {}            # command number -> flag to answer with (default 3)
     silent = ()           # command numbers that never get a reply
     accepted = []         # command numbers the module actually processed
+    heavy = False         # default output too large: refuses $PMTK251 (flag 2) until $PMTK314 reduced it
 
 
 def _reset(baud=9600, present=True):
     Clock.now = 0
     Module.baud, Module.present, Module.commands, Module.rx = baud, present, [], b''
     Module.busy_until, Module.flags, Module.silent, Module.accepted = -1, {}, (), []
+    Module.heavy = False
     FakeUART.instances = []
 
 
@@ -73,7 +75,10 @@ class FakeUART:
             text = line.strip().decode()
             Module.commands.append(text)
             if text.startswith('$PMTK251,'):
-                Module.baud = int(text[9:].split('*')[0])
+                if Module.heavy:
+                    self._buf += (with_checksum('PMTK001,251,2') + '\r\n').encode()
+                else:
+                    Module.baud = int(text[9:].split('*')[0])
             elif text.startswith('$PMTK'):
                 self._pmtk(text)
 
@@ -82,6 +87,8 @@ class FakeUART:
         if Clock.now < Module.busy_until:
             return                                    # busy: the command is silently lost
         Module.accepted.append(cmd)
+        if cmd == 314:
+            Module.heavy = False
         if cmd in ENGINE_COMMANDS:
             Module.busy_until = Clock.now + 1000
         if cmd in Module.silent:
@@ -140,6 +147,27 @@ def test_module_at_9600_is_found_and_switched():
     cmd = Module.commands[0]
     assert cmd.startswith('$PMTK251,4800*') and NMEA.valid_checksum(cmd)
     assert Module.baud == 4800 and gps.baudrate == 4800
+
+
+def test_a_module_that_refuses_the_switch_is_configured_first_then_switched():
+    _reset(baud=9600)
+    Module.heavy = True                                  # a power-cycled module: full default output
+    gps = new_gps()
+    calls = []
+
+    def prepare():
+        calls.append(gps.baudrate)                       # runs at the module's rate, before the switch
+        gps.send_command('$PMTK314,0,1,0,1,5,5,0,0,0,0,0,0,0,0,0,0,0,1,0')
+    assert gps.configure_baudrate(4800, prepare=prepare) == 9600
+    assert calls == [9600] and Module.baud == 4800 and gps.baudrate == 4800
+
+
+def test_a_switch_that_stays_refused_leaves_the_uart_at_the_modules_rate():
+    _reset(baud=9600)
+    Module.heavy = True
+    gps = new_gps()
+    assert gps.configure_baudrate(4800) == 9600          # not None: it was heard
+    assert Module.baud == 9600 and gps.baudrate == 9600  # and the data keeps flowing, at the old rate
 
 
 def test_module_at_115200_is_found():
