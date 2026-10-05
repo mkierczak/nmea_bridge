@@ -215,3 +215,25 @@ def test_rename_over_existing_file_fallback_only_for_eexist():
         finally:
             os.rename = real
         assert json.load(open(os.path.join(d, 'settings.json'))) == {'contrast': 45}
+
+
+def test_choice_values_must_have_the_exact_type():
+    assert S.coerce('screen_off_s', 60) == 60 and S.coerce('screen_off_s', 0) == 0
+    for key, bad in (('screen_off_s', False), ('screen_off_s', 60.0), ('screen_off_s', '60'), ('gps_baud', 4800.0),
+                     ('gps_baud', True), ('gnss_mode', 'gps+bd'), ('spoof_action', None)):
+        try:
+            S.coerce(key, bad)
+        except ValueError:
+            continue
+        raise AssertionError((key, bad))
+    assert S.coerce('gnss_mode', 'GPS+BD') == 'GPS+BD'
+
+
+def test_hand_edited_lookalike_values_in_the_file_are_ignored():
+    with tempfile.TemporaryDirectory() as d:
+        open(os.path.join(d, 'settings.json'), 'w').write(
+            json.dumps({'screen_off_s': False, 'gps_baud': 9600.0, 'contrast': 30}))
+        cfg = make(d)
+        cfg.load()
+        assert cfg.get('screen_off_s') == 0 and cfg.get('gps_baud') == 4800   # both ignored
+        assert cfg.get('contrast') == 30                                      # the valid entry still applies

@@ -17,7 +17,7 @@ time, position, fix, satellites, DOP grades and stats.
 All pins and rates are constants at the top of `main.py`.
 
 ## Deploy
-`make deploy` (uses `mpremote`) copies `main.py`, `NMEA.py`, `l76x.py`, `screens.py`, `jamming.py`, `spoofing.py`, `wifi.py`, `wificreds.py`,
+`make deploy` (uses `mpremote`; it first writes `version.py` from `git describe`, which the System page shows) copies `main.py`, `NMEA.py`, `l76x.py`, `screens.py`, `jamming.py`, `spoofing.py`, `wifi.py`, `wificreds.py`,
 `settings.py`, `nav.py`, `menu.py`, `bridge.py`, `ui.py`, `sh1107.py`, `writer.py` and the font modules to the Pico. `main.py` runs on boot.
 
 `make deploy-mpy` precompiles the modules with `mpy-cross` and deploys `.mpy` files instead (less RAM to
@@ -44,7 +44,7 @@ Pages (short presses cycle through them): **Main**, **Stats** (link statistics),
 (per-satellite C/N0 bars for GPS and BeiDou), **Signal** (jamming detector detail: mean vs baseline
 C/N0, reasons in words, module jamming status, AIC), **Spoofing** (state, warm-up progress, active
 indicators by name, alert latch time left), **System** (uptime, free heap, drops, GPS baud found at
-boot, fix interval, board ID), **Debug**, **Wi-Fi**.
+boot, fix interval, software version, board ID), **Debug**, **Wi-Fi**.
 
 Menu: **GPS** (baudrate, GNSS mode), **Detection** (jamming and spoofing on/off, spoof action
 display/block), **Radio output** (RMC/GGA/GSA/GSV/ZDA on/off), **Display** (contrast, screen-off timer),
@@ -88,7 +88,7 @@ Resources (estimates, measure on your board): the app needs roughly 70-100 KB of
 imported only when first switched on and adds on the order of 10-30 KB. Keep the Wi-Fi board and its
 antenna away from the GNSS antenna (the 2.4 GHz radio and board noise can lower C/N0; compare the
 C/N0 figures on the stats screen with Wi-Fi on and off). Starting the AP can block the main loop for
-a second or two, so a few GPS sentences may be dropped (see `drop:` on the stats screen).
+a second or two, so a few GPS sentences may be dropped (see the `d` figure, dropped sentences, on the stats screen).
 
 ### GPS baudrate
 `GPS_BAUDRATE` (default 4800; allowed 4800, 9600, 14400, 19200, 38400, 57600, 115200). At boot the

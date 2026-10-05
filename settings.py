@@ -53,8 +53,9 @@ def coerce(key, value):
         if isinstance(value, bool):
             return value
     elif kind == CHOICE:
-        if value in extra:
-            return value
+        for choice in extra:                       # exact type too: hand-edited false/60.0 must not pass as 0/60
+            if value == choice and type(value) is type(choice):
+                return choice
     elif kind == INT:
         if isinstance(value, int) and not isinstance(value, bool):
             lo, hi, step = extra

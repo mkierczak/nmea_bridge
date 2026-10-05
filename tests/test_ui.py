@@ -12,6 +12,7 @@ from bridge import Bridge, RxQueue
 from menu import Menu
 from nav import UP_SHORT, UP_LONG, DN_SHORT, DN_LONG, WIFI
 from test_bridge import Clock, FakeDetector, FakeRadio
+from test_jamming import with_checksum
 from test_menu import FakeOled
 from test_settings import full_defaults
 
@@ -189,3 +190,22 @@ def test_unknown_menu_state_does_not_crash_the_loop():
     r.navigator.in_menu = True                             # inconsistent state: menu object missing
     r.press(UP_SHORT)
     assert not r.navigator.in_menu and r.ui.menu is None
+
+
+def test_pages_are_not_redrawn_when_only_the_last_sentence_changes():
+    r = Rig()
+    r.step()
+    n = len(r.draws)
+    r.bridge.parser.parse_sentence(with_checksum('GPTXT,01,01,02,ANTENNA OK'))   # nothing the main page shows
+    r.step(advance=ui.REFRESH_MS + 10)
+    assert len(r.draws) == n                                  # used to redraw every 500 ms regardless
+    r.press(UP_SHORT)                                         # the Stats page lists the last-seen types
+    n = len(r.draws)
+    r.bridge.parser.parse_sentence(with_checksum('GPZDA,201530.00,04,07,2002,00,00'))
+    r.step(advance=ui.REFRESH_MS + 10)
+    assert len(r.draws) == n + 1
+    r.step(advance=ui.REFRESH_MS + 10)
+    assert len(r.draws) == n + 1                              # and stays quiet again
+    r.bridge.parser.parse_sentence(with_checksum('GNGGA,123520,4807.040,N,01131.000,E,1,08,0.9,5.4,M,46.9,M,,'))
+    r.step(advance=ui.REFRESH_MS + 10)
+    assert len(r.draws) == n + 2                              # visible data changed: redrawn

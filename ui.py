@@ -128,7 +128,8 @@ class UiController(object):
                bridge.detector.signature() if bridge.detector else None,
                bridge.spoof.signature() if bridge.spoof else None,
                self.wifi_info() if page == nav.PAGE_WIFI else None,
-               tuple(info.values()) if info else None)
+               tuple(info.values()) if info else None,
+               parser.type_signature() if page in (nav.PAGE_STATS, nav.PAGE_DEBUG) else None)
         if redraw_all or sig != self._last_sig:
             self.draw(self.oled, self.font, page, parser, bridge.stats, bridge.queue.dropped, no_fix,
                       bridge.detector, bridge.spoof, self.wifi_info(), info)

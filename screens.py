@@ -2,7 +2,7 @@ from writer import Writer
 from nav import (PAGE_MAIN, PAGE_STATS, PAGE_SATS, PAGE_SIGNAL, PAGE_SPOOF, PAGE_SYSTEM,
                  PAGE_DEBUG, PAGE_WIFI)
 
-JAM_WORDS = {'C': 'cn0', 'N': 'sats', 'F': 'nofix', 'M': 'module'}
+JAM_WORDS = {'C': 'cn0', 'N': 'sat', 'F': 'fix', 'M': 'mod'}   # short enough for all four on one line
 SPOOF_NAMES = {'K1': 'jump', 'T1': 'time', 'K2': 'speed', 'S1': 'flat', 'C1': 'GP/BD',
                'K3': 'alt', 'S2': 'elev', 'S3': 'power'}
 MODULE_JAM = {0: '?', 1: 'ok', 2: 'warn', 3: 'CRIT'}
@@ -26,13 +26,13 @@ def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None, spo
             Writer.set_textpos(oled, 32, 0)
             font_large.printstring(parser.get_lon_string())
         oled.hline(0, 48, 128, 1)
-        oled.text(parser.fix_type + ' ' + parser.mode + ' ' +
-                  str(parser.birds_in_use) + '/' + str(parser.birds_in_view), 0, 54, 1)
+        oled.text((parser.fix_type + ' ' + parser.mode + ' ' +
+                   str(parser.birds_in_use) + '/' + str(parser.birds_in_view))[:13], 0, 54, 1)  # ends before x=104
         oled.text(parser.get_dop_string(type='PDOP') + parser.get_dop_string(type='HDOP') +
                   parser.get_dop_string(type='VDOP'), 104, 54, 1)
     elif screen == PAGE_STATS:
         rcv = stats['rcv'] or 1  # avoid division by zero in empty windows
-        oled.text('rcv{}/m drop{}'.format(round(stats['rcvpm']), dropped), 0, 0, 1)  # 16 chars max
+        oled.text('rx{}/m d{}'.format(_cap(round(stats['rcvpm']), 9999), _cap(dropped, 9999)), 0, 0, 1)
         for row, (key, last) in enumerate((('val', parser.sentence_last_valid_type),
                                            ('inv', parser.sentence_last_invalid_type),
                                            ('par', parser.sentence_last_parsed_type),
@@ -40,15 +40,15 @@ def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None, spo
             oled.text(key + ": " + str(round(stats[key] / rcv * 100)) + '% ' + last, 0, row * 12, 1)
         if jam:
             tracked, mean, _ = parser.cn0_stats()
-            oled.text("C/N0 {}/{} n{}/{}".format(round(mean), round(jam.base_mean), tracked,
-                                                 round(jam.base_tracked)), 0, 56, 1)
+            oled.text('CN {}/{} n{}/{}'.format(round(mean), round(jam.base_mean), tracked,
+                                               round(jam.base_tracked)), 0, 56, 1)   # 16 chars at most
     elif screen == PAGE_WIFI:
         state, ssid, ip, clients, max_clients, password = wifi if wifi else ('OFF', '', '', 0, 0, '')
         oled.text('WiFi: ' + state, 0, 0, 1)
         oled.text(ssid[:16], 0, 10, 1)
         oled.text('PW ' + password[:13], 0, 20, 1)
-        oled.text(('IP ' + ip) if ip else 'IP -', 0, 30, 1)
-        oled.text('TCP clients {}/{}'.format(clients, max_clients), 0, 40, 1)
+        oled.text(('IP ' + ip)[:16] if ip else 'IP -', 0, 30, 1)
+        oled.text('TCP clients {}/{}'.format(clients, max_clients)[:16], 0, 40, 1)
         oled.text('UP 3s: toggle', 0, 54, 1)
     elif screen == PAGE_SATS:
         _draw_sats(oled, parser)
@@ -68,11 +68,16 @@ def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None, spo
         oled.text('SBAS:' + str(parser.birds_SBAS), 0, 34, 1)
         oled.text('BD:' + str(parser.birds_BD), 0, 44, 1)
         if spoof:
-            oled.text('S:' + spoof.reason[:10], 48, 44, 1)
+            oled.text('S:' + spoof.reason[:8], 48, 44, 1)    # 10 characters from x=48 end at the edge
         oled.text('OTHER:' + str(parser.birds_OTHER), 0, 54, 1)
         if jam:
             oled.text('why:' + jam.reason, 64, 54, 1)
         oled.hline(0, 63, 128, 1)
+
+
+def _cap(value, limit):
+    """Clip a counter for display: '9999+' instead of a number too wide for its line."""
+    return str(value) if value <= limit else '{}+'.format(limit)
 
 
 def _group(talker):
@@ -133,7 +138,7 @@ def _draw_spoof(oled, spoof, info):
     for i, code in enumerate(codes[:3]):
         oled.text('{} {}'.format(code, SPOOF_NAMES.get(code, '')), 0, 20 + 10 * i, 1)
     if len(codes) > 3:
-        oled.text('+{} more'.format(len(codes) - 3), 80, 40, 1)
+        oled.text('+{} more'.format(len(codes) - 3), 64, 40, 1)
     if not codes:
         oled.text('no indicators', 0, 20, 1)
     if info:
@@ -156,8 +161,9 @@ def _draw_system(oled, info):
         return
     up = info['uptime_s']
     oled.text('up {}h{:02d}m{:02d}s'.format(up // 3600, up // 60 % 60, up % 60), 0, 0, 1)
-    oled.text('heap {}k free'.format(info['heap'] // 1024), 0, 10, 1)
-    oled.text('drop {} inv {}%'.format(info['dropped'], info['inv_pct']), 0, 20, 1)
-    oled.text(_baud_line(info['baud'], info['found']), 0, 30, 1)
-    oled.text('fix{}ms {}'.format(info['fix_ms'], info['gnss']), 0, 40, 1)
-    oled.text(info['uid'][:16], 0, 52, 1)
+    oled.text('heap {}k free'.format(info['heap'] // 1024), 0, 9, 1)
+    oled.text('drop{} inv{}%'.format(_cap(info['dropped'], 999), min(info['inv_pct'], 100)), 0, 18, 1)
+    oled.text(_baud_line(info['baud'], info['found']), 0, 27, 1)
+    oled.text('fix{}ms {}'.format(info['fix_ms'], info['gnss']), 0, 36, 1)
+    oled.text(('v' + info.get('version', '?'))[:16], 0, 45, 1)
+    oled.text(info['uid'][:16], 0, 54, 1)

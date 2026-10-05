@@ -1,12 +1,17 @@
 # Deploy to a Raspberry Pi Pico W running MicroPython (needs `pip install mpremote`)
 FILES = main.py NMEA.py l76x.py screens.py jamming.py spoofing.py wifi.py wificreds.py settings.py nav.py menu.py bridge.py ui.py linkcalc.py sh1107.py writer.py \
-        roboto14.py roboto12.py freesans11.py freesans20.py dogica_gps.py
+        roboto14.py roboto12.py freesans11.py freesans20.py dogica_gps.py version.py
 
 # Modules that can be precompiled (everything except main.py); roboto14 is the font main.py imports
 MPY_MODULES = NMEA l76x screens jamming spoofing wifi wificreds settings nav menu bridge ui linkcalc sh1107 writer roboto14
 
-.PHONY: deploy deploy-mpy mpy test lint docs-check check
-deploy:
+.PHONY: deploy deploy-mpy mpy test lint docs-check check version
+
+# version.py is generated (and git-ignored): the git revision shown on the System page
+version:
+	@printf "VERSION = '%s'\n" "$$(git describe --always --dirty 2>/dev/null || echo dev)" > version.py
+
+deploy: version
 	mpremote cp $(FILES) :
 
 # Precompiled modules need less RAM to load and boot faster. mpy-cross must match the firmware
@@ -16,9 +21,9 @@ mpy:
 	for m in $(MPY_MODULES); do mpy-cross -o build/$$m.mpy $$m.py || exit 1; done
 
 # A .py next to a .mpy on the board would shadow it, so remove the source copies first.
-deploy-mpy: mpy
+deploy-mpy: mpy version
 	-for m in $(MPY_MODULES); do mpremote fs rm :$$m.py; done
-	mpremote cp main.py :
+	mpremote cp main.py version.py :
 	mpremote cp build/*.mpy :
 
 # Desktop checks (pip install -r requirements-dev.txt): tests, lint, docs links, MicroPython compile

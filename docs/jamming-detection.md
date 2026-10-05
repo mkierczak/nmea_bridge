@@ -203,7 +203,7 @@ raise the level on its own because it is derived from receiver-internal RF measu
 cannot see.
 
 The `reason` string lists the letters that were true on the last evaluation (for example `CN` or `CNM`);
-the Signal page spells them out as words (`cn0`, `sats`, `nofix`, `module`).
+the Signal page spells them out as words (`cn0`, `sat`, `fix`, `mod`).
 
 ### 5.5 Debounce (hysteresis)
 
@@ -284,7 +284,7 @@ know it should be better) and is a limitation (section 11).
 * **Signal page** (short-press through the pages): state, reasons in words, `CN0 mean/baseline dB`,
   `sats tracked/baseline`, mean C/N0 per constellation (GP, BD), module jamming status
   (`ok/warn/CRIT/?`) and the AIC result (`AIC+`, `AIC-`, `AIC?`).
-* **Stats page**: a line `C/N0 mean/baseline nTracked/baseline`.
+* **Stats page**: a line `CN mean/baseline nTracked/baseline`.
 * **Screen-off timer**: an active `LOW`/`JAM?` wakes a sleeping display and keeps it on.
 * **Enable/disable:** *Menu > Detection > Jamming* (live; re-enabling restarts the baseline learning).
 

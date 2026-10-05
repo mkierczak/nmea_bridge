@@ -115,14 +115,20 @@ class Parser(object):
         return snap
 
     def display_signature(self):
-        """Tuple of everything the screens show; equal tuples mean no redraw is needed."""
+        """Tuple of what the pages show, equal tuples mean no redraw is needed. Deliberately leaves out
+        the last sentence and the last-seen types (they change with every sentence; see type_signature())
+        and rounds the C/N0 mean (it jitters in the decimals)."""
+        n, mean, _ = self.cn0_stats()          # the maximum is not shown anywhere
         return (self.time, self.date, self.lat, self.lon, self.NS, self.EW,
                 self.fix_type, self.mode, self.birds_in_use, self.birds_in_view,
                 self.PDOP, self.HDOP, self.VDOP, self.birds_GPS, self.birds_SBAS,
-                self.birds_GLONASS, self.birds_BD, self.birds_OTHER, self.last_valid_sentence,
-                self.sentence_last_valid_type, self.sentence_last_invalid_type,
-                self.sentence_last_parsed_type, self.sentence_last_ignored_type,
-                self.cn0_stats(), self.pmtk_acks.get(286))
+                self.birds_GLONASS, self.birds_BD, self.birds_OTHER,
+                (n, round(mean)), self.pmtk_acks.get(286), self.module_jam_status)
+
+    def type_signature(self):
+        """What the Stats and Debug pages additionally show: the last sentence and the last-seen types."""
+        return (self.last_valid_sentence, self.sentence_last_valid_type, self.sentence_last_invalid_type,
+                self.sentence_last_parsed_type, self.sentence_last_ignored_type)
 
     def parse_sentence(self, sentence, rx_ms=None):
         """Parse one sentence. Returns True if the *envelope* is valid ('$', checksum, length): such a
@@ -361,18 +367,12 @@ class Parser(object):
             return False
     
     def get_time_string(self):
-        if len(self.time) > 0:
-            try:
-                hh = self.time[0:2]
-                mm = self.time[2:4]
-                ss = self.time[4:6]
-                tmp = f'{hh}:{mm}:{ss}'
-                return tmp
-            except:
-                return ''
-        else:
-            return ''
-    
+        """'hh:mm:ss' from the last time field, or '--:--:--' while there is none yet."""
+        t = self.time
+        if len(t) >= 6 and t[0:6].isdigit():
+            return '{}:{}:{}'.format(t[0:2], t[2:4], t[4:6])
+        return '--:--:--'
+
     def _coord_string(self, value, hemisphere, deg_digits):
         if len(value) > 0:
             try:
