@@ -96,7 +96,7 @@ def test_a_key_press_redraws_at_once_and_pages_cycle():
     r.press(UP_SHORT)
     assert r.navigator.page == nav.PAGE_SPEED and r.draws[-1][0] == nav.PAGE_SPEED
     r.press(DN_SHORT, DN_SHORT)
-    assert r.navigator.page == nav.PAGES[-1]
+    assert r.navigator.page == nav.PAGE_GPS                  # the last page of the main loop (no Wi-Fi page)
     r.press(DN_LONG)
     assert r.navigator.page == nav.PAGE_MAIN
 
@@ -105,7 +105,7 @@ def test_system_info_is_only_gathered_for_the_pages_that_need_it():
     r = Rig()
     r.step()
     assert r.system_calls == 0
-    r.navigator.page = nav.PAGE_SYSTEM
+    r.navigator.debug, r.navigator.page = True, nav.PAGE_SYSTEM
     r.press(UP_SHORT, DN_SHORT)                            # back to the system page via events
     assert r.system_calls >= 1 and r.draws[-1] == (nav.PAGE_SYSTEM, True)
 
@@ -246,12 +246,12 @@ def test_strong_alert_shows_a_banner_that_the_first_key_press_dismisses():
 def test_banner_only_swallows_keys_on_pages_that_show_it():
     r = Rig()
     r.step()
-    r.press(UP_SHORT, UP_SHORT)                            # Main -> Speed -> Stats
-    assert r.navigator.page == nav.PAGE_STATS
+    r.press(UP_SHORT, UP_SHORT)                            # Main -> Speed -> GPS
+    assert r.navigator.page == nav.PAGE_GPS
     r.bridge.spoof = FakeDetector('HIGH')
     r.step(advance=10)
-    r.press(UP_SHORT)
-    assert r.navigator.page == nav.PAGE_SATS and not r.ui.alert_acked
+    r.press(DN_SHORT)                                      # the GPS page has no banner: the key acts
+    assert r.navigator.page == nav.PAGE_SPEED and not r.ui.alert_acked
 
 
 def test_new_strong_alert_blinks_the_display_for_a_while_unless_dismissed():
@@ -313,13 +313,13 @@ def test_wifi_hold_box_appears_while_up_is_held_and_follows_the_progress():
     n = len(r.draws)
     held[0] = 1500
     r.step(advance=200)
-    assert r.ctxs[-1]['hold'] == (50, True) and len(r.draws) == n + 1
+    assert r.ctxs[-1]['hold'] == (50, 'Hold: Wi-Fi on') and len(r.draws) == n + 1
     held[0] = 2000
     r.step(advance=ui.HOLD_REFRESH_MS + 1)
-    assert r.ctxs[-1]['hold'] == (66, True)
+    assert r.ctxs[-1]['hold'] == (66, 'Hold: Wi-Fi on')
     held[0] = 9000
     r.step(advance=ui.HOLD_REFRESH_MS + 1)
-    assert r.ctxs[-1]['hold'] == (100, True)
+    assert r.ctxs[-1]['hold'] == (100, 'Release now!')
     held[0] = ui.HOLD_STALE_MS + 1                         # a lost release edge must not leave it on screen
     r.step(advance=ui.REFRESH_MS + 1)
     assert r.ctxs[-1]['hold'] is None
@@ -361,3 +361,74 @@ def test_main_page_gets_the_wifi_state_for_its_mark():
     r.step()
     assert r.draws[-1][0] == nav.PAGE_MAIN
     assert r.wifi_args[-1] is not None
+
+
+def test_chord_switches_to_the_debug_loop_and_back():
+    r = Rig()
+    r.step()
+    r.press(nav.CHORD)
+    assert r.navigator.debug and r.navigator.page == nav.PAGE_STATS and r.ctxs[-1]['debug'] is True
+    assert r.ctxs[-1]['pages'] == nav.DEBUG_PAGES
+    r.press(UP_SHORT)
+    assert r.navigator.page == nav.PAGE_SATS
+    r.press(DN_LONG)                                       # a long DOWN leaves the debug loop
+    assert not r.navigator.debug and r.navigator.page == nav.PAGE_MAIN and r.ctxs[-1]['debug'] is False
+    r.press(nav.CHORD, nav.CHORD)
+    assert not r.navigator.debug                           # the same chord toggles back
+
+
+def test_chord_is_not_swallowed_by_the_alert_banner_and_is_ignored_in_the_menu():
+    r = Rig()
+    r.step()
+    r.bridge.spoof = FakeDetector('HIGH')
+    r.step(advance=10)
+    assert r.ctxs[-1]['banner'] is True
+    r.press(nav.CHORD)
+    assert not r.navigator.debug and not r.ui.alert_acked or r.navigator.debug   # a chord still acts on the pages
+    r2 = Rig()
+    r2.step()
+    r2.press(DN_LONG)
+    assert r2.ui.menu is not None
+    r2.press(nav.CHORD)
+    assert not r2.navigator.debug and r2.ui.menu is not None
+
+
+def test_a_new_alert_pulls_the_display_back_from_the_debug_loop():
+    r = Rig()
+    r.step()
+    r.press(nav.CHORD)
+    assert r.navigator.debug
+    r.bridge.spoof = FakeDetector('MEDIUM')
+    r.step(advance=10)
+    assert not r.navigator.debug and r.navigator.page == nav.PAGE_MAIN and r.ctxs[-1]['banner'] is True
+
+
+def test_the_wifi_page_follows_the_access_point():
+    r = Rig()
+    up = [False]
+    r.ui.wifi_up = lambda: up[0]
+    r.navigator.wifi = True
+    r.step()
+    assert nav.PAGE_WIFI not in r.navigator.pages
+    up[0] = True
+    r.step(advance=10)
+    assert r.navigator.pages[-1] == nav.PAGE_WIFI
+    r.press(DN_SHORT)                                      # Main -> last page = Wi-Fi
+    assert r.navigator.page == nav.PAGE_WIFI
+    up[0] = False                                          # the access point goes off while you look at it
+    r.step(advance=10)
+    assert r.navigator.page == nav.PAGE_MAIN
+
+
+def test_chord_hold_box_shows_the_target_loop_and_progress():
+    r = Rig()
+    held = [None]
+    r.ui.chord_held = lambda now: held[0]
+    r.step()
+    held[0] = 1000
+    r.step(advance=200)
+    assert r.ctxs[-1]['hold'] == (50, 'Hold: debug')
+    r.navigator.debug, r.navigator.page = True, nav.PAGE_STATS
+    held[0] = 1500
+    r.step(advance=ui.HOLD_REFRESH_MS + 1)
+    assert r.ctxs[-1]['hold'] == (75, 'Hold: main')

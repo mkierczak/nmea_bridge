@@ -1,7 +1,7 @@
 # Screens and displayed values
 
 The OLED is 128 x 64 pixels with an 8 x 8 font, so a line holds 16 characters and the screen about 7 lines
-(Main uses a larger font for the position). This document lists every page, what each value means and where it
+(Main, Speed and the Wi-Fi password use a larger font). This document lists every page, what each value means and where it
 comes from. The drawing code is `screens.py`; the menu is `menu.py`.
 
 The pictures in this document are rendered by [`tools/screenshots.py`](../tools/screenshots.py) with the same drawing
@@ -10,27 +10,37 @@ beside them show what each line is.
 
 ## Navigation
 
+The pages are in two loops. The **main loop** is what you look at under way: **Main, Speed, GPS** and, while
+the Wi-Fi access point is on, **Wi-Fi**. The **debug loop** holds the pages with the details: **Stats,
+Satellites, Signal, Spoofing, System, Debug**.
+
 | Key | On a page | In the menu |
 |---|---|---|
-| UP short | next page | previous item / increase value |
-| DN short | previous page | next item / decrease value |
+| UP short | next page of the loop | previous item / increase value |
+| DN short | previous page of the loop | next item / decrease value |
 | UP long (1 s) | nothing | select / confirm |
-| DN long (1 s) | back to Main; **on Main: open the menu** | back / cancel / leave the menu |
+| DN long (1 s) | back to Main; **on Main: open the menu**; in the debug loop: leave it | back / cancel / leave the menu |
 | UP held 3 s | Wi-Fi access point on/off | treated as a normal long press |
+| **UP and DN together, 2 s** | switch between the main loop and the debug loop | nothing |
 
-Page order (UP goes down this list and wraps around): **Main, Speed, Stats, Satellites, Signal, Spoofing, System,
-Debug, Wi-Fi**. The Wi-Fi page exists only when `WIFI_ENABLE` is set. The screen can switch itself off after a
-timeout (menu Display > Screen off); the first key press only wakes it, and a jamming or spoofing alert wakes it and
-keeps it on. Pages are redrawn when a visible value changes (and at least every 500 ms when something did).
+![Holding both keys for the debug loop](img/main-debug-hold.png)
 
-**On every page**, the bottom edge carries a page indicator: one segment per page, two pixels high for the page you
-are on.
+**Two keys together.** While both keys are held for more than about 0.4 s a box appears (`Hold: debug`, or
+`Hold: main` in the debug loop) with a progress bar that fills over the 2 s; the loop switches when it is full. While
+both keys are down neither of them acts on its own (that includes the 3 s Wi-Fi toggle on UP), even if you let go
+early. In the debug loop a long DN also leaves it, and a new `MEDIUM`/`HIGH` alert sends you back to the Main page
+so that the banner is seen. The screen can switch itself off after a timeout (menu Display > Screen off); the first
+key press only wakes it, and a jamming or spoofing alert wakes it and keeps it on. Pages are redrawn when a visible
+value changes (and at least every 500 ms when something did).
+
+**On every page**, the bottom edge carries a page indicator: one segment per page of the loop you are in, two
+pixels high for the page you are on. In the debug loop the segments are dashed.
 
 ![Holding UP for the Wi-Fi gesture](img/main-wifi-hold.png)
 
-**Wi-Fi gesture feedback.** While UP is held for more than about 0.4 s a box appears: `Hold: Wi-Fi on` (or `off`,
-whichever the release will switch to) with a progress bar that fills over the 3 s; at full it reads `Release now!`.
-Releasing earlier does nothing but the usual short/long press.
+**Wi-Fi gesture feedback.** While UP is held on its own for more than about 0.4 s a box appears: `Hold: Wi-Fi on`
+(or `off`, whichever the release will switch to) with a progress bar that fills over the 3 s; at full it reads
+`Release now!`. The Wi-Fi page itself is in the main loop only while the access point is on (or failed to start).
 
 **Alert banner and blink.** The detectors report the probability of spoofing and of jamming as `OK`, `LOW`,
 `MEDIUM` or `HIGH`; `MEDIUM` and `HIGH` are alerts. An alert replaces the top row of the Main and
@@ -99,7 +109,53 @@ The alert banner replaces the title row, as on the Main page:
 
 ![Speed page with an alert banner](img/speed-alert.png)
 
-## 3. Stats
+## 3. GPS
+
+![GPS page](img/gps.png)
+
+```
+GPS               3D [9/14]  <- title, fix mode, satellites used / in view (badge)
+G6 B4 41dB          [AIC+]   <- satellites used per system, mean C/N0, interference-cancellation tag
+.-----------.  .-----------.
+|  JAMMING  |  |   SPOOF   |
+| [#][ ][ ] |  | [ ][ ][ ] |  <- three steps light up with the probability
+|    LOW    |  |    OK     |
+'-----------'  '-----------'
+```
+
+The overview you want under way: how healthy the sky is, and how likely jamming and spoofing are.
+
+| Item | Meaning |
+|---|---|
+| title right, badge | Fix mode (`2D`/`3D`, or the fix quality while the mode is unknown) and satellites used in the solution / in view. |
+| `G<n> B<n>` | Satellites used from GPS and BeiDou (from GSA). |
+| `<n>dB` | Mean C/N0 of all tracked satellites; `--` when none are tracked. |
+| `AIC` tag | The module's interference cancellation: a lit (white) `AIC+` when it acknowledged being on, an outlined `AIC-` when it refused, `AIC?` when it has not answered. |
+| `JAMMING` / `SPOOF` gauges | The probability of jamming and of spoofing: no step lit and `OK`; one step `LOW`; two steps `MEDIUM`; three steps `HIGH`. `INIT` while the jamming baseline is being learned, `off` when the detector is disabled. A `MEDIUM` or `HIGH` gauge is filled solid, because it is an alert. The reasons are in the debug loop (Signal and Spoofing pages). |
+
+![GPS page with a spoofing alert](img/gps-alert.png)
+
+## 4. Wi-Fi
+
+![Wi-Fi page](img/wifi.png)
+
+```
+WI-FI         [ON sta0]  <- title and state badge
+NMEABridge-AB12
+PW [ k4x9mhq2 ]          <- the password in the large font
+IP 192.168.4.1
+TCP 1/4 [#][ ][ ][ ]     <- clients / maximum, one square per slot (filled = connected)
+```
+
+| Item | Meaning |
+|---|---|
+| badge | `OFF`, `ON sta<n>`, or `ERR` (the access point could not start). Off after every boot. `sta<n>` is the number of phones associated with the access point at the Wi-Fi level, before any TCP connection: if a join attempt fails but this number briefly shows 1, the phone reached the radio and failed later (address or password stage). |
+| SSID | Network name: `NMEABridge-` plus four characters derived from the board ID. |
+| `PW` | The WPA2 password (8 characters, no look-alike characters such as `0/o` or `1/l`), in the large font. Generated on first boot and stored; menu Wi-Fi > New password makes a new one. A password of your own longer than 8 characters is shown in the small font (13 characters at most). A phone that saved the network with an older password must forget it first. |
+| `IP` | The access point's address (`-` while off). Connect clients to this address, TCP port 10110 (or receive UDP broadcasts on that port). |
+| `TCP n/m` | Connected TCP clients / maximum, with one square per slot. The Main page only shows that the access point is on, not the number of clients. |
+
+## 5. Stats
 
 ![Stats page](img/stats.png)
 
@@ -125,7 +181,7 @@ The bars and percentages are over a 10-second window of everything the GPS threa
 | type at the right | Three-letter type of the most recent sentence in that category. |
 | `CN a/b nc/d` | Only while jamming detection is on. `a` mean C/N0 of the tracked satellites now, `b` the learned baseline mean, `c` satellites tracked now, `d` baseline satellite count. |
 
-## 4. Satellites
+## 6. Satellites
 
 ![Satellites page](img/satellites.png)
 
@@ -145,7 +201,7 @@ The five strongest tracked satellites (C/N0 > 0), strongest first. `no satellite
 | gauge | Outlined bar proportional to C/N0 (full = 50 dB-Hz or more); the small tick on its lower edge marks 35 dB-Hz, a typical healthy level. |
 | number | C/N0 (signal-to-noise density) in dB-Hz. Typical open-sky values are 35-50. |
 
-## 5. Signal (jamming indicator)
+## 7. Signal (jamming indicator)
 
 ![Signal page](img/signal.png)
 
@@ -171,7 +227,7 @@ The page shows `off` in the badge (and nothing else) when the detector is disabl
 | `GP.. BD..` | Mean C/N0 of the GPS and BeiDou satellites separately; `-` if that system is not tracked. |
 | `m:` | The L76B's own jamming detector (`$PMTKSPF`): `?` unknown, `ok`, `warn`, `CRIT`. |
 
-## 6. Spoofing
+## 8. Spoofing
 
 ![Spoofing page](img/spoofing.png)
 
@@ -195,7 +251,7 @@ The badge shows `off` (and nothing else) when the detector is disabled.
 
 Details of each indicator: [spoofing-detection.md](spoofing-detection.md).
 
-## 7. System
+## 9. System
 
 ![System page](img/system.png)
 
@@ -220,7 +276,7 @@ fix1000ms GPS+BD
 | `fix..ms <gnss>` | Configured fix interval and GNSS mode (`GPS` or `GPS+BD`). |
 | last line | First 16 hex digits of the board's unique ID (the Wi-Fi name suffix is derived from it). It is replaced by `ERR r<n> g<n> s<n>` as soon as any of these counters is non-zero (each capped at `99+`): `r` radio write failures, `g` failures contained in the optional parts (detectors, Wi-Fi, logging, ...), `s` position sentences dropped because a stall made them too old. They are all zero in normal operation; see `errors` in `bridge.py`. |
 
-## 8. Debug
+## 10. Debug
 
 ![Debug page](img/debug.png)
 
@@ -242,26 +298,6 @@ S:K1T1S1             J:CN
 | `GPS`, `SBS`, `BDS`, `OTH` | Satellites used in the solution, per system, from GSA: GPS, SBAS, BeiDou, other. |
 | `S:` | Reason string of the spoofing detector (first 6 characters; `-` when none), only when it is on. |
 | `J:` | Reason letters of the jamming detector (`C` cn0, `N` sats, `F` fix, `M` module; `-` when none), only when it is on. |
-
-## 9. Wi-Fi
-
-![Wi-Fi page](img/wifi.png)
-
-```
-WI-FI         [ON sta0]  <- title and state badge
-NMEABridge-AB12
-PW [ k4x9mhq2 ]          <- the password in the large font
-IP 192.168.4.1
-TCP 1/4 [#][ ][ ][ ]     <- clients / maximum, one square per slot (filled = connected)
-```
-
-| Item | Meaning |
-|---|---|
-| badge | `OFF`, `ON sta<n>`, or `ERR` (the access point could not start). Off after every boot. `sta<n>` is the number of phones associated with the access point at the Wi-Fi level, before any TCP connection: if a join attempt fails but this number briefly shows 1, the phone reached the radio and failed later (address or password stage). |
-| SSID | Network name: `NMEABridge-` plus four characters derived from the board ID. |
-| `PW` | The WPA2 password (8 characters, no look-alike characters such as `0/o` or `1/l`), in the large font. Generated on first boot and stored; menu Wi-Fi > New password makes a new one. A password of your own longer than 8 characters is shown in the small font (13 characters at most). A phone that saved the network with an older password must forget it first. |
-| `IP` | The access point's address (`-` while off). Connect clients to this address, TCP port 10110 (or receive UDP broadcasts on that port). |
-| `TCP n/m` | Connected TCP clients / maximum, with one square per slot. The Main page only shows that the access point is on, not the number of clients. |
 
 ## Menu
 

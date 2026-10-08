@@ -156,15 +156,15 @@ INFO = {'uptime_s': 5025, 'heap': 98304, 'dropped': 0, 'inv_pct': 1, 'baud': 480
         'fix_ms': 1000, 'gnss': 'GPS+BD', 'uid': 'e66164084371b26f', 'now_ms': 60000, 'version': '3fc470a',
         'rerr': 0, 'gerr': 0, 'stale': 0}
 WIFI = ('ON sta1', 'NMEABridge-K7X2', '192.168.4.1', 1, 4, 'k4x9mhq2')
-PAGES = nav.PAGES
 
 
 def page_scene(page, parser=None, no_fix=False, jam=None, spoof=None, info=INFO, **ctx):
     def render():
         oled = SimOled()
         p = parser or make_parser()
+        debug = page in nav.DEBUG_PAGES      # the debug loop has its own page indicator (dashed)
         screens.draw(oled, SimWriter(oled), page, p, STATS, 0, no_fix, jam, spoof, WIFI, info,
-                     dict({'pages': PAGES}, **ctx))
+                     dict({'pages': nav.DEBUG_PAGES if debug else nav.MAIN_PAGES, 'debug': debug}, **ctx))
         return oled
     return render
 
@@ -205,8 +205,13 @@ def scenes():
          page_scene(nav.PAGE_MAIN, p, jam=Jam('OK'), spoof=alert_spoof, banner=True)),
         ('main-nofix', 'Main, no fix', page_scene(nav.PAGE_MAIN, nofix, no_fix=True, jam=Jam('OK'), fix_age_s=42, heartbeat='idle')),
         ('main-wifi-hold', 'Holding UP for the Wi-Fi gesture',
-         page_scene(nav.PAGE_MAIN, p, jam=Jam('OK'), hold=(55, True))),
+         page_scene(nav.PAGE_MAIN, p, jam=Jam('OK'), hold=(55, 'Hold: Wi-Fi on'))),
+        ('main-debug-hold', 'Holding both keys for the debug loop',
+         page_scene(nav.PAGE_MAIN, p, jam=Jam('OK'), hold=(70, 'Hold: debug'))),
         ('speed', 'Speed', page_scene(nav.PAGE_SPEED, p)),
+        ('gps', 'GPS', page_scene(nav.PAGE_GPS, p, jam=Jam('LOW', 'C'), spoof=make_spoof(p, 'OK', (), ''))),
+        ('gps-alert', 'GPS with a spoofing alert',
+         page_scene(nav.PAGE_GPS, p, jam=Jam('OK'), spoof=alert_spoof)),
         ('speed-alert', 'Speed, jamming alert banner',
          page_scene(nav.PAGE_SPEED, p, jam=Jam('MEDIUM', 'CN'), banner=True)),
         ('stats', 'Stats', page_scene(nav.PAGE_STATS, p, jam=Jam('OK'))),

@@ -29,7 +29,8 @@ class UiController(object):
 
     def __init__(self, cfg, oled, font, draw, navigator, events, bridge, menu_factory,
                  wifi_info, system_info, wifi_toggle, clock,
-                 menu_timeout_ms=MENU_TIMEOUT_MS, refresh_ms=REFRESH_MS, up_held=None, wifi_ms=3000):
+                 menu_timeout_ms=MENU_TIMEOUT_MS, refresh_ms=REFRESH_MS, up_held=None, wifi_ms=3000,
+                 chord_held=None, chord_ms=nav.CHORD_MS, wifi_up=None):
         self.cfg = cfg
         self.oled = oled
         self.font = font
@@ -45,6 +46,9 @@ class UiController(object):
         self.refresh_ms = refresh_ms
         self.up_held = up_held                # () -> ms the UP key has been held (None if not), or no gesture
         self.wifi_ms = wifi_ms
+        self.chord_held = chord_held          # (now) -> ms both keys have been held together, or None
+        self.chord_ms = chord_ms
+        self.wifi_up = wifi_up                # () -> True while the access point is on (or failed): its page is shown
         self.alert_acked = False              # a key press dismissed the banner of the current strong alert
         self._strong = False                  # an alert (spoofing or jamming at MEDIUM or HIGH) is active
         self._alert_ms = 0                    # uptime when it began
@@ -63,6 +67,9 @@ class UiController(object):
 
     def step(self, now):
         self._advance(now)
+        if self.wifi_up is not None:
+            self.navigator.wifi_up = self.wifi_up()
+        self.navigator.check()
         for ev in self.events.drain():
             self._handle(ev)
         if self.menu is not None and self.idle_ms > self.menu_timeout_ms:
@@ -95,6 +102,8 @@ class UiController(object):
             self._strong = strong
             self.alert_acked = False
             self._alert_ms = self.uptime_ms
+            if strong and self.navigator.debug and self.menu is None:
+                self.navigator.leave_debug()          # a new alert must be seen: back to the Main page
             self.force_draw = True
         blink = (strong and not self.alert_acked and not self.screen_off
                  and self.uptime_ms - self._alert_ms < BLINK_MS
@@ -106,7 +115,7 @@ class UiController(object):
             self._inverted = blink
 
     def _banner_visible(self):
-        return (self._strong and not self.alert_acked and self.menu is None
+        return (self._strong and not self.alert_acked and self.menu is None and not self.navigator.debug
                 and self.navigator.page in (nav.PAGE_MAIN, nav.PAGE_SPEED))
 
     def _advance(self, now):
@@ -130,7 +139,7 @@ class UiController(object):
         if self.screen_off:
             self._wake()                      # the press that wakes the display does nothing else
             return
-        if self._banner_visible():
+        if self._banner_visible() and ev != nav.CHORD:
             self.alert_acked = True               # the first key press dismisses the banner (and the blink)
             return
         ev = self.navigator.normalize(ev)
@@ -152,14 +161,24 @@ class UiController(object):
         gc.collect()
 
     def _hold(self, now):
-        """(percent, Wi-Fi will be on) while UP is held for the Wi-Fi gesture, else None."""
-        if self.up_held is None or self.menu is not None:
+        """(percent, label) while a two-key or UP gesture is being held (the box that shows its progress)."""
+        if self.menu is not None:
+            return None
+        if self.chord_held is not None:
+            held = self.chord_held(now)
+            if held is not None and HOLD_SHOW_MS <= held <= HOLD_STALE_MS:
+                return (min(100, held * 100 // self.chord_ms),
+                        'Hold: main' if self.navigator.debug else 'Hold: debug')
+        if self.up_held is None:
             return None
         held = self.up_held(now)
         if held is None or held < HOLD_SHOW_MS or held > HOLD_STALE_MS:
             return None
         state = self.wifi_info()[0]
-        return min(100, held * 100 // self.wifi_ms), not state.startswith('ON')
+        percent = min(100, held * 100 // self.wifi_ms)
+        if percent >= 100:
+            return percent, 'Release now!'
+        return percent, 'Hold: Wi-Fi ' + ('off' if state.startswith('ON') else 'on')
 
     def _draw(self, now):
         if self.screen_off:
@@ -188,6 +207,7 @@ class UiController(object):
         wifi = self.wifi_info() if page in (nav.PAGE_WIFI, nav.PAGE_MAIN) else None   # the Main page shows a mark
         age_ms = bridge.fix_age_ms(now) if no_fix else None
         ctx = {'pages': self.navigator.pages, 'banner': self._banner_visible(), 'hold': hold,
+               'debug': self.navigator.debug,
                'heartbeat': heartbeat, 'fix_age_s': None if age_ms is None else age_ms // 1000}
         sig = (page, no_fix, bridge.queue.dropped, tuple(bridge.stats.values()),
                parser.display_signature(),

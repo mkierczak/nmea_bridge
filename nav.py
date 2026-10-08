@@ -7,14 +7,17 @@ except ImportError:
         return a - b
 
 (PAGE_MAIN, PAGE_STATS, PAGE_SATS, PAGE_SIGNAL, PAGE_SPOOF, PAGE_SYSTEM, PAGE_DEBUG,
- PAGE_WIFI, PAGE_SPEED) = range(9)
-PAGES = (PAGE_MAIN, PAGE_SPEED, PAGE_STATS, PAGE_SATS, PAGE_SIGNAL, PAGE_SPOOF, PAGE_SYSTEM, PAGE_DEBUG,
-         PAGE_WIFI)
+ PAGE_WIFI, PAGE_SPEED, PAGE_GPS) = range(10)
+# The main loop is what you look at under way; the debug loop (both keys held for 2 s) has the details.
+MAIN_PAGES = (PAGE_MAIN, PAGE_SPEED, PAGE_GPS, PAGE_WIFI)       # the Wi-Fi page only while the access point is up
+DEBUG_PAGES = (PAGE_STATS, PAGE_SATS, PAGE_SIGNAL, PAGE_SPOOF, PAGE_SYSTEM, PAGE_DEBUG)
+PAGES = MAIN_PAGES + DEBUG_PAGES
 
-UP_SHORT, UP_LONG, DN_SHORT, DN_LONG, WIFI = 'UP_SHORT', 'UP_LONG', 'DN_SHORT', 'DN_LONG', 'WIFI'
+UP_SHORT, UP_LONG, DN_SHORT, DN_LONG, WIFI, CHORD = 'UP_SHORT', 'UP_LONG', 'DN_SHORT', 'DN_LONG', 'WIFI', 'CHORD'
 
 LONG_MS = 1000
 WIFI_MS = 3000
+CHORD_MS = 2000               # both keys held this long: switch between the main loop and the debug loop
 DEBOUNCE_MS = 30
 
 # What Navigator.handle() asks the main loop to do
@@ -40,13 +43,17 @@ class ButtonTracker(object):
         self.long_ms = long_ms
         self.wifi_ms = wifi_ms
         self.debounce_ms = debounce_ms
+        self.partner = None          # the other key; while both are down neither produces a single-key event
+        self.chord = False           # this press overlapped the other key
+        self.fired = False           # ... and the chord event was already sent
         self._pressed_at = None
         self._last_edge = None
 
     def held_ms(self, now_ms):
-        """How long the key has been held down, or None while it is not pressed."""
+        """How long the key has been held down on its own, or None while it is not pressed (or is part of a
+        chord)."""
         pressed = self._pressed_at
-        return None if pressed is None else _ticks_diff(now_ms, pressed)
+        return None if pressed is None or self.chord else _ticks_diff(now_ms, pressed)
 
     def edge(self, value, now_ms):
         if self._last_edge is not None and _ticks_diff(now_ms, self._last_edge) < self.debounce_ms:
@@ -55,12 +62,45 @@ class ButtonTracker(object):
         if value == 0:                       # pressed (active low)
             if self._pressed_at is None:
                 self._pressed_at = now_ms
+                other = self.partner
+                if other is not None and other._pressed_at is not None:
+                    self.chord = other.chord = True     # both down: this is no single-key press
+                    self.fired = other.fired = False
             return None
         if self._pressed_at is None:         # a release we never saw the press of: ignore
             return None
         held = _ticks_diff(now_ms, self._pressed_at)
         self._pressed_at = None
+        if self.chord:
+            other = self.partner
+            if other is None or other._pressed_at is None:     # the last one let go: the chord is over
+                self.chord = self.fired = False
+                if other is not None:
+                    other.chord = other.fired = False
+            return None                      # a key that was part of a chord never acts alone
         return classify(self.name, held, self.long_ms, self.wifi_ms)
+
+
+def pair(up, dn):
+    """Make two trackers aware of each other so that holding both is a chord, not two single presses."""
+    up.partner, dn.partner = dn, up
+
+
+def chord_held_ms(up, dn, now_ms):
+    """How long both keys have been down together (None unless both are, or after the chord event fired)."""
+    if up._pressed_at is None or dn._pressed_at is None or up.fired:
+        return None
+    return min(_ticks_diff(now_ms, up._pressed_at), _ticks_diff(now_ms, dn._pressed_at))
+
+
+def chord_due(up, dn, now_ms, chord_ms=CHORD_MS):
+    """True once, when both keys have been held for chord_ms. Call from the main loop; put CHORD on the event
+    queue when it returns True."""
+    held = chord_held_ms(up, dn, now_ms)
+    if held is not None and held >= chord_ms:
+        up.fired = dn.fired = True
+        return True
+    return False
 
 
 class EventQueue(object):
@@ -100,11 +140,33 @@ class EventQueue(object):
 
 
 class Navigator(object):
+    """Which page is shown. Two loops of pages: the main loop (Main, Speed, GPS and, while the access point is
+    up, Wi-Fi) and the debug loop (everything with details), switched by the CHORD event."""
 
-    def __init__(self, pages=PAGES):
-        self.pages = pages
-        self.page = pages[0]
+    def __init__(self, wifi=True):
+        self.wifi = wifi                 # the build has the Wi-Fi page at all
+        self.wifi_up = False             # the access point is on (or failed): the page is worth showing
+        self.debug = False
+        self.page = PAGE_MAIN
         self.in_menu = False
+
+    @property
+    def pages(self):
+        if self.debug:
+            return DEBUG_PAGES
+        if self.wifi and self.wifi_up:
+            return MAIN_PAGES
+        return MAIN_PAGES[:-1]
+
+    def check(self):
+        """Back to the first page of the loop when the current page no longer exists (Wi-Fi switched off)."""
+        if self.page not in self.pages:
+            self.page = self.pages[0]
+
+    def leave_debug(self):
+        if self.debug:
+            self.debug = False
+            self.page = PAGE_MAIN
 
     def normalize(self, event):
         """Inside the menu the Wi-Fi gesture (UP held 3 s) is just a long UP: a slightly long confirm must
@@ -116,6 +178,11 @@ class Navigator(object):
     def handle(self, event):
         """Update state for one (normalized) event. Returns None, OPEN_MENU, TOGGLE_WIFI or TO_MENU
         (forward the event to the menu, which tells us when to close it via close_menu())."""
+        if event == CHORD:
+            if not self.in_menu:             # both keys held: the other loop (not while the menu is open)
+                self.debug = not self.debug
+                self.page = DEBUG_PAGES[0] if self.debug else PAGE_MAIN
+            return None
         if event == WIFI:
             return TOGGLE_WIFI
         if self.in_menu:
@@ -125,17 +192,21 @@ class Navigator(object):
         elif event == DN_SHORT:
             self._step(-1)
         elif event == DN_LONG:
-            if self.page == self.pages[0]:       # on the top (Main) page a long DOWN opens the menu
+            if self.debug:                           # a long DOWN leaves the debug loop
+                self.leave_debug()
+            elif self.page == PAGE_MAIN:             # on the top (Main) page it opens the menu
                 self.in_menu = True
                 return OPEN_MENU
-            self.page = self.pages[0]            # anywhere else it goes back to the Main page
-        return None                              # (a long UP has no function on the pages)
+            else:
+                self.page = PAGE_MAIN                # anywhere else it goes back to the Main page
+        return None                                  # (a long UP has no function on the pages)
 
     def close_menu(self):
         self.in_menu = False
 
     def _step(self, direction):
-        if self.page in self.pages:
-            self.page = self.pages[(self.pages.index(self.page) + direction) % len(self.pages)]
+        pages = self.pages
+        if self.page in pages:
+            self.page = pages[(pages.index(self.page) + direction) % len(pages)]
         else:
-            self.page = self.pages[0]
+            self.page = pages[0]

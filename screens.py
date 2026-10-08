@@ -1,6 +1,6 @@
 from writer import Writer
 from nav import (PAGE_MAIN, PAGE_STATS, PAGE_SATS, PAGE_SIGNAL, PAGE_SPOOF, PAGE_SYSTEM,
-                 PAGE_DEBUG, PAGE_WIFI, PAGE_SPEED)
+                 PAGE_DEBUG, PAGE_WIFI, PAGE_SPEED, PAGE_GPS)
 
 JAM_WORDS = {'C': 'cn0', 'N': 'sat', 'F': 'fix', 'M': 'mod'}   # short enough for all four on one line
 # the annunciator tiles of the Spoofing page: indicator code and a three-letter name
@@ -112,25 +112,27 @@ def age_text(seconds):
     return 'lost {}h{:02d}m'.format(seconds // 3600, seconds // 60 % 60)
 
 
-def _page_indicator(oled, page, pages):
-    """One segment per page along the bottom edge (two pixels high for the current page)."""
+def _page_indicator(oled, page, pages, debug=False):
+    """One segment per page along the bottom edge (two pixels high for the current page). In the debug loop the
+    segments are dashed, so it is clear which loop you are in."""
     if not pages or page not in pages:
         return
     width = 128 // len(pages)
     for i, p in enumerate(pages):
         x = i * width
-        oled.hline(x, 63, width - 2, 1)
-        if p == page:
-            oled.hline(x, 62, width - 2, 1)
+        for dx in range(0, width - 2, 4 if debug else width):
+            length = 2 if debug else width - 2
+            oled.hline(x + dx, 63, length, 1)
+            if p == page:
+                oled.hline(x + dx, 62, length, 1)
 
 
 def _draw_hold(oled, hold):
-    """Progress box while UP is held for the Wi-Fi gesture; hold = (percent, wifi will be on)."""
-    percent, will_be_on = hold
+    """Progress box while a key gesture is held (Wi-Fi toggle, switching loops); hold = (percent, label)."""
+    percent, label = hold
     oled.fill_rect(0, 34, 128, 28, 0)
     oled.hline(0, 34, 128, 1)
     oled.hline(0, 61, 128, 1)
-    label = 'Release now!' if percent >= 100 else 'Hold: Wi-Fi ' + ('on' if will_be_on else 'off')
     oled.text(label, (128 - 8 * len(label)) // 2, 38, 1)
     oled.fill_rect(4, 50, 120, 8, 1)
     oled.fill_rect(5, 51, 118, 6, 0)
@@ -220,8 +222,8 @@ def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None, spo
          ctx=None):
     """Render one screen into the frame buffer (caller calls oled.show()). ctx (optional dict) carries what
     only the controller knows: 'pages' (page indicator), 'fix_age_s' (seconds since the last fix, None if
-    never), 'banner' (True to show the alert banner), 'heartbeat' (key of HEARTBEAT, Main page) and 'hold'
-    (Wi-Fi gesture progress, see _draw_hold). 'wifi' is used by the Wi-Fi page and, as a small icon, by the
+    never), 'banner' (True to show the alert banner), 'heartbeat' (key of HEARTBEAT, Main page), 'debug'
+    (True in the debug loop) and 'hold' (key gesture progress, see _draw_hold). 'wifi' is used by the Wi-Fi page and, as a small icon, by the
     Main page."""
     ctx = ctx or {}
     banner = banner_text(jam, spoof) if ctx.get('banner') else ''
@@ -230,6 +232,8 @@ def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None, spo
         _draw_speed(oled, font_large, parser, no_fix, banner)
     elif screen == PAGE_MAIN:
         _draw_main(oled, font_large, parser, no_fix, jam, spoof, wifi, banner, ctx)
+    elif screen == PAGE_GPS:
+        _draw_gps(oled, parser, jam, spoof)
     elif screen == PAGE_STATS:
         _draw_stats(oled, parser, stats, dropped, jam)
     elif screen == PAGE_SATS:
@@ -244,9 +248,53 @@ def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None, spo
         _draw_debug(oled, font_large, parser, jam, spoof)
     elif screen == PAGE_WIFI:
         _draw_wifi(oled, font_large, wifi)
-    _page_indicator(oled, screen, ctx.get('pages'))
+    _page_indicator(oled, screen, ctx.get('pages'), ctx.get('debug'))
     if ctx.get('hold'):
         _draw_hold(oled, ctx['hold'])
+
+
+LEVELS = {'OK': 0, 'LOW': 1, 'MEDIUM': 2, 'HIGH': 3}
+
+
+def _severity(oled, x, label, state):
+    """A framed 62 x 38 gauge: the name, three meter steps (LOW, MEDIUM, HIGH light up one after the other) and the
+    level word. An alert (MEDIUM, HIGH) fills the whole panel, so it cannot be missed. state None = detector off."""
+    alert = state in ALERT_STATES
+    color = 0 if alert else 1
+    if alert:
+        oled.fill_rect(x, 22, 62, 38, 1)
+    else:
+        _frame(oled, x, 22, 62, 38)
+    oled.text(label, x + (62 - 8 * len(label)) // 2, 25, color)
+    level = LEVELS.get(state, 0)
+    for step in range(3):
+        sx = x + 5 + 18 * step
+        if step < level:
+            oled.fill_rect(sx, 36, 16, 8, color)
+        else:
+            oled.hline(sx, 36, 16, color)
+            oled.hline(sx, 43, 16, color)
+            oled.vline(sx, 36, 8, color)
+            oled.vline(sx + 15, 36, 8, color)
+    word = 'off' if state is None else state
+    oled.text(word, x + (62 - 8 * len(word)) // 2, 48, color)
+
+
+def _draw_gps(oled, parser, jam, spoof):
+    """Constellation stats on a strip, the AIC status as a small tag, and the two severity gauges."""
+    mode = parser.mode or parser.fix_type
+    _title(oled, 'GPS', mode, '{}/{}'.format(parser.birds_in_use, parser.birds_in_view))
+    tracked, mean, _ = parser.cn0_stats()
+    oled.text('G{} B{} {}dB'.format(parser.birds_GPS, parser.birds_BD, round(mean) if tracked else '--'), 0, 13, 1)
+    aic = parser.pmtk_acks.get(286)
+    if aic == 3:                                   # interference cancellation is on: a lit tag
+        oled.fill_rect(96, 12, 32, 9, 1)
+        oled.text('AIC+', 96, 13, 0)
+    else:
+        _frame(oled, 96, 12, 32, 9)
+        oled.text('AIC' + ('?' if aic is None else '-'), 96, 13, 1)
+    _severity(oled, 0, 'JAMMING', jam.state if jam else None)
+    _severity(oled, 66, 'SPOOF', spoof.state if spoof else None)
 
 
 def _draw_main(oled, font_large, parser, no_fix, jam, spoof, wifi, banner, ctx):

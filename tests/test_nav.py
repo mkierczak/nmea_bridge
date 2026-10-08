@@ -16,15 +16,49 @@ def test_classify_presses():
     assert classify('UP', 5000, wifi_ms=None) == UP_LONG
 
 
-def test_page_cycle_both_directions_and_wrap():
+def test_main_loop_cycle_both_directions_and_wrap_with_and_without_the_wifi_page():
     n = Navigator()
-    assert n.page == nav.PAGE_MAIN
-    for expected in nav.PAGES[1:]:
+    assert n.page == nav.PAGE_MAIN and n.pages == (nav.PAGE_MAIN, nav.PAGE_SPEED, nav.PAGE_GPS)
+    for expected in (nav.PAGE_SPEED, nav.PAGE_GPS):
         assert n.handle(UP_SHORT) is None and n.page == expected
     n.handle(UP_SHORT)
     assert n.page == nav.PAGE_MAIN                    # wrapped
     n.handle(DN_SHORT)
-    assert n.page == nav.PAGES[-1]
+    assert n.page == nav.PAGE_GPS
+    n.wifi_up = True
+    assert n.pages[-1] == nav.PAGE_WIFI
+    n.handle(UP_SHORT)
+    assert n.page == nav.PAGE_WIFI
+    n = Navigator(wifi=False)
+    n.wifi_up = True
+    assert nav.PAGE_WIFI not in n.pages               # a build without Wi-Fi never shows the page
+
+
+def test_chord_toggles_the_debug_loop_and_a_long_down_leaves_it():
+    n = Navigator()
+    assert n.handle(nav.CHORD) is None and n.debug and n.page == nav.PAGE_STATS
+    assert n.pages == nav.DEBUG_PAGES
+    for expected in nav.DEBUG_PAGES[1:]:
+        n.handle(UP_SHORT)
+        assert n.page == expected
+    n.handle(UP_SHORT)
+    assert n.page == nav.PAGE_STATS                   # wrapped inside the debug loop
+    assert n.handle(DN_LONG) is None and not n.debug and n.page == nav.PAGE_MAIN     # no menu from here
+    n.handle(nav.CHORD)
+    n.handle(nav.CHORD)
+    assert not n.debug and n.page == nav.PAGE_MAIN
+
+
+def test_chord_does_nothing_in_the_menu_and_the_wifi_page_disappears_with_the_access_point():
+    n = Navigator()
+    assert n.handle(DN_LONG) == nav.OPEN_MENU
+    assert n.handle(nav.CHORD) is None and not n.debug and n.in_menu
+    n.close_menu()
+    n.wifi_up = True
+    n.page = nav.PAGE_WIFI
+    n.wifi_up = False
+    n.check()
+    assert n.page == nav.PAGE_MAIN
 
 
 def test_dn_long_returns_to_main():
@@ -55,16 +89,6 @@ def test_wifi_gesture_toggles_outside_the_menu_but_is_a_long_up_inside_it():
     assert ev == UP_LONG                               # a slightly long confirm is just a confirm
     assert n.handle(ev) == nav.TO_MENU and n.in_menu
     assert n.normalize(DN_SHORT) == DN_SHORT
-
-
-def test_custom_page_list_and_unknown_page():
-    pages = (nav.PAGE_MAIN, nav.PAGE_STATS)
-    n = Navigator(pages)
-    n.handle(UP_SHORT)
-    assert n.page == nav.PAGE_STATS
-    n.page = nav.PAGE_WIFI                            # not in this build's list
-    n.handle(UP_SHORT)
-    assert n.page == nav.PAGE_MAIN
 
 
 def test_button_tracker_pairs_press_and_release_and_classifies():
@@ -140,3 +164,38 @@ def test_button_tracker_reports_how_long_a_key_has_been_held():
     assert t.held_ms(1700) == 700
     assert t.edge(1, 2000) == nav.UP_LONG
     assert t.held_ms(2100) is None
+
+
+def test_two_keys_together_are_a_chord_and_neither_acts_alone():
+    up, dn = nav.ButtonTracker('UP'), nav.ButtonTracker('DN')
+    nav.pair(up, dn)
+    up.edge(0, 1000)
+    dn.edge(0, 1100)                                   # the second key goes down while the first is held
+    assert up.held_ms(1500) is None                    # no single-key gesture (Wi-Fi hold box) any more
+    assert nav.chord_held_ms(up, dn, 1500) == 400
+    assert not nav.chord_due(up, dn, 2900) and nav.chord_due(up, dn, 3100)
+    assert not nav.chord_due(up, dn, 3200)             # fires once
+    assert nav.chord_held_ms(up, dn, 3300) is None
+    assert up.edge(1, 4000) is None and dn.edge(1, 4100) is None      # no UP_LONG / WIFI / DN_LONG afterwards
+    up.edge(0, 6000)                                   # and the keys work again on their own
+    assert up.edge(1, 6200) == UP_SHORT
+
+
+def test_a_short_overlap_of_both_keys_does_nothing_at_all():
+    up, dn = nav.ButtonTracker('UP'), nav.ButtonTracker('DN')
+    nav.pair(up, dn)
+    up.edge(0, 1000)
+    dn.edge(0, 1050)
+    assert up.edge(1, 1300) is None and dn.edge(1, 1400) is None
+    assert not nav.chord_due(up, dn, 5000)             # nothing is held any more
+    dn.edge(0, 7000)
+    assert dn.edge(1, 8200) == DN_LONG
+
+
+def test_one_key_alone_is_unaffected_by_pairing_and_never_a_chord():
+    up, dn = nav.ButtonTracker('UP'), nav.ButtonTracker('DN')
+    nav.pair(up, dn)
+    up.edge(0, 1000)
+    assert up.held_ms(1700) == 700 and nav.chord_held_ms(up, dn, 5000) is None
+    assert not nav.chord_due(up, dn, 9000)
+    assert up.edge(1, 4100) == WIFI

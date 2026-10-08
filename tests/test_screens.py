@@ -492,17 +492,20 @@ def test_page_indicator_marks_the_current_page_along_the_bottom():
     assert not [l for l in oled.lines if l[1] >= 62]                     # no indicator without the page list
 
 
-def test_wifi_hold_box_shows_progress_and_the_target_state():
+def test_hold_box_shows_progress_and_the_label_it_is_given():
     p = NMEA.Parser()
     oled = Oled()
-    screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, p, STATS, 0, False, None, None, WIFI, INFO, {'hold': (50, True)})
+    screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, p, STATS, 0, False, None, None, WIFI, INFO,
+                 {'hold': (50, 'Hold: Wi-Fi on')})
     assert 'Hold: Wi-Fi on' in oled.texts() and oled.rects[-1] == (5, 51, 59, 6)
     oled = Oled()
-    screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, p, STATS, 0, False, None, None, WIFI, INFO, {'hold': (100, False)})
+    screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, p, STATS, 0, False, None, None, WIFI, INFO,
+                 {'hold': (100, 'Release now!')})
     assert 'Release now!' in oled.texts() and oled.rects[-1] == (5, 51, 118, 6)
     oled = Oled()
-    screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, p, STATS, 0, False, None, None, WIFI, INFO, {'hold': (30, False)})
-    assert 'Hold: Wi-Fi off' in oled.texts()
+    screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, p, STATS, 0, False, None, None, WIFI, INFO,
+                 {'hold': (30, 'Hold: debug')})
+    assert 'Hold: debug' in oled.texts()
 
 
 def test_system_page_shows_errors_instead_of_the_board_id_only_when_there_are_some():
@@ -515,3 +518,65 @@ def test_system_page_shows_errors_instead_of_the_board_id_only_when_there_are_so
     assert lines(rerr=0, gerr=0, stale=0)[-1] == 'e66164084371b26f'
     assert lines(rerr=1, gerr=0, stale=12)[-1] == 'ERR r1 g0 s12'
     assert lines(rerr=500, gerr=3, stale=0)[-1] == 'ERR r99+ g3 s0'
+
+
+class _Sev:
+    def __init__(self, state):
+        self.state = state
+
+
+def _gps_page(jam=None, spoof=None, parser=None):
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_GPS, parser or populated_parser(), STATS, 0, False, jam, spoof, WIFI,
+                 INFO, {'pages': nav.MAIN_PAGES})
+    return oled
+
+
+def test_gps_page_shows_the_constellation_strip_aic_tag_and_both_severity_gauges():
+    p = populated_parser()
+    p.parse_sentence(with_checksum('GNGSA,A,3,05,07,13,15,20,21,,,,,,,1.6,0.9,1.3,1'), 1)
+    p.parse_sentence(with_checksum('GNGSA,A,3,06,09,11,21,,,,,,,,,1.6,0.9,1.3,4'), 1)
+    p.pmtk_acks[286] = 3
+    oled = _gps_page(_Sev('OK'), _Sev('LOW'), p)
+    texts = oled.texts()
+    assert texts[0] == 'GPS' and 'G6 B4 36dB' in texts and 'AIC+' in texts
+    assert 'JAMMING' in texts and 'SPOOF' in texts and 'OK' in texts and 'LOW' in texts
+    check_fits([(nav.PAGE_GPS, oled)])
+
+
+def test_gps_page_aic_tag_is_lit_only_when_cancellation_is_on_and_alerts_fill_the_gauge():
+    p = populated_parser()
+    p.pmtk_acks[286] = 3
+    assert (96, 12, 32, 9) in _gps_page(_Sev('OK'), _Sev('OK'), p).rects          # a lit tag
+    p.pmtk_acks[286] = 2
+    off = _gps_page(_Sev('OK'), _Sev('OK'), p)
+    assert (96, 12, 32, 9) not in off.rects and 'AIC-' in off.texts()
+    del p.pmtk_acks[286]
+    assert 'AIC?' in _gps_page(_Sev('OK'), _Sev('OK'), p).texts()
+    calm = _gps_page(_Sev('LOW'), _Sev('OK'))
+    assert (0, 22, 62, 38) not in calm.rects
+    alert = _gps_page(_Sev('OK'), _Sev('HIGH'))
+    assert (66, 22, 62, 38) in alert.rects and (0, 22, 62, 38) not in alert.rects     # only the alert is filled
+    assert len([r for r in alert.rects if r[2:] == (16, 8)]) == 3                      # HIGH lights all three steps
+
+
+def test_gps_page_severity_steps_follow_the_level_and_a_disabled_detector_says_off():
+    for state, lit in (('OK', 0), ('LOW', 1), ('MEDIUM', 2), ('HIGH', 3)):
+        oled = _gps_page(_Sev(state), None)
+        assert len([r for r in oled.rects if r[2:] == (16, 8) and r[0] < 62]) == lit, state
+        assert state in oled.texts()
+    oled = _gps_page(None, None)
+    assert oled.texts().count('off') == 2
+
+
+def test_page_indicator_is_dashed_in_the_debug_loop():
+    p = NMEA.Parser()
+    solid, dashed = _Lines(), _Lines()
+    screens.draw(solid, FakeWriter(), nav.PAGE_STATS, p, STATS, 0, False, None, None, WIFI, INFO,
+                 {'pages': nav.DEBUG_PAGES})
+    screens.draw(dashed, FakeWriter(), nav.PAGE_STATS, p, STATS, 0, False, None, None, WIFI, INFO,
+                 {'pages': nav.DEBUG_PAGES, 'debug': True})
+    width = 128 // len(nav.DEBUG_PAGES)
+    assert len([l for l in solid.lines if l[1] == 63]) == len(nav.DEBUG_PAGES)
+    assert all(l[2] == width - 2 for l in solid.lines if l[1] == 63)
+    assert all(l[2] == 2 for l in dashed.lines if l[1] == 63) and len([l for l in dashed.lines if l[1] == 63]) > 6

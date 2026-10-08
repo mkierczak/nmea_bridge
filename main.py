@@ -118,7 +118,7 @@ def fatal(reason):
 
 # Key handling: the pin IRQs only debounce, classify and queue; the main loop does the work
 events = nav.EventQueue(8)
-navigator = nav.Navigator(nav.PAGES if WIFI_ENABLE else tuple(p for p in nav.PAGES if p != nav.PAGE_WIFI))
+navigator = nav.Navigator(wifi=WIFI_ENABLE)
 
 
 def make_button_handler(tracker):
@@ -133,8 +133,9 @@ key1 = Pin(PIN_KEY_DN, Pin.IN, Pin.PULL_UP)
 # Register the handler functions for both rising and falling edges
 up_tracker = nav.ButtonTracker('UP', LONG_PRESS_THRESHOLD, WIFI_TOGGLE_PRESS if WIFI_ENABLE else None)
 key0.irq(trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING, handler=make_button_handler(up_tracker))
-key1.irq(trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING, handler=make_button_handler(
-    nav.ButtonTracker('DN', LONG_PRESS_THRESHOLD)))
+dn_tracker = nav.ButtonTracker('DN', LONG_PRESS_THRESHOLD)
+nav.pair(up_tracker, dn_tracker)      # both keys held together is a chord (debug loop), never two single presses
+key1.irq(trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING, handler=make_button_handler(dn_tracker))
 
 # Radio path
 nmea_parser = NMEA.Parser()
@@ -249,6 +250,12 @@ def wifi_active():
     return bool(core.broadcaster and core.broadcaster.active)
 
 
+def wifi_shown():
+    """The Wi-Fi page is in the main loop while the access point is on (or failed to start, to show why)."""
+    b = core.broadcaster
+    return bool(b and (b.active or b.error))
+
+
 def wifi_info():
     state, ssid, ip, clients, max_clients = (core.broadcaster.info() if core.broadcaster
                                              else ('OFF', wifi_ssid, '', 0, WIFI_MAX_CLIENTS))
@@ -351,7 +358,9 @@ core.spoof = make_spoof() if cfg.get('spoof_detect') else None
 screen_ui = ui.UiController(cfg, oled, font_large, screens.draw, navigator, events, core, make_menu,
                             wifi_info, system_info, lambda: set_wifi(not wifi_active()), utime.ticks_ms,
                             menu_timeout_ms=60 * 1000,
-                            up_held=up_tracker.held_ms if WIFI_ENABLE else None, wifi_ms=WIFI_TOGGLE_PRESS)
+                            up_held=up_tracker.held_ms if WIFI_ENABLE else None, wifi_ms=WIFI_TOGGLE_PRESS,
+                            chord_held=lambda now: nav.chord_held_ms(up_tracker, dn_tracker, now),
+                            wifi_up=wifi_shown)
 
 utime.sleep(1)  # grace time for the UARTs to start
 gc.collect()    # boot is over: start the loop from a compact heap (the long-lived objects are all allocated)
@@ -370,6 +379,8 @@ while True:
     except Exception as e:  # core.step contains its own failures; this is the last line of defence
         report('bridge', e)
     try:
+        if nav.chord_due(up_tracker, dn_tracker, now):      # both keys held for 2 s: main loop <-> debug loop
+            events.put(nav.CHORD)
         screen_ui.step(now)
     except Exception as e:
         report('ui', e)

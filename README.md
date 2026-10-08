@@ -57,11 +57,14 @@ Two keys, classified when released: short (< 1 s) and long (>= 1 s).
 | **Menu** | short: cursor up; long: select / toggle / start editing | short: cursor down; long: back (leaves the menu at the top level) |
 | **Editing a value** | short: increase / next; long: confirm | short: decrease / previous; long: cancel (value reverts) |
 
-Pages (short presses cycle through them): **Main**, **Stats** (link statistics), **Satellites**
-(per-satellite C/N0 bars for GPS and BeiDou), **Signal** (jamming detector detail: mean vs baseline
-C/N0, reasons in words, module jamming status, AIC), **Spoofing** (state, warm-up progress, active
-indicators by name, alert latch time left), **System** (uptime, free heap, drops, GPS baud found at
-boot, fix interval, software version, board ID), **Debug**, **Wi-Fi**.
+**Hold both keys for 2 s** to switch between the two page loops. The **main loop** (short presses cycle through it):
+**Main**, **Speed** (COG and SOG gauges), **GPS** (satellites used, mean C/N0, the interference-cancellation tag and
+the jamming and spoofing probability gauges) and, while the access point is on, **Wi-Fi**. The **debug loop**
+has the details: **Stats** (link statistics), **Satellites** (per-satellite C/N0 gauges for GPS and BeiDou),
+**Signal** (jamming detector detail: mean vs baseline C/N0, reasons in words, module jamming status, AIC),
+**Spoofing** (the eight indicators as lit tiles, warm-up progress, alert latch time left), **System** (uptime,
+free heap, drops, GPS baud found at boot, fix interval, software version, board ID) and **Debug**. A long DOWN
+leaves the debug loop, and so does a new `MEDIUM`/`HIGH` alert.
 
 Menu: **GPS** (baudrate, GNSS mode), **Detection** (jamming and spoofing on/off, spoof action
 display/block), **Radio output** (RMC/GGA/GSA/GSV/ZDA on/off), **Display** (contrast, screen-off timer),
