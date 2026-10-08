@@ -11,8 +11,8 @@ beside them show what each line is.
 ## Navigation
 
 The pages are in two loops. The **main loop** is what you look at under way: **Main, Speed, GPS** and, while
-the Wi-Fi access point is on, **Wi-Fi**. The **debug loop** holds the pages with the details: **Stats,
-Satellites, Signal, Spoofing, System, Debug**.
+the Wi-Fi access point is on, **Wi-Fi**. The **debug loop** holds the pages with the details: **Alerts,
+Stats, Satellites, Signal, Spoofing, System, Debug**.
 
 | Key | On a page | In the menu |
 |---|---|---|
@@ -32,6 +32,8 @@ early. In the debug loop a long DN also leaves it, so does two minutes without a
 alert (or one that gets worse) sends you back to the Main page so that the banner is seen. The screen can switch itself off after a timeout (menu Display > Screen off); the first
 key press only wakes it, and a jamming or spoofing alert wakes it and keeps it on. Pages are redrawn when a visible
 value changes (and at least every 500 ms when something did).
+
+**Sound.** With a buzzer on the pin `PIN_BUZZER` (set in `main.py`; none by default) an alert beeps: a short beep every 3 s for `MEDIUM`, two beeps a second for `HIGH`. Any key press silences it until the alert gets worse. Menu Detection > Buzzer switches it off.
 
 **On every page**, the bottom edge carries a page indicator: one segment per page of the loop you are in, two
 pixels high for the page you are on. In the debug loop the segments are dashed.
@@ -159,7 +161,30 @@ TCP 1/4 [#][ ][ ][ ]     <- clients / maximum, one square per slot (filled = con
 | `IP` | The access point's address (`-` while off). Connect clients to this address, TCP port 10110 (or receive UDP broadcasts on that port). |
 | `TCP n/m` | Connected TCP clients / maximum, with one square per slot. The Main page only shows that the access point is on, not the number of clients. |
 
-## 5. Stats
+## 5. Alerts
+
+![Alerts page](img/alerts.png)
+
+```
+ALERTS                [3]  <- title, alerts since boot (badge)
+12:41 SPF! K1T1S         <- time, label, reason
+12:36 JAM? CN
+12:12 SPF? S1
+```
+
+The first page of the debug loop: the last five alerts, newest first, so that you can read what the banner no longer
+spells out. An entry is added when the spoofing or jamming probability reaches `MEDIUM` or `HIGH`, and again when
+it gets worse; `LOW` is not an alert. The list is in memory (ten entries) and is empty after a reboot. `none since
+boot` when there has been none.
+
+| Item | Meaning |
+|---|---|
+| time | Hour and minute of the clock (UTC, or local time if menu Display > UTC offset is set); `--:--` before the first time is received. |
+| label | `SPF` (spoofing) or `JAM` (jamming) followed by `?` (medium) or `!` (high). |
+| reason | The indicator codes: `K1 T1 K2 S1 C1 K3 S2 S3` for spoofing (see the Spoofing page), `C N F M` for jamming (cn0, sat, fix, mod), cut to what fits. |
+| badge | The number of alerts since boot, also those that have scrolled out of the list. |
+
+## 6. Stats
 
 ![Stats page](img/stats.png)
 
@@ -185,7 +210,7 @@ The bars and percentages are over a 10-second window of everything the GPS threa
 | type at the right | Three-letter type of the most recent sentence in that category. |
 | `CN a/b nc/d` | Only while jamming detection is on. `a` mean C/N0 of the tracked satellites now, `b` the learned baseline mean, `c` satellites tracked now, `d` baseline satellite count. |
 
-## 6. Satellites
+## 7. Satellites
 
 ![Satellites page](img/satellites.png)
 
@@ -205,7 +230,7 @@ The five strongest tracked satellites (C/N0 > 0), strongest first. `no satellite
 | gauge | Outlined bar proportional to C/N0 (full = 50 dB-Hz or more); the small tick on its lower edge marks 35 dB-Hz, a typical healthy level. |
 | number | C/N0 (signal-to-noise density) in dB-Hz. Typical open-sky values are 35-50. |
 
-## 7. Signal (jamming indicator)
+## 8. Signal (jamming indicator)
 
 ![Signal page](img/signal.png)
 
@@ -231,7 +256,7 @@ The page shows `off` in the badge (and nothing else) when the detector is disabl
 | `GP.. BD..` | Mean C/N0 of the GPS and BeiDou satellites separately; `-` if that system is not tracked. |
 | `m:` | The L76B's own jamming detector (`$PMTKSPF`): `?` unknown, `ok`, `warn`, `CRIT`. |
 
-## 8. Spoofing
+## 9. Spoofing
 
 ![Spoofing page](img/spoofing.png)
 
@@ -255,7 +280,7 @@ The badge shows `off` (and nothing else) when the detector is disabled.
 
 Details of each indicator: [spoofing-detection.md](spoofing-detection.md).
 
-## 9. System
+## 10. System
 
 ![System page](img/system.png)
 
@@ -280,7 +305,7 @@ fix1000ms GPS+BD
 | `fix..ms <gnss>` | Configured fix interval and GNSS mode (`GPS` or `GPS+BD`). |
 | last line | First 16 hex digits of the board's unique ID (the Wi-Fi name suffix is derived from it). It is replaced by `ERR r<n> g<n> s<n>` as soon as any of these counters is non-zero (each capped at `99+`): `r` radio write failures, `g` failures contained in the optional parts (detectors, Wi-Fi, logging, ...), `s` position sentences dropped because a stall made them too old. They are all zero in normal operation; see `errors` in `bridge.py`. |
 
-## 10. Debug
+## 11. Debug
 
 ![Debug page](img/debug.png)
 
@@ -317,7 +342,7 @@ reboot; items marked `*` after the label are applied only at the next boot. The 
 | Submenu | Items |
 |---|---|
 | GPS | Baudrate*, GNSS mode* |
-| Detection | Jamming, Spoofing, Spoof act. (`display` / `block`) |
+| Detection | Jamming, Spoofing, Spoof act. (`display` / `block`), Buzzer (on/off; only has an effect when a buzzer is wired and `PIN_BUZZER` is set in `main.py`) |
 | Radio output | RMC, GGA, GSA, GSV, ZDA (which sentence types go to the radio) |
 | Display | Contrast, Screen off (`never`, `30s`, `60s`, `5m`), Night mode, Speed unit (`kn`, `km/h`, `m/s`), Coords (`ddmm.mm`, `dd.dddd`), UTC offset (-12 to +14 h) |
 | Wi-Fi | Wi-Fi now (on/off), New password |

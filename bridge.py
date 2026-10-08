@@ -8,6 +8,9 @@ Design rule: forwarding sentences to the radio is the one job that must never st
 part off for a while instead of letting an exception take the loop down.
 """
 
+import alerts
+import units
+
 try:
     from utime import ticks_diff
 except ImportError:
@@ -266,6 +269,8 @@ class Bridge(object):
         self._disabled_at = {}
         self._critical = 0
         self._wifi_lines = []
+        self.alert_log = alerts.AlertLog()
+        self._logged = {}                  # detector tag -> the level (0 none, 1 MEDIUM, 2 HIGH) already logged
         self._fwd_cfg = [None, None, None, None]   # the lists the cache below was computed for
         self._fwd_cache = {}                       # sentence type -> {talker -> forward bits}
         self._logged_acks = {}
@@ -395,7 +400,23 @@ class Bridge(object):
                 self._guard('wifi_poll', b.poll)
         del self._wifi_lines[:]
 
+    def log_alert(self, label, detail=''):
+        """Add an entry to the alert history, stamped with the clock (local time if one is set)."""
+        text = units.shift_time(self.parser.get_time_string())[:5]
+        self.alert_log.add(text, label, detail)
+
+    def _log_alerts(self):
+        """Note every new alert, and every alert that gets worse, of the detectors in the alert history."""
+        for tag, detector in (('SPF', self.spoof), ('JAM', self.detector)):
+            rank = 0
+            if detector is not None:
+                rank = 2 if detector.state == 'HIGH' else 1 if detector.state == 'MEDIUM' else 0
+            if rank > self._logged.get(tag, 0):
+                self.log_alert(tag + ('!' if rank == 2 else '?'), getattr(detector, 'reason', ''))
+            self._logged[tag] = rank
+
     def _periodic(self, now):
+        self._log_alerts()
         if ticks_diff(now, self._last_stats) > STATS_PERIOD_MS:
             self._last_stats = now
             snap = self._guard('stats', self.parser.snapshot_and_reset)

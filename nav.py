@@ -7,10 +7,10 @@ except ImportError:
         return a - b
 
 (PAGE_MAIN, PAGE_STATS, PAGE_SATS, PAGE_SIGNAL, PAGE_SPOOF, PAGE_SYSTEM, PAGE_DEBUG,
- PAGE_WIFI, PAGE_SPEED, PAGE_GPS) = range(10)
+ PAGE_WIFI, PAGE_SPEED, PAGE_GPS, PAGE_LOG) = range(11)
 # The main loop is what you look at under way; the debug loop (both keys held for 2 s) has the details.
 MAIN_PAGES = (PAGE_MAIN, PAGE_SPEED, PAGE_GPS, PAGE_WIFI)       # the Wi-Fi page only while the access point is up
-DEBUG_PAGES = (PAGE_STATS, PAGE_SATS, PAGE_SIGNAL, PAGE_SPOOF, PAGE_SYSTEM, PAGE_DEBUG)
+DEBUG_PAGES = (PAGE_LOG, PAGE_STATS, PAGE_SATS, PAGE_SIGNAL, PAGE_SPOOF, PAGE_SYSTEM, PAGE_DEBUG)
 PAGES = MAIN_PAGES + DEBUG_PAGES
 
 UP_SHORT, UP_LONG, DN_SHORT, DN_LONG, WIFI, CHORD = 'UP_SHORT', 'UP_LONG', 'DN_SHORT', 'DN_LONG', 'WIFI', 'CHORD'

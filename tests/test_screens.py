@@ -656,3 +656,18 @@ def test_main_page_clock_follows_the_utc_offset_and_marks_local_time():
         assert '12:34:56Z' in oled.texts()
     finally:
         units.UTC_OFFSET_H = saved
+
+
+def test_alerts_page_lists_the_newest_first_and_says_when_there_are_none():
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_LOG, NMEA.Parser(), STATS, 0, False, None, None, WIFI, INFO, {})
+    assert oled.texts() == ['ALERTS', 'none since boot']
+    entries = [('12:40', 'SPF!', 'K1T1S1'), ('12:35', 'JAM?', 'CN'), ('12:30', 'ANC!', '85m'),
+               ('12:20', 'MOB!', 'set'), ('12:10', 'SPF?', 'S1'), ('12:00', 'SPF?', 'K2')]
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_LOG, NMEA.Parser(), STATS, 0, False, None, None, WIFI, INFO,
+                 {'alerts': entries, 'alert_total': 12})
+    texts = oled.texts()
+    assert texts[0] == 'ALERTS' and '12' in texts                     # the badge: alerts since boot
+    assert texts[2:7] == ['12:40 SPF! K1T1S', '12:35 JAM? CN', '12:30 ANC! 85m', '12:20 MOB! set', '12:10 SPF? S1']
+    check_fits([(nav.PAGE_LOG, oled)])

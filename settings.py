@@ -20,6 +20,7 @@ SCHEMA = (
     ('jam_detect', 'Jamming', BOOL, 'Detection', LIVE, None),
     ('spoof_detect', 'Spoofing', BOOL, 'Detection', LIVE, None),
     ('spoof_action', 'Spoof act.', CHOICE, 'Detection', LIVE, ('display', 'block')),
+    ('buzzer', 'Buzzer', BOOL, 'Detection', LIVE, None),
     ('fwd_RMC', 'RMC', BOOL, 'Radio output', LIVE, None),
     ('fwd_GGA', 'GGA', BOOL, 'Radio output', LIVE, None),
     ('fwd_GSA', 'GSA', BOOL, 'Radio output', LIVE, None),

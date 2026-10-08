@@ -36,13 +36,13 @@ def test_main_loop_cycle_both_directions_and_wrap_with_and_without_the_wifi_page
 
 def test_chord_toggles_the_debug_loop_and_a_long_down_leaves_it():
     n = Navigator()
-    assert n.handle(nav.CHORD) is None and n.debug and n.page == nav.PAGE_STATS
+    assert n.handle(nav.CHORD) is None and n.debug and n.page == nav.PAGE_LOG
     assert n.pages == nav.DEBUG_PAGES
     for expected in nav.DEBUG_PAGES[1:]:
         n.handle(UP_SHORT)
         assert n.page == expected
     n.handle(UP_SHORT)
-    assert n.page == nav.PAGE_STATS                   # wrapped inside the debug loop
+    assert n.page == nav.PAGE_LOG                     # wrapped inside the debug loop
     assert n.handle(DN_LONG) is None and not n.debug and n.page == nav.PAGE_MAIN     # no menu from here
     n.handle(nav.CHORD)
     n.handle(nav.CHORD)

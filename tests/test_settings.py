@@ -16,6 +16,8 @@ def full_defaults():
          'utc_offset_h': 0, 'log_raw': False}
     d.update({'fwd_' + t: True for t in ('RMC', 'GGA', 'GSA', 'GSV', 'ZDA')})
     d.update(S.threshold_defaults(jamming, spoofing))
+    for row in S.SCHEMA:                      # a setting added to the schema needs no edit here
+        d.setdefault(row[0], False if row[2] == S.BOOL else row[5][0] if row[2] == S.CHOICE else row[5][0])
     return d
 
 

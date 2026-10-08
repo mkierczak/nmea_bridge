@@ -23,6 +23,7 @@ import screens
 import settings
 import sh1107
 import spoofing
+import alerts
 import ui
 import units
 import wificreds
@@ -71,6 +72,8 @@ PIN_OLED_SCK, PIN_OLED_MOSI = 10, 11
 PIN_OLED_DC, PIN_OLED_RST, PIN_OLED_CS = 8, 12, 9
 OLED_SPI_BAUDRATE = 10_000_000
 PIN_KEY_UP, PIN_KEY_DN = 15, 17
+PIN_BUZZER = None                 # GPIO of a (passive) buzzer sounding MEDIUM/HIGH alerts and the anchor alarm; None = none
+BUZZER_FREQ = 2700                # Hz
 RS485_UART = 1                    # must differ from UARTx when both use UART1 pins
 RS485_TX, RS485_RX = 4, 5
 RS485_BAUDRATE = 4800             # what the VHF radio expects
@@ -79,7 +82,7 @@ RS485_TXBUF = 512                 # TX buffer so uart.write doesn't block the ma
 # User settings (menu): the constants above are the defaults, settings.json holds the user's overrides
 DEFAULTS = {'gps_baud': GPS_BAUDRATE, 'gnss_mode': GNSS_MODE, 'jam_detect': JAM_DETECT,
             'spoof_detect': SPOOF_DETECT, 'spoof_action': SPOOF_ACTION, 'contrast': 0, 'screen_off_s': 0,
-            'night': False, 'speed_unit': units.SPEED_UNIT, 'coord_fmt': units.COORD_FORMAT,
+            'buzzer': True, 'night': False, 'speed_unit': units.SPEED_UNIT, 'coord_fmt': units.COORD_FORMAT,
             'utc_offset_h': units.UTC_OFFSET_H, 'log_raw': False}
 for _t in FORWARD_TYPES_ALL:
     DEFAULTS['fwd_' + _t] = _t in FORWARD_TYPES
@@ -370,6 +373,25 @@ screen_ui = ui.UiController(cfg, oled, font_large, screens.draw, navigator, even
                             chord_held=lambda now: nav.chord_held_ms(up_tracker, dn_tracker, now),
                             wifi_up=wifi_shown)
 
+buzzer_pwm = None
+if PIN_BUZZER is not None:
+    from machine import PWM
+    buzzer_pwm = PWM(Pin(PIN_BUZZER))
+    buzzer_pwm.freq(BUZZER_FREQ)
+    buzzer_pwm.duty_u16(0)
+buzzing = False
+
+
+def buzz(now):
+    """Drive the buzzer from the alarm level of the UI (a key press silences it)."""
+    global buzzing
+    level = screen_ui.alarm_level() if cfg.get('buzzer') else alerts.NONE
+    on = alerts.sound_on(level, now)
+    if on != buzzing:
+        buzzing = on
+        buzzer_pwm.duty_u16(32768 if on else 0)
+
+
 utime.sleep(1)  # grace time for the UARTs to start
 gc.collect()    # boot is over: start the loop from a compact heap (the long-lived objects are all allocated)
 if hasattr(gc, 'threshold'):
@@ -392,6 +414,12 @@ while True:
         screen_ui.step(now)
     except Exception as e:
         report('ui', e)
+
+    if buzzer_pwm is not None:
+        try:
+            buzz(now)
+        except Exception as e:
+            report('buzzer', e)
 
     if core.watchdog.should_arm():
         wdt = WDT(timeout=WATCHDOG_TIMEOUT)

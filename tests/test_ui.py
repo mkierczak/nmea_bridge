@@ -368,10 +368,10 @@ def test_chord_switches_to_the_debug_loop_and_back():
     r = Rig()
     r.step()
     r.press(nav.CHORD)
-    assert r.navigator.debug and r.navigator.page == nav.PAGE_STATS and r.ctxs[-1]['debug'] is True
+    assert r.navigator.debug and r.navigator.page == nav.PAGE_LOG and r.ctxs[-1]['debug'] is True
     assert r.ctxs[-1]['pages'] == nav.DEBUG_PAGES
     r.press(UP_SHORT)
-    assert r.navigator.page == nav.PAGE_SATS
+    assert r.navigator.page == nav.PAGE_STATS
     r.press(DN_LONG)                                       # a long DOWN leaves the debug loop
     assert not r.navigator.debug and r.navigator.page == nav.PAGE_MAIN and r.ctxs[-1]['debug'] is False
     r.press(nav.CHORD, nav.CHORD)
@@ -502,3 +502,37 @@ def test_speed_trend_needs_ten_seconds_of_history_and_follows_the_change():
     p.sog_kn = None
     r.step(advance=1000)
     assert r.ui.sog_trend() is None                         # no speed: the history is dropped
+
+
+def test_alerts_page_gets_the_newest_entries_and_the_total():
+    r = Rig()
+    r.step()
+    r.press(nav.CHORD)
+    assert r.navigator.page == nav.PAGE_LOG
+    assert r.ctxs[-1]['alerts'] == [] and r.ctxs[-1]['alert_total'] == 0
+    for i in range(7):
+        r.bridge.log_alert('SPF?', 'K{}'.format(i))
+    r.step(advance=ui.REFRESH_MS + 1)
+    assert [e[2] for e in r.ctxs[-1]['alerts']] == ['K6', 'K5', 'K4', 'K3', 'K2'] and r.ctxs[-1]['alert_total'] == 7
+
+
+def test_alarm_level_follows_the_alert_and_any_key_press_silences_it_until_it_gets_worse():
+    import alerts
+    r = Rig()
+    r.step()
+    assert r.ui.alarm_level() == alerts.NONE
+    r.bridge.spoof = FakeDetector('MEDIUM')
+    r.step(advance=10)
+    assert r.ui.alarm_level() == alerts.MEDIUM
+    r.press(UP_SHORT)                                      # any key, on any page
+    assert r.ui.alarm_level() == alerts.NONE
+    r.bridge.spoof.state = 'HIGH'                          # worse: sounds again
+    r.step(advance=10)
+    assert r.ui.alarm_level() == alerts.HIGH
+    r.press(nav.CHORD)
+    assert r.ui.alarm_level() == alerts.NONE
+    r.bridge.spoof.state = 'OK'
+    r.step(advance=10)
+    r.bridge.spoof.state = 'MEDIUM'                        # a new alert after it ended
+    r.step(advance=10)
+    assert r.ui.alarm_level() == alerts.MEDIUM

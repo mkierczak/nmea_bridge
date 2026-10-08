@@ -6,6 +6,7 @@ stay correct after MicroPython's millisecond counter wraps, which `ticks_diff` o
 """
 import gc
 
+import alerts
 import nav
 
 try:
@@ -52,6 +53,7 @@ class UiController(object):
         self.chord_ms = chord_ms
         self.wifi_up = wifi_up                # () -> True while the access point is on (or failed): its page is shown
         self.alert_acked = False              # a key press dismissed the banner of the current strong alert
+        self.alarm_silenced = False           # any key press silences the buzzer until the alert gets worse
         self._rank = 0                        # 0 none, 1 MEDIUM, 2 HIGH: the worst alert of the detectors
         self._alert_ms = 0                    # uptime when it began
         self._inverted = False
@@ -140,12 +142,14 @@ class UiController(object):
         rank = self._alert_rank()
         if rank > self._rank:
             self.alert_acked = False
+            self.alarm_silenced = False
             self._alert_ms = self.uptime_ms
             if self.navigator.debug and self.menu is None:
                 self.navigator.leave_debug()          # an alert must be seen: back to the Main page
             self.force_draw = True
         elif rank == 0 and self._rank:
             self.alert_acked = False
+            self.alarm_silenced = False
             self.force_draw = True
         self._rank = rank
         strong = rank > 0
@@ -157,6 +161,12 @@ class UiController(object):
             if invert is not None:
                 invert(blink)
             self._inverted = blink
+
+    def alarm_level(self):
+        """What the buzzer should be doing: alerts.NONE, MEDIUM or HIGH (silenced by any key press)."""
+        if self.alarm_silenced or self._rank == 0:
+            return alerts.NONE
+        return alerts.HIGH if self._rank == 2 else alerts.MEDIUM
 
     def _banner_visible(self):
         return (self._strong and not self.alert_acked and self.menu is None and not self.navigator.debug
@@ -177,6 +187,7 @@ class UiController(object):
         self._last_sig = None
 
     def _handle(self, ev):
+        self.alarm_silenced = True            # whatever the key was for, it also silences the buzzer
         self.idle_ms = 0
         self.screen_idle_ms = 0
         self.force_draw = True
@@ -255,6 +266,9 @@ class UiController(object):
                'heartbeat': heartbeat, 'fix_age_s': None if age_ms is None else age_ms // 1000,
                'uptime_s': self.uptime_ms // 1000 if page == nav.PAGE_MAIN and no_fix else None,
                'sog_trend': self.sog_trend() if page == nav.PAGE_SPEED else None}
+        if page == nav.PAGE_LOG:
+            ctx['alerts'] = bridge.alert_log.newest(5)
+            ctx['alert_total'] = bridge.alert_log.total
         sig = (page, no_fix, bridge.queue.dropped, tuple(bridge.stats.values()),
                parser.display_signature(),
                bridge.detector.signature() if bridge.detector else None,
@@ -263,7 +277,8 @@ class UiController(object):
                tuple(v for k, v in info.items() if k != 'now_ms') if info else None,
                parser.type_signature() if page in (nav.PAGE_STATS, nav.PAGE_DEBUG) else None,
                ctx['banner'], ctx['fix_age_s'], ctx['uptime_s'], bool(hold), heartbeat,
-               (parser.sog_kn, parser.cog_deg, ctx['sog_trend']) if page == nav.PAGE_SPEED else None)
+               (parser.sog_kn, parser.cog_deg, ctx['sog_trend']) if page == nav.PAGE_SPEED else None,
+               (bridge.alert_log.total, ctx['alert_total']) if page == nav.PAGE_LOG else None)
         if redraw_all or sig != self._last_sig:
             self.draw(self.oled, self.font, page, parser, bridge.stats, bridge.queue.dropped, no_fix,
                       bridge.detector, bridge.spoof, wifi, info, ctx)

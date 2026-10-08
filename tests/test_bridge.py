@@ -709,3 +709,48 @@ def test_heartbeat_shows_a_fault_after_a_radio_error_or_a_stale_drop_and_recover
     push(b, RMC, rx_ms=clock.now - B.MAX_AGE_MS - 1)       # a stall made this position sentence late
     b.step(clock())
     assert b.stale_dropped == 1 and b.heartbeat(clock()) == 'fault'
+
+
+def test_alerts_are_logged_when_they_start_and_when_they_get_worse_not_when_they_ease():
+    b, clock = make_bridge()
+    b.parser.time = '123456.00'
+    b.spoof = FakeDetector('OK')
+    b.spoof.reason = 'K1'
+    b.step(clock.now)
+    assert b.alert_log.entries == []
+    b.spoof.state = 'LOW'
+    b.step(clock.now)
+    assert b.alert_log.entries == []                       # LOW is not an alert
+    b.spoof.state = 'MEDIUM'
+    b.step(clock.now)
+    b.spoof.state = 'HIGH'
+    b.spoof.reason = 'K1T1'
+    b.step(clock.now)
+    b.spoof.state = 'MEDIUM'
+    b.step(clock.now)
+    b.step(clock.now)
+    assert b.alert_log.entries == [('12:34', 'SPF?', 'K1'), ('12:34', 'SPF!', 'K1T1')]
+    b.spoof.state = 'OK'
+    b.step(clock.now)
+    b.spoof.state = 'MEDIUM'                               # a new alert after it cleared
+    b.step(clock.now)
+    assert len(b.alert_log.entries) == 3 and b.alert_log.total == 3
+    b.detector = FakeDetector('HIGH')
+    b.step(clock.now)
+    assert b.alert_log.entries[-1][1] == 'JAM!'
+
+
+def test_alert_log_time_follows_the_utc_offset():
+    import units
+    b, clock = make_bridge()
+    b.parser.time = '235900.00'
+    saved = units.UTC_OFFSET_H
+    units.UTC_OFFSET_H = 2
+    try:
+        b.log_alert('MOB!', 'set')
+    finally:
+        units.UTC_OFFSET_H = saved
+    assert b.alert_log.entries == [('01:59', 'MOB!', 'set')]
+    b2, _ = make_bridge()
+    b2.log_alert('ANC!', 'x')
+    assert b2.alert_log.entries[0][0] == '--:--'            # no time yet

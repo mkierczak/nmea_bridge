@@ -3,7 +3,7 @@ import math
 from writer import Writer
 import units
 from nav import (PAGE_MAIN, PAGE_STATS, PAGE_SATS, PAGE_SIGNAL, PAGE_SPOOF, PAGE_SYSTEM,
-                 PAGE_DEBUG, PAGE_WIFI, PAGE_SPEED, PAGE_GPS)
+                 PAGE_DEBUG, PAGE_WIFI, PAGE_SPEED, PAGE_GPS, PAGE_LOG)
 
 JAM_WORDS = {'C': 'cn0', 'N': 'sat', 'F': 'fix', 'M': 'mod'}   # short enough for all four on one line
 # the annunciator tiles of the Spoofing page: indicator code and a three-letter name
@@ -250,7 +250,7 @@ def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None, spo
          ctx=None):
     """Render one screen into the frame buffer (caller calls oled.show()). ctx (optional dict) carries what
     only the controller knows: 'pages' (page indicator), 'fix_age_s' (seconds since the last fix, None if
-    never), 'banner' (True to show the alert banner), 'heartbeat' (key of HEARTBEAT, Main page), 'sog_trend' (-1, 0, 1: Speed page), 'debug'
+    never), 'banner' (True to show the alert banner), 'heartbeat' (key of HEARTBEAT, Main page), 'alerts' and 'alert_total' (Alerts page), 'sog_trend' (-1, 0, 1: Speed page), 'debug'
     (True in the debug loop) and 'hold' (key gesture progress, see _draw_hold). 'wifi' is used by the Wi-Fi page and, as a small icon, by the
     Main page."""
     ctx = ctx or {}
@@ -262,6 +262,8 @@ def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None, spo
         _draw_main(oled, font_large, parser, no_fix, jam, spoof, wifi, banner, ctx)
     elif screen == PAGE_GPS:
         _draw_gps(oled, parser, jam, spoof)
+    elif screen == PAGE_LOG:
+        _draw_log(oled, ctx.get('alerts') or (), ctx.get('alert_total', 0))
     elif screen == PAGE_STATS:
         _draw_stats(oled, parser, stats, dropped, jam)
     elif screen == PAGE_SATS:
@@ -323,6 +325,15 @@ def _draw_gps(oled, parser, jam, spoof):
         oled.text('AIC' + ('?' if aic is None else '-'), 96, 13, 1)
     _severity(oled, 0, 'JAMMING', jam.state if jam else None)
     _severity(oled, 66, 'SPOOF', spoof.state if spoof else None)
+
+
+def _draw_log(oled, entries, total):
+    """The last alerts, newest first: time, label (SPF/JAM/ANC/MOB with ! for high, ? for medium) and the reason."""
+    _title(oled, 'ALERTS', badge=str(total) if total else '')
+    if not entries:
+        oled.text('none since boot', 8, 30, 1)
+    for i, (when, label, detail) in enumerate(entries[:5]):
+        oled.text(('{} {} {}'.format(when, label, detail))[:16], 0, 13 + 9 * i, 1)
 
 
 def _draw_main(oled, font_large, parser, no_fix, jam, spoof, wifi, banner, ctx):

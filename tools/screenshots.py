@@ -176,6 +176,8 @@ def menu_scene(group, cursor, change=None):
                     'coord_fmt': 'ddmm.mm', 'utc_offset_h': 0, 'log_raw': False}
         defaults.update({'fwd_' + t: True for t in ('RMC', 'GGA', 'GSA', 'GSV', 'ZDA')})
         defaults.update(settings.threshold_defaults(jamming, spoofing))
+        for row in settings.SCHEMA:             # anything not listed above: the first choice, False or the minimum
+            defaults.setdefault(row[0], False if row[2] == settings.BOOL else row[5][0])
         with tempfile.TemporaryDirectory() as d:
             cfg = settings.Settings(defaults, os.path.join(d, 'settings.json'))
             if change:
@@ -217,6 +219,8 @@ def scenes():
          page_scene(nav.PAGE_GPS, p, jam=Jam('OK'), spoof=alert_spoof)),
         ('speed-alert', 'Speed, jamming alert banner',
          page_scene(nav.PAGE_SPEED, p, jam=Jam('MEDIUM', 'CN'), banner=True)),
+        ('alerts', 'Alerts', page_scene(nav.PAGE_LOG, p, alerts=[('12:41', 'SPF!', 'K1T1S'), ('12:36', 'JAM?', 'CN'),
+                                                                 ('12:12', 'SPF?', 'S1')], alert_total=3)),
         ('stats', 'Stats', page_scene(nav.PAGE_STATS, p, jam=Jam('OK'))),
         ('satellites', 'Satellites', page_scene(nav.PAGE_SATS, p)),
         ('signal', 'Signal', page_scene(nav.PAGE_SIGNAL, p, jam=Jam('MEDIUM', 'CN'))),

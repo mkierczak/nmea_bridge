@@ -60,7 +60,7 @@ Two keys, classified when released: short (< 1 s) and long (>= 1 s).
 **Hold both keys for 2 s** to switch between the two page loops. The **main loop** (short presses cycle through it):
 **Main**, **Speed** (COG and SOG gauges), **GPS** (satellites used, mean C/N0, the interference-cancellation tag and
 the jamming and spoofing probability gauges) and, while the access point is on, **Wi-Fi**. The **debug loop**
-has the details: **Stats** (link statistics), **Satellites** (per-satellite C/N0 gauges for GPS and BeiDou),
+has the details: **Alerts** (the last alerts with time and reason), **Stats** (link statistics), **Satellites** (per-satellite C/N0 gauges for GPS and BeiDou),
 **Signal** (jamming detector detail: mean vs baseline C/N0, reasons in words, module jamming status, AIC),
 **Spoofing** (the eight indicators as lit tiles, warm-up progress, alert latch time left), **System** (uptime,
 free heap, drops, GPS baud found at boot, fix interval, software version, board ID) and **Debug**. A long DOWN
