@@ -217,21 +217,26 @@ def test_dn_held_three_seconds_is_man_overboard_only_when_the_gesture_is_enabled
     assert u.edge(1, 3500) == WIFI                              # the gesture belongs to DN only
 
 
-def test_long_up_on_the_anchor_and_mob_pages_is_a_page_action_elsewhere_nothing():
+def test_up_held_three_seconds_drops_and_lifts_on_the_anchor_and_mob_pages_and_toggles_wifi_elsewhere():
     n = Navigator()
     n.page = nav.PAGE_ANCHOR
-    assert n.handle(UP_LONG) == nav.PAGE_ACTION
+    assert n.handle(WIFI) == nav.PAGE_ACTION
+    assert n.handle(UP_LONG) is None                            # a plain long UP does nothing there any more
     n.mob_active = True
     n.page = nav.PAGE_MOB
-    assert n.handle(UP_LONG) == nav.PAGE_ACTION
+    assert n.handle(WIFI) == nav.PAGE_ACTION
     n.page = nav.PAGE_GPS
-    assert n.handle(UP_LONG) is None
+    assert n.handle(WIFI) == nav.TOGGLE_WIFI
     n.debug = True
     n.page = nav.PAGE_ANCHOR                                    # (never shown in the debug loop)
-    assert n.handle(UP_LONG) is None
+    assert n.handle(WIFI) == nav.TOGGLE_WIFI
+    n = Navigator(wifi=False)                                   # a build without Wi-Fi: the gesture is for the pages
+    assert n.handle(WIFI) is None
+    n.page = nav.PAGE_ANCHOR
+    assert n.handle(WIFI) == nav.PAGE_ACTION
     n = Navigator()
     n.mob_active = True
     n.page = nav.PAGE_MOB
     n.mob_active = False
     n.check()
-    assert n.page == nav.PAGE_MAIN                              # the mark was cleared while you looked at it
+    assert n.page == nav.PAGE_MAIN                              # the mark was lifted while you looked at it

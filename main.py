@@ -144,7 +144,7 @@ def make_button_handler(tracker):
 key0 = Pin(PIN_KEY_UP, Pin.IN, Pin.PULL_UP)
 key1 = Pin(PIN_KEY_DN, Pin.IN, Pin.PULL_UP)
 # Register the handler functions for both rising and falling edges
-up_tracker = nav.ButtonTracker('UP', LONG_PRESS_THRESHOLD, WIFI_TOGGLE_PRESS if WIFI_ENABLE else None)
+up_tracker = nav.ButtonTracker('UP', LONG_PRESS_THRESHOLD, WIFI_TOGGLE_PRESS)    # UP held 3 s: Wi-Fi / anchor / MOB
 key0.irq(trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING, handler=make_button_handler(up_tracker))
 dn_tracker = nav.ButtonTracker('DN', LONG_PRESS_THRESHOLD, mob_ms=nav.MOB_MS)    # DN held 3 s: man overboard
 nav.pair(up_tracker, dn_tracker)      # both keys held together is a chord (debug loop), never two single presses
@@ -387,7 +387,7 @@ core.spoof = make_spoof() if cfg.get('spoof_detect') else None
 screen_ui = ui.UiController(cfg, oled, font_large, screens.draw, navigator, events, core, make_menu,
                             wifi_info, system_info, lambda: set_wifi(not wifi_active()), utime.ticks_ms,
                             menu_timeout_ms=60 * 1000,
-                            up_held=up_tracker.held_ms if WIFI_ENABLE else None, wifi_ms=WIFI_TOGGLE_PRESS,
+                            up_held=up_tracker.held_ms, wifi_ms=WIFI_TOGGLE_PRESS,
                             chord_held=lambda now: nav.chord_held_ms(up_tracker, dn_tracker, now),
                             wifi_up=wifi_shown, dn_held=dn_tracker.held_ms, on_night=set_contrast)
 

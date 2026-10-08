@@ -706,7 +706,7 @@ def _anchor_oled(watch, **ctx):
 def test_anchor_page_not_set_set_and_dragging():
     import anchor
     oled = _anchor_oled(None)
-    assert oled.texts() == ['ANCHOR', 'OFF', 'Anchor not set', 'hold UP 1 s to', 'drop it here']
+    assert oled.texts() == ['ANCHOR', 'OFF', 'Anchor not set', 'hold UP 3 s to', 'drop it here']
     w = anchor.AnchorWatch(radius_m=50)
     oled = _anchor_oled(w)
     assert 'radius 50m' in oled.texts() and 'OFF' in oled.texts()
@@ -752,11 +752,7 @@ def test_mob_page_distance_bearing_and_bearing_relative_to_the_course():
     check_fits([(nav.PAGE_MOB, oled)])
 
 
-def test_confirm_and_toast_boxes_and_the_banner_text_override():
-    oled = Oled()
-    screens.draw(oled, FakeWriter(), nav.PAGE_ANCHOR, NMEA.Parser(), STATS, 0, False, None, None, WIFI, INFO,
-                 {'confirm': ('Raise anchor?', 'UP long = yes', 'other key = no')})
-    assert 'Raise anchor?' in oled.texts() and 'UP long = yes' in oled.texts()
+def test_toast_box_and_the_banner_text_override():
     oled = Oled()
     screens.draw(oled, FakeWriter(), nav.PAGE_GPS, NMEA.Parser(), STATS, 0, False, None, None, WIFI, INFO,
                  {'toast': 'Anchor dropped'})

@@ -58,7 +58,7 @@ Two keys, classified when released: short (< 1 s) and long (>= 1 s).
 
 | | UP | DOWN |
 |---|---|---|
-| **Pages** | short: next page; **hold 3 s: Wi-Fi on/off** (a shorter long press does nothing); long on the Anchor / MOB page: drop or raise the anchor / clear the mark | short: previous page; long: back to Main, and **on the Main page: open the menu**; **hold 3 s: man overboard** (marks the position) |
+| **Pages** | short: next page; **hold 3 s: Wi-Fi on/off** (a shorter long press does nothing); on the Anchor / MOB page it drops or lifts the anchor / lifts the mark instead of switching the Wi-Fi | short: previous page; long: back to Main, and **on the Main page: open the menu**; **hold 3 s: man overboard** (marks the position) |
 | **Menu** | short: cursor up; long: select / toggle / start editing | short: cursor down; long: back (leaves the menu at the top level) |
 | **Editing a value** | short: increase / next; long: confirm | short: decrease / previous; long: cancel (value reverts) |
 
@@ -73,8 +73,8 @@ progress, alert latch time left), **System** (uptime, free heap, drops, GPS baud
 software version, board ID) and **Debug**. A long DOWN leaves the debug loop, and so does a new `MEDIUM`/`HIGH`
 alert or two minutes without a key.
 
-**Man overboard:** hold DOWN for 3 s on any page to mark the position (hold it for 3 s again to lift the mark) (banner, blink, buzzer, and the MOB page with
-distance and bearing back to it; the mark is stored in `mob.json` and survives a reboot). **Anchor:** a long UP on the Anchor page drops the anchor at the current position;
+**Man overboard:** hold DOWN for 3 s on any page to mark the position (banner, blink, buzzer, and the MOB page with
+distance and bearing back to it; hold UP for 3 s on that page to lift the mark; the mark is stored in `mob.json` and survives a reboot). **Anchor:** holding UP for 3 s on the Anchor page drops the anchor at the current position (and lifts it again);
 the alarm radius is in the menu (Anchor > Radius). Both alarms use the buzzer if you wire one and set `PIN_BUZZER` in
 `main.py`.
 

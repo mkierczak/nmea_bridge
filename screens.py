@@ -257,7 +257,7 @@ def _readout(oled, font, x, label, value, base):
 
 
 def _box(oled, lines):
-    """A message box over the lower part of the page (a confirmation question or a short notice)."""
+    """A message box over the lower part of the page (a short notice)."""
     oled.fill_rect(0, 30, 128, 32, 0)
     oled.hline(0, 30, 128, 1)
     oled.hline(0, 61, 128, 1)
@@ -283,7 +283,7 @@ def _draw_anchor(oled, font, watch):
     _title(oled, 'ANCHOR', badge={'ok': 'OK', 'drag': 'DRAG', 'nofix': 'NO FIX'}.get(state, 'OFF'))
     if watch is None or not watch.is_set:
         oled.text('Anchor not set', 8, 18, 1)
-        oled.text('hold UP 1 s to', 8, 30, 1)
+        oled.text('hold UP 3 s to', 8, 30, 1)
         oled.text('drop it here', 8, 39, 1)
         if watch is not None:
             oled.text('radius ' + units.distance_text(watch.radius_m), 0, 52, 1)
@@ -324,7 +324,7 @@ def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None, spo
          ctx=None):
     """Render one screen into the frame buffer (caller calls oled.show()). ctx (optional dict) carries what
     only the controller knows: 'pages' (page indicator), 'fix_age_s' (seconds since the last fix, None if
-    never), 'banner' (True to show the alert banner), 'heartbeat' (key of HEARTBEAT, Main page), 'banner_text' (replaces the detectors' banner text: anchor, man overboard), 'anchor' / 'mob' / 'mob_s' (their pages), 'confirm' (lines of a question box) and 'toast' (a one-line notice), 'alerts' and 'alert_total' (Alerts page), 'sog_trend' (-1, 0, 1: Speed page), 'debug'
+    never), 'banner' (True to show the alert banner), 'heartbeat' (key of HEARTBEAT, Main page), 'banner_text' (replaces the detectors' banner text: anchor, man overboard), 'anchor' / 'mob' / 'mob_s' (their pages), 'toast' (a one-line notice), 'alerts' and 'alert_total' (Alerts page), 'sog_trend' (-1, 0, 1: Speed page), 'debug'
     (True in the debug loop) and 'hold' (key gesture progress, see _draw_hold). 'wifi' is used by the Wi-Fi page and, as a small icon, by the
     Main page."""
     ctx = ctx or {}
@@ -359,9 +359,7 @@ def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None, spo
     _page_indicator(oled, screen, ctx.get('pages'), ctx.get('debug'))
     if ctx.get('hold'):
         _draw_hold(oled, ctx['hold'])
-    if ctx.get('confirm'):
-        _box(oled, ctx['confirm'])
-    elif ctx.get('toast'):
+    if ctx.get('toast'):
         _box(oled, [ctx['toast']])
 
 

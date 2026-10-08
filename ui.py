@@ -24,19 +24,13 @@ BLINK_HALF_MS = 400           # ... in phases of this length
 HOLD_SHOW_MS = 400            # the Wi-Fi gesture box appears once UP has been held this long
 HOLD_STALE_MS = 10 * 1000     # a key 'held' longer than this is a lost release edge: ignore it
 HOLD_REFRESH_MS = 150
-PAGE_ACTION_SHOW_MS = 1500    # on the Anchor and MOB pages a long UP does something: the Wi-Fi box waits until it is clearly longer
 MOB_SHOW_MS = 1200            # the man-overboard box appears once DN has been held past a normal long press
-CONFIRM_MS = 10 * 1000        # a confirmation question is dropped after this long without an answer
 TOAST_MS = 2500               # how long a notice ("Anchor dropped") stays
 SNOOZE_MS = 30 * 1000         # a silenced anchor alarm sounds again after this long if the boat is still dragging
 TREND_SPAN_MS = 10 * 1000      # the speed trend compares the speed now with the speed this long ago
 TREND_DELTA_KN = 0.5          # ... and calls it rising or falling beyond this
 DARK_CHECK_MS = 10 * 1000        # how often the sun is looked at for the automatic night mode
 DEBUG_TIMEOUT_MS = 2 * 60 * 1000   # no key for this long in the debug loop: back to the Main page
-
-
-_CONFIRM_TEXT = {'anchor': ('Raise anchor?', 'UP long = yes', 'other key = no'),
-                 'mob': ('Clear MOB mark?', 'UP long = yes', 'other key = no')}
 
 
 class UiController(object):
@@ -69,7 +63,6 @@ class UiController(object):
         self._dark = False                    # the sun is below the horizon at the boat's position
         self._dark_ms = -DARK_CHECK_MS
         self._night_applied = False
-        self._confirm = None                  # (what, uptime ms it expires): a question waiting for UP long
         self._toast = None                    # (text, uptime ms until)
         self._silenced_ms = 0
         self.wifi_up = wifi_up                # () -> True while the access point is on (or failed): its page is shown
@@ -98,9 +91,6 @@ class UiController(object):
             self.navigator.wifi_up = self.wifi_up()
         self.navigator.mob_active = self.bridge.mob.active
         self._note_darkness()
-        if self._confirm is not None and self.uptime_ms >= self._confirm[1]:
-            self._confirm = None
-            self.force_draw = True
         if self._toast is not None and self.uptime_ms >= self._toast[1]:
             self._toast = None
             self.force_draw = True
@@ -267,12 +257,6 @@ class UiController(object):
         if ev == nav.MOB:
             self._mark_mob()
             return
-        if self._confirm is not None:
-            what = self._confirm[0]
-            self._confirm = None
-            if ev == nav.UP_LONG:
-                self._confirmed(what)
-            return                            # any other key answers "no"
         if self._banner_visible() and ev != nav.CHORD:
             self.alert_acked = True               # the first key press dismisses the banner (and the blink)
             return
@@ -305,18 +289,16 @@ class UiController(object):
         self._toast = (text, self.uptime_ms + TOAST_MS)
 
     def _mark_mob(self):
-        """Man overboard: mark the position, show its page, and raise the alarm. The same gesture again, with a mark
-        in place, lifts it."""
+        """Man overboard: mark the position, show its page, and raise the alarm."""
         mob = self.bridge.mob
         if self.menu is not None:
             self._close_menu(cancel=True)
         self.navigator.leave_debug()
         position = self._position()
         if mob.active:
-            mob.clear()
-            self.navigator.mob_active = False
-            self.navigator.check()
-            self._notice('MOB lifted')
+            self.navigator.mob_active = True
+            self.navigator.page = nav.PAGE_MOB          # already marked: just show it (UP held 3 s there lifts it)
+            self._notice('MOB already marked')
         elif position is None:
             self._notice('No position yet')
         else:
@@ -328,13 +310,14 @@ class UiController(object):
         self.alarm_silenced = False
 
     def _page_action(self):
-        """A long UP on the Anchor or MOB page: drop / raise the anchor, clear the mark."""
+        """UP held for 3 s on the Anchor or MOB page: drop or lift the anchor, lift the man-overboard mark."""
         if self.navigator.page == nav.PAGE_ANCHOR:
             watch = self.bridge.anchor
             if watch is None:
                 return
             if watch.is_set:
-                self._confirm = ('anchor', self.uptime_ms + CONFIRM_MS)
+                watch.clear()
+                self._notice('Anchor lifted')
             else:
                 position = self._position()
                 if position is None:
@@ -343,16 +326,10 @@ class UiController(object):
                     watch.set(position)
                     self._notice('Anchor dropped')
         elif self.navigator.page == nav.PAGE_MOB:
-            self._confirm = ('mob', self.uptime_ms + CONFIRM_MS)
-
-    def _confirmed(self, what):
-        if what == 'anchor':
-            self.bridge.anchor.clear()
-            self._notice('Anchor raised')
-        elif what == 'mob':
             self.bridge.mob.clear()
             self.navigator.mob_active = False
             self.navigator.check()
+            self._notice('MOB lifted')
 
     def _close_menu(self, cancel=False):
         if cancel and self.menu is not None:
@@ -372,20 +349,30 @@ class UiController(object):
                         'Hold: main' if self.navigator.debug else 'Hold: debug')
         if self.dn_held is not None:
             held = self.dn_held(now)
-            if held is not None and MOB_SHOW_MS <= held <= HOLD_STALE_MS:
-                return min(100, held * 100 // self.mob_ms), 'Release now!' if held >= self.mob_ms else (
-                    'Hold: clear MOB' if self.bridge.mob.active else 'Hold: MOB')
+            if held is not None and MOB_SHOW_MS <= held <= HOLD_STALE_MS and not self.bridge.mob.active:
+                return min(100, held * 100 // self.mob_ms), 'Release now!' if held >= self.mob_ms else 'Hold: MOB'
         if self.up_held is None:
             return None
         held = self.up_held(now)
-        show_ms = PAGE_ACTION_SHOW_MS if self.navigator.page in (nav.PAGE_ANCHOR, nav.PAGE_MOB) else HOLD_SHOW_MS
-        if held is None or held < show_ms or held > HOLD_STALE_MS:
+        if held is None or held < HOLD_SHOW_MS or held > HOLD_STALE_MS:
             return None
-        state = self.wifi_info()[0]
         percent = min(100, held * 100 // self.wifi_ms)
-        if percent >= 100:
-            return percent, 'Release now!'
-        return percent, 'Hold: Wi-Fi ' + ('off' if state.startswith('ON') else 'on')
+        label = self._gesture_label()
+        if not label:
+            return None
+        return percent, 'Release now!' if percent >= 100 else label
+
+    def _gesture_label(self):
+        """What UP held for 3 s does on this page (the text of the progress box), or '' if nothing."""
+        page = self.navigator.page
+        if page == nav.PAGE_ANCHOR and not self.navigator.debug:
+            watch = self.bridge.anchor
+            return '' if watch is None else 'Lift anchor' if watch.is_set else 'Drop anchor'
+        if page == nav.PAGE_MOB and not self.navigator.debug:
+            return 'Lift MOB'
+        if not self.navigator.wifi:
+            return ''
+        return 'Hold: Wi-Fi ' + ('off' if self.wifi_info()[0].startswith('ON') else 'on')
 
     def _draw(self, now):
         if self.screen_off:
@@ -421,9 +408,7 @@ class UiController(object):
         text = self.banner_text()
         if text:
             ctx['banner_text'] = text
-        if self._confirm is not None:
-            ctx['confirm'] = _CONFIRM_TEXT[self._confirm[0]]
-        elif self._toast is not None:
+        if self._toast is not None:
             ctx['toast'] = self._toast[0]
         if page == nav.PAGE_ANCHOR:
             ctx['anchor'] = bridge.anchor
@@ -445,7 +430,7 @@ class UiController(object):
                (bridge.alert_log.total, ctx['alert_total']) if page == nav.PAGE_LOG else None,
                (bridge.anchor.state, round(bridge.anchor.distance), bridge.anchor.bearing, bridge.anchor.is_set,
                 round(bridge.anchor.max_distance)) if page == nav.PAGE_ANCHOR and bridge.anchor else None,
-               ctx.get('mob_s'), ctx.get('confirm'), ctx.get('toast'), ctx.get('banner_text'))
+               ctx.get('mob_s'), ctx.get('toast'), ctx.get('banner_text'))
         if redraw_all or sig != self._last_sig:
             self.draw(self.oled, self.font, page, parser, bridge.stats, bridge.queue.dropped, no_fix,
                       bridge.detector, bridge.spoof, wifi, info, ctx)

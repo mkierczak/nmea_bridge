@@ -189,16 +189,16 @@ class Navigator(object):
                 self.debug = not self.debug
                 self.page = DEBUG_PAGES[0] if self.debug else PAGE_MAIN
             return None
-        if event == WIFI:
-            return TOGGLE_WIFI
+        if event == WIFI:                        # UP held for 3 s
+            if self.page in (PAGE_ANCHOR, PAGE_MOB) and not self.debug:
+                return PAGE_ACTION                   # there it drops / lifts the anchor, lifts the mark
+            return TOGGLE_WIFI if self.wifi else None
         if self.in_menu:
             return TO_MENU
         if event == UP_SHORT:
             self._step(1)
         elif event == DN_SHORT:
             self._step(-1)
-        elif event == UP_LONG and self.page in (PAGE_ANCHOR, PAGE_MOB) and not self.debug:
-            return PAGE_ACTION                       # set / clear the anchor, clear the mark: the controller does it
         elif event == DN_LONG:
             if self.debug:                           # a long DOWN leaves the debug loop
                 self.leave_debug()
