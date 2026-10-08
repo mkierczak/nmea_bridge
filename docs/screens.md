@@ -66,13 +66,13 @@ GPS 3D 9/14        BBB   <- fix, mode, satellites used/in view, DOP letters
 
 | Item | Meaning |
 |---|---|
-| Time | UTC from the last RMC/GGA/ZDA time field, `hh:mm:ss` followed by `Z` (Zulu = UTC); `--:--:--` until a time has been received. |
+| Time | The last RMC/GGA/ZDA time field, `hh:mm:ss`, followed by `Z` for UTC or `L` when the clock is shifted to local time (menu Display > UTC offset, -12 to +14 hours); `--:--:--` until a time has been received. |
 | Heartbeat icon (last column) | Shows that position sentences (RMC/GGA) are reaching the radio. A **filled heart** for 0.35 s after each sentence was written to the radio and an **outline heart** in between, so it beats once per fix. A **short bar** means nothing was forwarded for 3 s (no data, no fix, the types switched off in the menu, or blocked by a spoofing alert in block mode). A **cross** means the radio write failed, or a position sentence was dropped for being more than 3 s late; it stays for 10 s. It shows that the bridge wrote to the radio, not that the radio received it. |
 | Jamming label | The probability of jamming, only when it is above `OK`: `JAM.` (low), `JAM?` (medium), `JAM!` (high). Blank when the detector is off, learning, or `OK`. See [jamming-detection.md](jamming-detection.md). |
 | Spoofing label | The probability of spoofing, only when it is above `OK`: `SPF.` (low), `SPF?` (medium), `SPF!` (high). Blank when `OK` or the detector is off. See [spoofing-detection.md](spoofing-detection.md). |
 | Wi-Fi icon | Only while the access point is on: the **Wi-Fi arcs** (followed by `!` if the access point failed to start). The number of clients is on the Wi-Fi page. |
 | Label space | The labels and the Wi-Fi icon share five character cells, right-aligned before the heartbeat icon. When they do not fit, the labels shrink (`SPF?` to `S?`, `JAM!` to `J!`), and if that is not enough the Wi-Fi icon is dropped. |
-| Latitude / longitude | Hemisphere letter, whole degrees, decimal minutes always with two digits before the point and two after: `N59°12.34`, `E018°03.21`. Replaced by `NO FIX` when there is no usable position. |
+| Latitude / longitude | Hemisphere letter, whole degrees, decimal minutes always with two digits before the point and two after: `N59°12.34`, `E018°03.21`. With menu Display > Coords set to `dd.dddd` it is decimal degrees instead: `N59.3057°`, `E018.0537°`. Replaced by `NO FIX` when there is no usable position. |
 | `NO FIX` | Shown when the last GGA says no fix, no position sentence has arrived yet, or the last position sentence is older than 10 s. Under it `lost m:ss` (or `lost 1h02m`) counts the time since the last valid fix; nothing is shown if there has been no fix since boot. |
 | Waiting for the first fix | Before the first fix since boot the page shows `Waiting for fix`, the satellites tracked / in view and how long it has taken (`waited m:ss`, updated every second); a cold start can take several minutes. A fix lost later shows `NO FIX` instead. |
 | Waiting for the first fix | Before the first fix since boot the page shows `Waiting for fix`, the satellites tracked / in view and how long it has taken (`waited m:ss`, updated every second); a cold start can take several minutes. A fix lost later shows `NO FIX` and `lost m:ss` instead. |
@@ -106,8 +106,8 @@ GPS 3D 9/14        BBB   <- fix, mode, satellites used/in view, DOP letters
 
 | Item | Meaning |
 |---|---|
-| COG (left) | Course over ground in degrees (000-359) from the last RMC. `---` without a fix, when the speed is below 0.5 kn (the course of a nearly stationary receiver is noise) or when the module reports none. |
-| SOG (right) | Speed over ground in knots from the last RMC, one decimal (none from 100 kn up). `--` without a fix. |
+| COG (left) | Course over ground in degrees (000-359) from the last RMC. `---` without a fix, when the speed is below 0.5 kn (the course of a nearly stationary receiver is noise) or when the module reports none. The small ring in the corner has a needle pointing along the course (north is up); it is absent while the course is `---`. |
+| SOG (right) | Speed over ground from the last RMC in the unit chosen in menu Display > Speed unit (`kn`, `km/h` or `m/s`), one decimal (none from 100 up). `--` without a fix. The small mark in the corner compares the speed with 10 s ago: a triangle pointing up when it rose by 0.5 kn or more, pointing down when it fell by that much, a short bar when it is steady; nothing for the first ten seconds. |
 
 The alert banner replaces the title row, as on the Main page:
 
@@ -319,7 +319,7 @@ reboot; items marked `*` after the label are applied only at the next boot. The 
 | GPS | Baudrate*, GNSS mode* |
 | Detection | Jamming, Spoofing, Spoof act. (`display` / `block`) |
 | Radio output | RMC, GGA, GSA, GSV, ZDA (which sentence types go to the radio) |
-| Display | Contrast, Screen off (`never`, `30s`, `60s`, `5m`), Night mode |
+| Display | Contrast, Screen off (`never`, `30s`, `60s`, `5m`), Night mode, Speed unit (`kn`, `km/h`, `m/s`), Coords (`ddmm.mm`, `dd.dddd`), UTC offset (-12 to +14 h) |
 | Wi-Fi | Wi-Fi now (on/off), New password |
 | Advanced | Detector thresholds: CN0 drop, Sats drop%, Jam enter, Jam exit, Max speed, Time jump, Flat C/N0, Alt step, Latch min, Warm-up, S2 corr, S2 cycles |
 | System | Log raw, Reset defaults, Reboot now |

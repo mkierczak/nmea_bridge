@@ -24,6 +24,7 @@ import settings
 import sh1107
 import spoofing
 import ui
+import units
 import wificreds
 import roboto14
 from bridge import Bridge, GpsReader, RawLogger, RxQueue
@@ -78,13 +79,15 @@ RS485_TXBUF = 512                 # TX buffer so uart.write doesn't block the ma
 # User settings (menu): the constants above are the defaults, settings.json holds the user's overrides
 DEFAULTS = {'gps_baud': GPS_BAUDRATE, 'gnss_mode': GNSS_MODE, 'jam_detect': JAM_DETECT,
             'spoof_detect': SPOOF_DETECT, 'spoof_action': SPOOF_ACTION, 'contrast': 0, 'screen_off_s': 0,
-            'log_raw': False}
+            'night': False, 'speed_unit': units.SPEED_UNIT, 'coord_fmt': units.COORD_FORMAT,
+            'utc_offset_h': units.UTC_OFFSET_H, 'log_raw': False}
 for _t in FORWARD_TYPES_ALL:
     DEFAULTS['fwd_' + _t] = _t in FORWARD_TYPES
 DEFAULTS.update(settings.threshold_defaults(jamming, spoofing))
 cfg = settings.Settings(DEFAULTS)
 cfg.load()
 settings.apply_thresholds(cfg, jamming, spoofing)
+settings.apply_units(cfg, units)
 GPS_BAUDRATE = cfg.get('gps_baud')    # these two take effect at boot (menu: reboot to apply)
 GNSS_MODE = cfg.get('gnss_mode')
 FIX_INTERVAL_MS = 1000 if GPS_BAUDRATE <= 4800 else 800
@@ -290,6 +293,8 @@ def apply_setting(key):
         oled.contrast(0 if cfg.get('night') else cfg.get('contrast'))   # night mode: the dimmest setting
     elif key == 'log_raw':
         set_raw_log(cfg.get(key))
+    elif key in settings.UNIT_KEYS:
+        settings.apply_units(cfg, units)
     elif key != 'screen_off_s':   # read every loop; everything else is an advanced threshold
         settings.apply_thresholds(cfg, jamming, spoofing)
         if core.spoof:

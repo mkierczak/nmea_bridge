@@ -479,3 +479,26 @@ def test_the_main_page_waits_for_the_first_fix_and_passes_the_uptime():
     assert r.ctxs[-1]['uptime_s'] == 2                     # redrawn every second while waiting
     r.press(UP_SHORT)
     assert r.ctxs[-1]['uptime_s'] is None                  # only the Main page needs it
+
+
+def test_speed_trend_needs_ten_seconds_of_history_and_follows_the_change():
+    r = Rig()
+    r.bridge.parser.fix_type = 'GPS'
+    p = r.bridge.parser
+
+    def run(seconds, speed_at):
+        for s in range(seconds):
+            r.bridge.last_pos = r.clock.now                 # keep the fix fresh
+            p.sog_kn = speed_at(s)
+            r.step(advance=1000)
+    run(3, lambda s: 5.0)
+    assert r.ui.sog_trend() is None                         # not enough history yet
+    run(10, lambda s: 5.0)
+    assert r.ui.sog_trend() == 0
+    run(12, lambda s: 5.0 + 0.2 * s)                        # accelerating about 0.2 kn per second
+    assert r.ui.sog_trend() == 1
+    run(12, lambda s: 7.4 - 0.2 * s)
+    assert r.ui.sog_trend() == -1
+    p.sog_kn = None
+    r.step(advance=1000)
+    assert r.ui.sog_trend() is None                         # no speed: the history is dropped

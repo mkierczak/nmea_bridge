@@ -22,6 +22,8 @@ BLINK_HALF_MS = 400           # ... in phases of this length
 HOLD_SHOW_MS = 400            # the Wi-Fi gesture box appears once UP has been held this long
 HOLD_STALE_MS = 10 * 1000     # a key 'held' longer than this is a lost release edge: ignore it
 HOLD_REFRESH_MS = 150
+TREND_SPAN_MS = 10 * 1000      # the speed trend compares the speed now with the speed this long ago
+TREND_DELTA_KN = 0.5          # ... and calls it rising or falling beyond this
 DEBUG_TIMEOUT_MS = 2 * 60 * 1000   # no key for this long in the debug loop: back to the Main page
 
 
@@ -64,12 +66,15 @@ class UiController(object):
         self._last_draw = now
         self._last_sig = None
         self._last_heartbeat = None
+        self._sog_hist = []                   # [(uptime ms, knots)], one a second, for the speed trend
+        self._hist_ms = 0
 
     def step(self, now):
         self._advance(now)
         if self.wifi_up is not None:
             self.navigator.wifi_up = self.wifi_up()
         self.navigator.check()
+        self._note_speed()
         if self.navigator.debug and self.idle_ms > DEBUG_TIMEOUT_MS:
             self.navigator.leave_debug()      # nobody is diagnosing: do not leave the details on the screen
             self.force_draw = True
@@ -94,6 +99,28 @@ class UiController(object):
         self._draw(now)
 
     # --- internals ------------------------------------------------------------------------
+    def _note_speed(self):
+        """Once a second remember the speed, about 10 s of it, for the trend mark on the Speed page."""
+        if self.uptime_ms - self._hist_ms < 1000:
+            return
+        self._hist_ms = self.uptime_ms
+        sog = self.bridge.parser.sog_kn
+        hist = self._sog_hist
+        if sog is None or self.bridge.no_fix(self._last_tick):
+            del hist[:]
+            return
+        hist.append((self.uptime_ms, sog))
+        while len(hist) > 1 and self.uptime_ms - hist[1][0] >= TREND_SPAN_MS:
+            del hist[0]
+
+    def sog_trend(self):
+        """1 rising, -1 falling, 0 steady over the last ~10 s; None while there is not enough speed history."""
+        hist = self._sog_hist
+        if len(hist) < 2 or self.uptime_ms - hist[0][0] < TREND_SPAN_MS - 2000:
+            return None
+        delta = hist[-1][1] - hist[0][1]
+        return 1 if delta >= TREND_DELTA_KN else -1 if delta <= -TREND_DELTA_KN else 0
+
     @property
     def _strong(self):
         return self._rank > 0
@@ -226,7 +253,8 @@ class UiController(object):
         ctx = {'pages': self.navigator.pages, 'banner': self._banner_visible(), 'hold': hold,
                'debug': self.navigator.debug,
                'heartbeat': heartbeat, 'fix_age_s': None if age_ms is None else age_ms // 1000,
-               'uptime_s': self.uptime_ms // 1000 if page == nav.PAGE_MAIN and no_fix else None}
+               'uptime_s': self.uptime_ms // 1000 if page == nav.PAGE_MAIN and no_fix else None,
+               'sog_trend': self.sog_trend() if page == nav.PAGE_SPEED else None}
         sig = (page, no_fix, bridge.queue.dropped, tuple(bridge.stats.values()),
                parser.display_signature(),
                bridge.detector.signature() if bridge.detector else None,
@@ -235,7 +263,7 @@ class UiController(object):
                tuple(v for k, v in info.items() if k != 'now_ms') if info else None,
                parser.type_signature() if page in (nav.PAGE_STATS, nav.PAGE_DEBUG) else None,
                ctx['banner'], ctx['fix_age_s'], ctx['uptime_s'], bool(hold), heartbeat,
-               (parser.sog_kn, parser.cog_deg) if page == nav.PAGE_SPEED else None)
+               (parser.sog_kn, parser.cog_deg, ctx['sog_trend']) if page == nav.PAGE_SPEED else None)
         if redraw_all or sig != self._last_sig:
             self.draw(self.oled, self.font, page, parser, bridge.stats, bridge.queue.dropped, no_fix,
                       bridge.detector, bridge.spoof, wifi, info, ctx)

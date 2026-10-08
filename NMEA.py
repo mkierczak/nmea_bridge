@@ -1,3 +1,5 @@
+import units
+
 try:
     from utime import ticks_diff as _ticks_diff
 except ImportError:
@@ -387,6 +389,9 @@ class Parser(object):
     def _coord_string(self, value, hemisphere, deg_digits):
         if len(value) > 0:
             try:
+                if units.COORD_FORMAT == 'dd.dddd':          # decimal degrees: N59.3057°
+                    return "{}{:0{w}.4f}{}".format(hemisphere, units.decimal_degrees(value, deg_digits), chr(176),
+                                                   w=deg_digits + 5)
                 mm = round(float(value[deg_digits:]), 2)
                 return "{}{}{}{:05.2f}".format(hemisphere, value[0:deg_digits], chr(176), mm)   # 03.21, not 3.21
             except ValueError:

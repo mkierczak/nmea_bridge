@@ -1,4 +1,7 @@
+import math
+
 from writer import Writer
+import units
 from nav import (PAGE_MAIN, PAGE_STATS, PAGE_SATS, PAGE_SIGNAL, PAGE_SPOOF, PAGE_SYSTEM,
                  PAGE_DEBUG, PAGE_WIFI, PAGE_SPEED, PAGE_GPS)
 
@@ -65,8 +68,8 @@ def _status_row(oled, parser, jam, spoof, wifi, heartbeat):
     """Top row of the Main page: UTC time with a Z, then (right to left) the heartbeat icon, the spoofing label,
     the jamming label (only when something is wrong) and the Wi-Fi icon. When they do not all fit the labels
     shrink, and the Wi-Fi mark gives way first."""
-    time_text = parser.get_time_string()
-    oled.text(time_text if time_text[0] == '-' else time_text + 'Z', 0, 3, 1)
+    time_text = units.shift_time(parser.get_time_string())
+    oled.text(time_text if time_text[0] == '-' else time_text + units.clock_suffix(), 0, 3, 1)
     if heartbeat:
         _icon(oled, HEARTBEAT[heartbeat], 120, 3)
     jam_label = jam.label() if jam else ''
@@ -165,19 +168,44 @@ def _gauge(oled, font, x, title, value, unit):
     oled.text(unit, x + (62 - 8 * len(unit)) // 2, 43, 1)
 
 
-def _draw_speed(oled, font_large, parser, no_fix, banner):
+_RING = ((0, -4), (1, -4), (2, -3), (3, -2), (4, -1), (4, 0), (4, 1), (3, 2), (2, 3), (1, 4), (0, 4), (-1, 4),
+         (-2, 3), (-3, 2), (-4, 1), (-4, 0), (-4, -1), (-3, -2), (-2, -3), (-1, -4))
+_TREND = {1: ((0, -2), (-1, -1), (0, -1), (1, -1), (-2, 0), (-1, 0), (0, 0), (1, 0), (2, 0)),       # rising
+          -1: ((-2, -1), (-1, -1), (0, -1), (1, -1), (2, -1), (-1, 0), (0, 0), (1, 0), (0, 1)),     # falling
+          0: ((-2, 0), (-1, 0), (0, 0), (1, 0), (2, 0))}                                             # steady
+
+
+def _points(oled, cx, cy, points):
+    for dx, dy in points:
+        oled.pixel(cx + dx, cy + dy, 1)
+
+
+def _compass(oled, cx, cy, degrees):
+    """A small ring with a needle pointing along the course (north up)."""
+    _points(oled, cx, cy, _RING)
+    angle = math.radians(degrees)
+    for step in range(4):
+        oled.pixel(cx + round(math.sin(angle) * step), cy - round(math.cos(angle) * step), 1)
+
+
+def _draw_speed(oled, font_large, parser, no_fix, banner, trend=None):
     """Cockpit panel: COG on the left, SOG on the right, each in its own frame. The title row is where the
-    alert banner goes."""
+    alert banner goes. The course gets a small compass needle, the speed a rising/steady/falling mark."""
     sog = parser.sog_kn
     moving = not no_fix and sog is not None
     if banner:
         _banner(oled, banner, 10)
-    speed = '--' if not moving else '{:.1f}'.format(sog) if sog < 100 else '{:.0f}'.format(sog)
+    speed = '--' if not moving else units.speed_text(sog)
     # a course over ground is meaningless while (nearly) stationary
     cog = parser.cog_deg
-    course = '{:03d}'.format(round(cog) % 360) if moving and sog >= 0.5 and cog is not None else '---'
+    steered = moving and sog >= 0.5 and cog is not None
+    course = '{:03d}'.format(round(cog) % 360) if steered else '---'
     _gauge(oled, font_large, 0, '' if banner else 'COG', course, 'deg')      # the banner covers the titles
-    _gauge(oled, font_large, 66, '' if banner else 'SOG', speed, 'kn')
+    _gauge(oled, font_large, 66, '' if banner else 'SOG', speed, units.SPEED_UNIT)
+    if steered:
+        _compass(oled, 9, 19, cog)
+    if moving and trend in _TREND:
+        _points(oled, 66 + 9, 19, _TREND[trend])
 
 
 def _title(oled, text, right='', badge=''):
@@ -222,14 +250,14 @@ def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None, spo
          ctx=None):
     """Render one screen into the frame buffer (caller calls oled.show()). ctx (optional dict) carries what
     only the controller knows: 'pages' (page indicator), 'fix_age_s' (seconds since the last fix, None if
-    never), 'banner' (True to show the alert banner), 'heartbeat' (key of HEARTBEAT, Main page), 'debug'
+    never), 'banner' (True to show the alert banner), 'heartbeat' (key of HEARTBEAT, Main page), 'sog_trend' (-1, 0, 1: Speed page), 'debug'
     (True in the debug loop) and 'hold' (key gesture progress, see _draw_hold). 'wifi' is used by the Wi-Fi page and, as a small icon, by the
     Main page."""
     ctx = ctx or {}
     banner = banner_text(jam, spoof) if ctx.get('banner') else ''
     oled.fill(0)
     if screen == PAGE_SPEED:
-        _draw_speed(oled, font_large, parser, no_fix, banner)
+        _draw_speed(oled, font_large, parser, no_fix, banner, ctx.get('sog_trend'))
     elif screen == PAGE_MAIN:
         _draw_main(oled, font_large, parser, no_fix, jam, spoof, wifi, banner, ctx)
     elif screen == PAGE_GPS:

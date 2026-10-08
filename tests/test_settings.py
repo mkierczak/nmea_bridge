@@ -12,7 +12,8 @@ import spoofing
 
 def full_defaults():
     d = {'gps_baud': 4800, 'gnss_mode': 'GPS+BD', 'jam_detect': True, 'spoof_detect': True,
-         'spoof_action': 'display', 'contrast': 0, 'screen_off_s': 0, 'night': False, 'log_raw': False}
+         'spoof_action': 'display', 'contrast': 0, 'screen_off_s': 0, 'night': False, 'speed_unit': 'kn', 'coord_fmt': 'ddmm.mm',
+         'utc_offset_h': 0, 'log_raw': False}
     d.update({'fwd_' + t: True for t in ('RMC', 'GGA', 'GSA', 'GSV', 'ZDA')})
     d.update(S.threshold_defaults(jamming, spoofing))
     return d
@@ -240,3 +241,17 @@ def test_hand_edited_lookalike_values_in_the_file_are_ignored():
         cfg.load()
         assert cfg.get('screen_off_s') == 0 and cfg.get('gps_baud') == 4800   # both ignored
         assert cfg.get('contrast') == 30                                      # the valid entry still applies
+
+
+def test_main_provides_a_default_for_every_setting_in_the_schema():
+    """main.py cannot be imported on the desktop, but a setting without a default there stops the board from
+    booting (Settings() raises KeyError), so check the source."""
+    here = os.path.dirname(__file__)
+    with open(os.path.join(here, '..', 'main.py')) as f:
+        source = f.read()
+    start = source.index('DEFAULTS = {')
+    block = source[start:source.index('cfg = settings.Settings(DEFAULTS)')]
+    derived = S.threshold_defaults(jamming, spoofing)
+    for row in S.SCHEMA:
+        key = row[0]
+        assert key in derived or key.startswith('fwd_') or "'{}'".format(key) in block, key

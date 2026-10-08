@@ -28,6 +28,9 @@ SCHEMA = (
     ('contrast', 'Contrast', INT, 'Display', LIVE, (0, 255, 15)),
     ('screen_off_s', 'Screen off', CHOICE, 'Display', LIVE, (0, 30, 60, 300)),
     ('night', 'Night mode', BOOL, 'Display', LIVE, None),
+    ('speed_unit', 'Speed unit', CHOICE, 'Display', LIVE, ('kn', 'km/h', 'm/s')),
+    ('coord_fmt', 'Coords', CHOICE, 'Display', LIVE, ('ddmm.mm', 'dd.dddd')),
+    ('utc_offset_h', 'UTC offset', INT, 'Display', LIVE, (-12, 14, 1)),
     ('log_raw', 'Log raw', BOOL, 'System', LIVE, None),
     ('cn0_drop_db', 'CN0 drop', INT, 'Advanced', LIVE, (3, 15, 1)),
     ('tracked_drop_pct', 'Sats drop%', INT, 'Advanced', LIVE, (30, 90, 5)),
@@ -103,6 +106,16 @@ def threshold_defaults(jamming, spoofing):
         'elev_corr_x100': round(spoofing.ELEV_CORR_MAX * 100),
         'elev_cycles': spoofing.ELEV_CYCLES,
     }
+
+
+UNIT_KEYS = ('speed_unit', 'coord_fmt', 'utc_offset_h')
+
+
+def apply_units(cfg, units):
+    """Push the display unit settings into the units module (read by the formatting code on every call)."""
+    units.SPEED_UNIT = cfg.get('speed_unit')
+    units.COORD_FORMAT = cfg.get('coord_fmt')
+    units.UTC_OFFSET_H = cfg.get('utc_offset_h')
 
 
 def apply_thresholds(cfg, jamming, spoofing):

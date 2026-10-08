@@ -595,3 +595,64 @@ def test_main_page_before_the_first_fix_shows_the_wait_and_what_is_tracked():
     screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, p, STATS, 0, True, None, None, None, None,
                  {'fix_age_s': 5, 'uptime_s': 75})
     assert 'NO FIX' in oled.texts() and 'Waiting for fix' not in oled.texts()
+
+
+def _speed_oled(sog, cog, trend=None, unit='kn'):
+    import units
+    saved = units.SPEED_UNIT
+    units.SPEED_UNIT = unit
+    try:
+        p = NMEA.Parser()
+        p.sog_kn, p.cog_deg = sog, cog
+        FakeWriter.printed.clear()
+        oled = Oled()
+        screens.draw(oled, FakeWriter(), nav.PAGE_SPEED, p, STATS, 0, False, None, None, WIFI, INFO,
+                     {'sog_trend': trend})
+        return oled, list(FakeWriter.printed)
+    finally:
+        units.SPEED_UNIT = saved
+
+
+def test_speed_page_uses_the_selected_unit():
+    oled, printed = _speed_oled(10.0, 90.0, unit='km/h')
+    assert printed == ['090', '18.5'] and 'km/h' in oled.texts() and 'kn' not in oled.texts()
+    oled, printed = _speed_oled(10.0, 90.0, unit='m/s')
+    assert printed == ['090', '5.1'] and 'm/s' in oled.texts()
+
+
+def test_speed_page_compass_needle_points_along_the_course_and_only_while_steering():
+    east, _ = _speed_oled(5.0, 90.0)
+    assert (12, 19) in east.pixels and (9, 15) in east.pixels             # needle tip east of the centre, ring
+    north, _ = _speed_oled(5.0, 0.0)
+    assert (9, 16) in north.pixels and (12, 19) not in north.pixels
+    still, _ = _speed_oled(0.2, 90.0)
+    assert not [p for p in still.pixels if p[0] < 20]                       # nothing while the course is meaningless
+
+
+def test_speed_page_trend_mark_for_rising_steady_and_falling_speed():
+    marks = {}
+    for trend in (1, 0, -1, None):
+        oled, _ = _speed_oled(5.0, 90.0, trend)
+        marks[trend] = {p for p in oled.pixels if 66 <= p[0] < 90 and p[1] < 24}
+    assert len(marks[None]) == 0
+    assert (75, 17) in marks[1] and (75, 20) in marks[-1]                   # tip up / tip down
+    assert marks[0] == {(73, 19), (74, 19), (75, 19), (76, 19), (77, 19)}
+    assert len({frozenset(marks[k]) for k in (1, 0, -1)}) == 3
+
+
+def test_main_page_clock_follows_the_utc_offset_and_marks_local_time():
+    import units
+    p = NMEA.Parser()
+    p.time = '123456.00'
+    saved = units.UTC_OFFSET_H
+    try:
+        units.UTC_OFFSET_H = 2
+        oled = Oled()
+        screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, p, STATS, 0, True)
+        assert '14:34:56L' in oled.texts()
+        units.UTC_OFFSET_H = 0
+        oled = Oled()
+        screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, p, STATS, 0, True)
+        assert '12:34:56Z' in oled.texts()
+    finally:
+        units.UTC_OFFSET_H = saved
