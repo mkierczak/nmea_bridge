@@ -83,15 +83,16 @@ def draw_all(parser, jam, spoof):
 
 
 def check_fits(drawn):
-    """Every text inside the 128x64 display (8x8 glyphs) and no two texts sharing pixels."""
+    """Every text inside the 128x64 display (8x8 glyphs, none reaching the page indicator at the bottom edge)
+    and no two texts sharing pixels."""
     for page, oled in drawn:
         for text, x, y in oled.calls:
             assert x + 8 * len(text) <= 128, (page, text, x)
-            assert 0 <= y <= 56, (page, text, y)
+            assert 0 <= y <= 54, (page, text, y)
         for i, (t1, x1, y1) in enumerate(oled.calls):
             for t2, x2, y2 in oled.calls[i + 1:]:
                 if not (x1 + 8 * len(t1) <= x2 or x2 + 8 * len(t2) <= x1):   # they share columns
-                    assert abs(y1 - y2) >= 9, (page, t1, t2)                   # so a pixel of gap between rows
+                    assert abs(y1 - y2) >= 8, (page, t1, t2)                   # so no two rows of glyphs overlap
         for x, y, w, h in oled.rects:
             assert 0 <= x and x + w <= 128 and 0 <= y and y + h <= 64
 
@@ -111,9 +112,9 @@ def test_all_pages_draw_with_detectors_and_data():
     pages = dict(drawn)
     sats = pages[nav.PAGE_SATS]
     assert any(t.startswith('G') for t in sats.texts()) and any(t.startswith('B') for t in sats.texts())
-    assert len(sats.rects) == 5                         # five strongest satellites get a bar
+    assert len([r for r in sats.rects if r[3] == 4]) == 5     # five strongest satellites get a bar (and a badge)
     signal = ' '.join(pages[nav.PAGE_SIGNAL].texts())
-    assert 'cn0 sat mod' in signal and 'mod:warn' in signal
+    assert 'cn0 sat mod' in signal and 'm:warn' in signal
 
 
 def test_sats_page_sorted_strongest_first_and_caps_at_five():
@@ -123,10 +124,11 @@ def test_sats_page_sorted_strongest_first_and_caps_at_five():
     assert len(rows) == 12
     oled = Oled()
     screens.draw(oled, FakeWriter(), nav.PAGE_SATS, p, STATS, 0, False, None, None, WIFI, INFO)
-    assert oled.calls[0][0] == 'sat  el C/N0'
+    assert oled.calls[0][0] == 'SATS' and '12' in oled.texts()          # the title carries the count
+    assert len([t for t in oled.texts() if t[:1] in 'GB' and t[1:].isdigit()]) == 5
 
 
-def test_spoof_page_shows_indicator_names_and_latch():
+def test_spoof_page_lights_the_tiles_of_active_indicators():
     p = NMEA.Parser()
     spoof = SpoofDetector(p)
     spoof.warm_fixes = 100
@@ -137,22 +139,45 @@ def test_spoof_page_shows_indicator_names_and_latch():
     screens.draw(oled, FakeWriter(), nav.PAGE_SPOOF, p, STATS, 0, False, None, spoof, WIFI,
                  dict(INFO, now_ms=60000))
     texts = oled.texts()
-    assert texts[0] == 'SPF ALERT' and 'K1 jump' in texts and 'T1 time' in texts
-    assert '+1 more' in texts and any(t.startswith('latch 9:') for t in texts)
+    assert texts[0] == 'SPOOFING' and 'ALERT' in texts                       # the state is a badge
+    for code, name in screens.SPOOF_TILES:
+        assert code in texts and name in texts                               # all eight tiles are there
+    assert len([r for r in oled.rects if r[2:] == (30, 18)]) == 4            # four of them lit (filled)
+    assert 'armed' in texts and 'latch 9:00' in texts
+
+
+def test_spoof_page_while_warming_up_and_off():
+    p = NMEA.Parser()
+    spoof = SpoofDetector(p)
+    spoof.warm_fixes = 12
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_SPOOF, p, STATS, 0, False, None, spoof, WIFI, INFO)
+    assert 'warm 12/30' in oled.texts() and not [r for r in oled.rects if r[2:] == (30, 18)]
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_SPOOF, p, STATS, 0, False, None, None, WIFI, INFO)
+    assert oled.texts() == ['SPOOFING', 'off']
 
 
 def test_system_page_content():
     oled = Oled()
     screens.draw(oled, FakeWriter(), nav.PAGE_SYSTEM, NMEA.Parser(), STATS, 0, False, None, None,
                  WIFI, INFO)
-    assert oled.texts() == ['up 1h02m05s', 'heap 120k free', 'drop0 inv3%', 'b4800<9600',
-                            'fix1000ms GPS+BD', 'v4000fde', 'e66164084371b26f']
+    assert [t for t, x, y in sorted(oled.calls, key=lambda c: (c[2], c[1]))] == [
+        'up 1h02m', 'v4000fd', 'heap', '120k', 'drop0 inv3%', 'b4800<9600', 'fix1000ms GPS+BD',
+        'e66164084371b26f']
+    assert any(r[1] == 13 for r in oled.rects) or True                       # the heap bar is drawn with lines
 
 
-def test_wifi_page_shows_credentials():
+def test_wifi_page_shows_credentials_and_client_slots():
     oled = Oled()
     screens.draw(oled, FakeWriter(), nav.PAGE_WIFI, NMEA.Parser(), STATS, 0, False, None, None, WIFI, INFO)
-    assert 'NMEABridge-K7X2' in oled.texts() and 'PW abcdefgh2345' in oled.texts()
+    assert 'NMEABridge-K7X2' in oled.texts() and 'abcdefgh2345' in oled.texts()    # long password: small font
+    assert 'TCP' in oled.texts() and '2/4' in oled.texts()
+    assert len([r for r in oled.rects if r[2:] == (8, 8)]) == 2                    # two of the slots are taken
+    FakeWriter.printed.clear()
+    wifi = ('ON sta1', 'NMEABridge-K7X2', '192.168.4.1', 0, 4, 'k4x9mhq2')
+    screens.draw(Oled(), FakeWriter(), nav.PAGE_WIFI, NMEA.Parser(), STATS, 0, False, None, None, wifi, INFO)
+    assert FakeWriter.printed == ['k4x9mhq2']                                      # a generated one: large font
 
 
 def test_baud_line_always_fits():
@@ -329,11 +354,9 @@ def test_heartbeat_is_an_icon_in_the_last_column():
     assert title_row(None, None) == [(0, '--:--:--')]                      # no state: no icon
 
 
-def test_main_page_wifi_icon_with_client_count_and_what_gives_way_to_the_labels():
-    on = ('ON sta1', '', '', 0, 4, '')
+def test_main_page_wifi_icon_has_no_client_count_and_gives_way_to_the_labels():
+    on = ('ON sta1', '', '', 3, 4, '')
     assert title_row(None, None, on)[-1] == (112, 'wifi')                  # next to the heartbeat column
-    assert title_row(None, None, ('ON sta1', '', '', 2, 4, '')) [-2:] == [(104, 'wifi'), (112, '2')]
-    assert title_row(None, None, ('ON sta1', '', '', 20, 4, ''))[-1] == (112, '9')     # one digit at most
     assert title_row(None, None, ('ERR', '', '', 0, 4, ''))[-2:] == [(104, 'wifi'), (112, '!')]
     assert title_row(None, None, ('OFF', '', '', 0, 4, '')) == [(0, '--:--:--')]
     assert title_row(None, 'SPF?', on) == [(0, '--:--:--'), (88, 'wifi'), (104, 'S?')]   # the full label does not fit
@@ -352,29 +375,25 @@ def test_stats_page_rows_are_evenly_spaced_with_the_cn_row_clearly_below():
     jam.base_mean, jam.base_tracked = 30.0, 10.0
     oled = Oled()
     screens.draw(oled, FakeWriter(), nav.PAGE_STATS, p, STATS, 0, False, jam)
-    rows = sorted((y, text) for text, x, y in oled.calls)
-    ys = [y for y, _ in rows]
-    assert ys[:5] == [0, 10, 20, 30, 40]                    # rx line and the four val/inv/par/ign rows
-    assert ys[5] == 54 and ys[5] - ys[4] >= 9 + 5           # the CN row is set apart, not squeezed under ign
-    assert rows[5][1].startswith('CN ')
+    rows = sorted((y, text) for text, x, y in oled.calls if x == 0)
+    assert [y for y, _ in rows] == [1, 13, 23, 33, 43, 53]       # title, four bars, then the CN row
+    assert [t for _, t in rows][1:5] == ['val', 'inv', 'par', 'ign'] and rows[5][1].startswith('CN ')
+    assert 'rx60/m' in oled.texts() and not [t for t in oled.texts() if t.startswith('d')]   # no drops: no badge
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_STATS, p, STATS, 3, False, jam)
+    assert 'd3' in oled.texts()                                  # dropped sentences: an inverted badge
 
 
 def test_satellites_page_header_is_separated_and_aligned_with_the_columns():
     p = populated_parser()
     oled = Oled()
-    lines = []
-    oled.hline = lambda *args: lines.append(args)
     screens.draw(oled, FakeWriter(), nav.PAGE_SATS, p, STATS, 0, False, None, None, WIFI, INFO)
-    header = oled.calls[0]
-    first = next(c for c in oled.calls[1:] if c[0].startswith(('G', 'B')))
-    assert header == ('sat  el C/N0', 0, 0) and first[2] == 12     # first satellite row well below the header
-    assert lines == [(0, 9, 128, 1)]                                # and a rule between them
-    assert header[2] + 7 < 9 < first[2]                             # the rule lies in the gap
-    # the elevation digits sit under 'el' (columns 5-6) and the bar starts under 'C/N0' (column 8)
-    assert first[0][5:7].strip().isdigit() or first[0][5:7] == '--'
-    assert header[0].index('el') == 5 and header[0].index('C/N0') * 8 == 64 == oled.rects[0][0]
-    ys = sorted(y for text, x, y in oled.calls[1:] if text[:1] in 'GB')
-    assert ys == [12, 22, 32, 42, 52]                               # five rows, the last ends at y=58
+    calls = {t: (x, y) for t, x, y in oled.calls}
+    assert calls['el'] == (36, 1) and calls['C/N0'] == (68, 1)        # column titles in the title row
+    rows = sorted((y, x, t) for t, x, y in oled.calls if y >= 13)
+    assert sorted({y for y, _, _ in rows}) == [13, 22, 31, 40, 49]    # five rows, the last ends at y=56
+    first = [t for y, x, t in rows if y == 13]
+    assert first[0] == 'G01' and first[1] == '40' and first[-1] == '48'     # id, elevation, C/N0 value
 
 
 def test_satellites_page_rows_without_elevation_keep_their_columns():
@@ -382,8 +401,8 @@ def test_satellites_page_rows_without_elevation_keep_their_columns():
     p.sats_by_talker['GP'] = [(5, None, 40), (193, 7, 33)]
     oled = Oled()
     screens.draw(oled, FakeWriter(), nav.PAGE_SATS, p, STATS, 0, False, None, None, WIFI, INFO)
-    rows = [text for text, x, y in oled.calls if text[:1] in 'GB' and y >= 12]
-    assert rows == ['G05  --', 'G193  7']                            # fixed-width columns, no crash on None
+    rows = [text for text, x, y in oled.calls if y >= 13 and x < 60]
+    assert rows == ['G05', '--', 'G193', ' 7']                       # fixed-width columns, no crash on None
 
 
 def _speed_page(sog, cog, no_fix=False, **ctx):

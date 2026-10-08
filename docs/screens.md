@@ -45,7 +45,7 @@ the blink (it does not change the page); the small `SPF!`/`JAM?` labels stay. A 
 ![Main page](img/main.png)
 
 ```
-12:34:56Z  S? ))1 <3     <- UTC time, label, Wi-Fi icon + clients, heartbeat icon
+12:34:56Z  S? ))) <3     <- UTC time, label, Wi-Fi icon, heartbeat icon
 -------------------------
 N59°12.34                <- latitude  (large font)
 E018°03.21               <- longitude (large font)
@@ -59,7 +59,7 @@ GPS 3D 9/14        BBB   <- fix, mode, satellites used/in view, DOP letters
 | Heartbeat icon (last column) | Shows that position sentences (RMC/GGA) are reaching the radio. A **filled heart** for 0.35 s after each sentence was written to the radio and an **outline heart** in between, so it beats once per fix. A **short bar** means nothing was forwarded for 3 s (no data, no fix, the types switched off in the menu, or blocked by a spoofing alert in block mode). A **cross** means the radio write failed, or a position sentence was dropped for being more than 3 s late; it stays for 10 s. It shows that the bridge wrote to the radio, not that the radio received it. |
 | Jamming label | Only shown when something is wrong: `LOW` (suspected signal degradation) or `JAM?` (strong evidence). Blank when the detector is off, learning, or `OK`. See [jamming-detection.md](jamming-detection.md). |
 | Spoofing label | Blank when `OK` or the detector is off; `SPF?` (suspect) or `SPF!` (alert). See [spoofing-detection.md](spoofing-detection.md). |
-| Wi-Fi icon | Only while the access point is on: the **Wi-Fi arcs**, followed by the number of connected TCP clients when there are any (one digit, `9` at most), or by `!` if the access point failed to start. |
+| Wi-Fi icon | Only while the access point is on: the **Wi-Fi arcs** (followed by `!` if the access point failed to start). The number of clients is on the Wi-Fi page. |
 | Label space | The labels and the Wi-Fi icon share five character cells, right-aligned before the heartbeat icon. When they do not fit, the labels shrink (`SPF?` to `S?`, `JAM?` to `J?`, `LOW` to `L`), and if that is not enough the Wi-Fi icon is dropped. |
 | Latitude / longitude | Hemisphere letter, whole degrees, decimal minutes always with two digits before the point and two after: `N59°12.34`, `E018°03.21`. Replaced by `NO FIX` when there is no usable position. |
 | `NO FIX` | Shown when the last GGA says no fix, no position sentence has arrived yet, or the last position sentence is older than 10 s. Under it `lost m:ss` (or `lost 1h02m`) counts the time since the last valid fix; nothing is shown if there has been no fix since boot. |
@@ -103,26 +103,25 @@ The alert banner replaces the title row, as on the Main page:
 ![Stats page](img/stats.png)
 
 ```
-rx58/m d0                <- sentences per minute, dropped sentences
-val: 100% GGA            <- share of received sentences that were valid, and the last valid type
-inv: 0% RMC              <- invalid ones, and the type last seen invalid
-par: 100% GSV            <- parsed ones, and the last parsed type
-ign: 0% TXT              <- ignored ones, and the last ignored type
-...
+STATS             rx58/m <- title, sentences per minute  (an inverted "d3" badge shows dropped sentences)
+val [|||||||| ]  99% TKS <- bar and share of received sentences that were valid, last valid type
+inv [         ]   1%
+par [|||||||| ]  92% TKS <- parsed ones, and the last parsed type
+ign [|        ]   7%     <- ignored ones, and the last ignored type
 CN 41/40 n12/12          <- C/N0 now/baseline, tracked satellites now/baseline
 ```
 
-The percentages are over a 10-second window of everything the GPS thread framed, refreshed every 10 s.
+The bars and percentages are over a 10-second window of everything the GPS thread framed, refreshed every 10 s.
 
 | Item | Meaning |
 |---|---|
-| `rx<n>/m` | Sentences received per minute (from the 10 s window; shown as `9999+` if larger). |
-| `d<n>` | Sentences dropped because the queue between the GPS thread and the main loop was full (since boot). Should stay 0. |
+| `rx<n>/m` | Sentences received per minute (from the 10 s window; `9999+` if larger). It is hidden while the `d` badge is shown and the two do not fit together. |
+| `d<n>` badge | Only appears when sentences were dropped because the queue between the GPS thread and the main loop was full (since boot; `d99+` at most). Normally absent. |
 | `val` | Sentences with a correct checksum and structure. |
 | `inv` | Sentences with a bad checksum or broken framing. A few at start-up or after reconnecting are normal; a steady stream means a wrong baud rate or a noisy line. |
 | `par` | Valid sentences whose type the bridge decodes (RMC, GGA, GSA, GSV, ZDA, PMTK acks, ...). |
 | `ign` | Valid sentences of a type the bridge does not decode (still forwarded if the type is enabled in the menu). |
-| type after each percentage | Three-letter type of the most recent sentence in that category. |
+| type at the right | Three-letter type of the most recent sentence in that category. |
 | `CN a/b nc/d` | Only while jamming detection is on. `a` mean C/N0 of the tracked satellites now, `b` the learned baseline mean, `c` satellites tracked now, `d` baseline satellite count. |
 
 ## 4. Satellites
@@ -130,19 +129,19 @@ The percentages are over a 10-second window of everything the GPS thread framed,
 ![Satellites page](img/satellites.png)
 
 ```
-sat  el C/N0
--------------------------
-G05  42 ████████ 38      <- id, elevation, bar, C/N0
-B21  17 ██████   29
+SATS el  C/N0      [10]  <- title, column titles, number of satellites tracked (badge)
+G05  62 [|||||||||]  45  <- id, elevation, gauge, C/N0
+B21  17 [||||||    ]  29
 ```
 
 The five strongest tracked satellites (C/N0 > 0), strongest first. `no satellites` when none are tracked.
 
 | Column | Meaning |
 |---|---|
-| `sat` | `G` = GPS, `B` = BeiDou, followed by the PRN/satellite number. |
+| badge | Number of tracked satellites (all of them, not just the five shown). |
+| id | `G` = GPS, `B` = BeiDou, followed by the PRN/satellite number. |
 | `el` | Elevation in degrees above the horizon; `--` when the module does not report it. |
-| bar | Length proportional to C/N0 (full bar = 50 dB-Hz or more). |
+| gauge | Outlined bar proportional to C/N0 (full = 50 dB-Hz or more); the small tick on its lower edge marks 35 dB-Hz, a typical healthy level. |
 | number | C/N0 (signal-to-noise density) in dB-Hz. Typical open-sky values are 35-50. |
 
 ## 5. Signal (jamming indicator)
@@ -150,46 +149,47 @@ The five strongest tracked satellites (C/N0 > 0), strongest first. `no satellite
 ![Signal page](img/signal.png)
 
 ```
-JAM OK                   <- detector state
-no issue                 <- indicators that fire (cn0 sat fix mod)
-CN0 41/40 dB             <- mean C/N0 now / baseline
-sats 12/12               <- tracked satellites now / baseline
-GP41 BD39 dB             <- mean C/N0 per constellation
-mod:ok AIC+              <- module's own jamming status, interference cancellation
+JAMMING           [LOW]  <- title and state badge
+.----------.  .----------.
+|  C/N0 dB |  |   SATS   |
+|  37 /41  |  |  10 /10  |  <- now (large) and learned baseline (small)
+'----------'  '----------'
+cn0 sat           AIC+   <- indicators that fire, interference cancellation
+GP38 BD35 m:ok           <- mean C/N0 per constellation, the module's own verdict
 ```
 
-`Jamming: off` when the detector is disabled (menu Detection > Jamming).
+The page shows `off` in the badge (and nothing else) when the detector is disabled (menu Detection > Jamming).
 
 | Item | Meaning |
 |---|---|
-| `JAM <state>` | `INIT` (learning the baseline, no verdict yet), `OK`, `LOW`, `JAM?`. |
-| Reason line | Words for the indicators that were true at the last evaluation: `cn0` (mean C/N0 dropped), `sat` (fewer satellites tracked), `fix` (no fix although many satellites are in view), `mod` (module reports interference). `no issue` when none. |
-| `CN0 a/b dB` | Current mean C/N0 / learned baseline. |
-| `sats a/b` | Tracked satellites now / baseline. |
-| `GP.. BD.. dB` | Mean C/N0 of the GPS and BeiDou satellites separately; `-` if that system is not tracked. |
-| `mod:` | The L76B's own jamming detector (`$PMTKSPF`): `?` unknown, `ok`, `warn`, `CRIT`. |
+| badge | `INIT` (learning the baseline, no verdict yet), `OK`, `LOW`, `JAM?`. |
+| `C/N0 dB` panel | Current mean C/N0 of the tracked satellites (large) and the learned baseline (`/41`). |
+| `SATS` panel | Tracked satellites now (large) and the baseline (`/10`). |
+| reason line | Words for the indicators that were true at the last evaluation: `cn0` (mean C/N0 dropped), `sat` (fewer satellites tracked), `fix` (no fix although many satellites are in view), `mod` (module reports interference). `no issue` when none. |
 | `AIC` | Active interference cancellation: `+` module acknowledged it as on, `-` refused, `?` no answer yet. |
+| `GP.. BD..` | Mean C/N0 of the GPS and BeiDou satellites separately; `-` if that system is not tracked. |
+| `m:` | The L76B's own jamming detector (`$PMTKSPF`): `?` unknown, `ok`, `warn`, `CRIT`. |
 
 ## 6. Spoofing
 
 ![Spoofing page](img/spoofing.png)
 
 ```
-SPF OK                   <- detector state
-armed                    <- or: warm-up 12/30
-K1 jump                  <- active indicators (up to 3)
-S3 power
-+1 more
-latch 9:41               <- ALERT hold-off countdown
+SPOOFING        [ALERT]  <- title and state badge
+[K1 ][T1 ][K2 ][S1 ]     <- one tile per indicator, lit (inverted) while it counts
+[jmp][tim][spd][flt]
+[C1 ][K3 ][S2 ][S3 ]
+[g/b][alt][elv][pwr]
+armed       latch 9:41   <- warm-up progress or "armed", ALERT hold-off countdown
 ```
 
-`Spoofing: off` when the detector is disabled.
+The badge shows `off` (and nothing else) when the detector is disabled.
 
 | Item | Meaning |
 |---|---|
-| `SPF <state>` | `OK`, `SUSPECT` or `ALERT`. |
-| `armed` / `warm-up n/N` | After boot the detector only learns for the first N valid fixes (menu Advanced > Warm-up, default 30); no indicator can fire during warm-up. |
-| Indicator lines | Code and short name of each indicator currently counting, most severe first: `K1 jump` (position jump), `T1 time` (GPS time step), `K2 speed` (movement not explained by speed), `S1 flat` (uniform C/N0), `C1 GP/BD` (GPS vs BeiDou level offset changed), `K3 alt` (altitude step), `S2 elev` (C/N0 unrelated to elevation), `S3 power` (power rise / satellite change). `+n more` if more than three; `no indicators` when none. |
+| badge | `OK`, `SUSPECT` or `ALERT`. |
+| tiles | A lit (white) tile is an indicator currently counting (younger than 60 s). `K1 jmp` position jump, `T1 tim` GPS time step, `K2 spd` movement not explained by speed, `S1 flt` uniform C/N0 ("flat"), `C1 g/b` GPS vs BeiDou level offset changed, `K3 alt` altitude step, `S2 elv` C/N0 unrelated to elevation, `S3 pwr` power rise / satellite change. |
+| `armed` / `warm n/N` | After boot the detector only learns for the first N valid fixes (menu Advanced > Warm-up, default 30); no indicator can fire during warm-up. |
 | `latch m:ss` | Once an ALERT was raised it stays for 10 minutes after the last strong evidence (menu Advanced > Latch min); this is the time left. |
 
 Details of each indicator: [spoofing-detection.md](spoofing-detection.md).
@@ -199,71 +199,68 @@ Details of each indicator: [spoofing-detection.md](spoofing-detection.md).
 ![System page](img/system.png)
 
 ```
-up 1h23m45s
-heap 87k free
+up 1h23m         v3fc470 <- uptime, software version (shortened to fit)
+heap [|||||     ] 96k    <- free memory
 drop0 inv0%
 baud 4800 ok
 fix1000ms GPS+BD
-vb48139d
-0123456789abcdef
+0123456789abcdef         <- board id (or the error counters, see below)
 ```
+
+![System page with contained errors](img/system-errors.png)
 
 | Line | Meaning |
 |---|---|
-| `up` | Time since boot (hours, minutes, seconds). |
-| `heap` | Free MicroPython memory in KiB, measured after a garbage collection every 3 s and rounded down to 4 KiB. If it keeps falling, report it. |
+| `up` | Time since boot (hours, minutes). |
+| `v...` | Software version from `git describe` at deploy time (`-dirty` = uncommitted changes, `dev` = no git), cut to the room left on the line. |
+| `heap` | Free MicroPython memory in KiB, measured after a garbage collection every 3 s and rounded down to 4 KiB; the bar is relative to the 192 KiB the Pico W has. If it keeps falling, report it. |
 | `drop` / `inv` | Dropped sentences (capped at `999`) and the share of invalid sentences in the last window (capped at 100). |
 | baud line | `baud 4800 ok`: module already at the configured rate. `b4800<9600`: the module was found at 9600 and switched to 4800. `baud 4800 ?`: no module was heard (check wiring/power; the bridge keeps looking). |
 | `fix..ms <gnss>` | Configured fix interval and GNSS mode (`GPS` or `GPS+BD`). |
-| `v...` | Software version from `git describe` at deploy time (`-dirty` = uncommitted changes, `dev` = no git). |
 | last line | First 16 hex digits of the board's unique ID (the Wi-Fi name suffix is derived from it). It is replaced by `ERR r<n> g<n> s<n>` as soon as any of these counters is non-zero (each capped at `99+`): `r` radio write failures, `g` failures contained in the optional parts (detectors, Wi-Fi, logging, ...), `s` position sentences dropped because a stall made them too old. They are all zero in normal operation; see `errors` in `bridge.py`. |
-
-![System page with contained errors](img/system-errors.png)
 
 ## 8. Debug
 
 ![Debug page](img/debug.png)
 
 ```
-$GNGGA,123456.00  <- start of the last valid sentence
-220326       AIC+ <- date (ddmmyy), interference cancellation status
--------------------------
-GPS:8                    <- satellites used, per system (GSA)
-SBAS:0
-BD:6        S:K1 ..
-OTHER:0     why:CN
--------------------------
+$GNGGA,123456.00         <- start of the last valid sentence
+08/06/2026       AIC+    <- date, interference cancellation status
+.-----..-----..-----..-----.
+| GPS || SBS || BDS || OTH |
+|  6  ||  0  ||  4  ||  0  |   <- satellites used, per system (GSA)
+'-----''-----''-----''-----'
+S:K1T1S1             J:CN
 ```
 
 | Item | Meaning |
 |---|---|
 | Top line | First 16 characters of the last checksum-valid sentence. |
-| Date | `ddmmyy` from the last RMC/ZDA. |
+| Date | `dd/mm/yyyy` from the last ZDA sentence. |
 | `AIC+/-/?` | As on the Signal page. |
-| `GPS`, `SBAS`, `BD`, `OTHER` | Satellites used in the solution, per system, from GSA. |
-| `S:` | Reason string of the spoofing detector (first 8 characters), only when it is on. |
-| `why:` | Reason letters of the jamming detector (`C` cn0, `N` sats, `F` fix, `M` module), only when it is on. |
+| `GPS`, `SBS`, `BDS`, `OTH` | Satellites used in the solution, per system, from GSA: GPS, SBAS, BeiDou, other. |
+| `S:` | Reason string of the spoofing detector (first 6 characters; `-` when none), only when it is on. |
+| `J:` | Reason letters of the jamming detector (`C` cn0, `N` sats, `F` fix, `M` module; `-` when none), only when it is on. |
 
 ## 9. Wi-Fi
 
 ![Wi-Fi page](img/wifi.png)
 
 ```
-WiFi: ON sta0
+WI-FI         [ON sta0]  <- title and state badge
 NMEABridge-AB12
-PW k4x9mhq2
+PW [ k4x9mhq2 ]          <- the password in the large font
 IP 192.168.4.1
-TCP clients 1/4
-UP 3s: toggle
+TCP 1/4 [#][ ][ ][ ]     <- clients / maximum, one square per slot (filled = connected)
 ```
 
 | Item | Meaning |
 |---|---|
-| `WiFi: <state>` | `OFF`, `ON sta<n>`, or `ERR` (the access point could not start). Off after every boot. `sta<n>` is the number of phones associated with the access point at the Wi-Fi level, before any TCP connection: if a join attempt fails but this number briefly shows 1, the phone reached the radio and failed later (address or password stage). |
+| badge | `OFF`, `ON sta<n>`, or `ERR` (the access point could not start). Off after every boot. `sta<n>` is the number of phones associated with the access point at the Wi-Fi level, before any TCP connection: if a join attempt fails but this number briefly shows 1, the phone reached the radio and failed later (address or password stage). |
 | SSID | Network name: `NMEABridge-` plus four characters derived from the board ID. |
-| `PW` | The WPA2 password (8 characters, no look-alike characters such as `0/o` or `1/l`). Generated on first boot and stored; menu Wi-Fi > New password makes a new one. A phone that saved the network with an older password must forget it first. |
+| `PW` | The WPA2 password (8 characters, no look-alike characters such as `0/o` or `1/l`), in the large font. Generated on first boot and stored; menu Wi-Fi > New password makes a new one. A password of your own longer than 8 characters is shown in the small font (13 characters at most). A phone that saved the network with an older password must forget it first. |
 | `IP` | The access point's address (`-` while off). Connect clients to this address, TCP port 10110 (or receive UDP broadcasts on that port). |
-| `TCP clients n/m` | Connected TCP clients / maximum. |
+| `TCP n/m` | Connected TCP clients / maximum, with one square per slot. The Main page only shows that the access point is on, not the number of clients. |
 
 ## Menu
 

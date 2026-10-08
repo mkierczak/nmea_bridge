@@ -3,8 +3,9 @@ from nav import (PAGE_MAIN, PAGE_STATS, PAGE_SATS, PAGE_SIGNAL, PAGE_SPOOF, PAGE
                  PAGE_DEBUG, PAGE_WIFI, PAGE_SPEED)
 
 JAM_WORDS = {'C': 'cn0', 'N': 'sat', 'F': 'fix', 'M': 'mod'}   # short enough for all four on one line
-SPOOF_NAMES = {'K1': 'jump', 'T1': 'time', 'K2': 'speed', 'S1': 'flat', 'C1': 'GP/BD',
-               'K3': 'alt', 'S2': 'elev', 'S3': 'power'}
+# the annunciator tiles of the Spoofing page: indicator code and a three-letter name
+SPOOF_TILES = (('K1', 'jmp'), ('T1', 'tim'), ('K2', 'spd'), ('S1', 'flt'),
+               ('C1', 'g/b'), ('K3', 'alt'), ('S2', 'elv'), ('S3', 'pwr'))
 MODULE_JAM = {0: '?', 1: 'ok', 2: 'warn', 3: 'CRIT'}
 
 
@@ -41,12 +42,12 @@ def _icon(oled, bitmap, x, y):
 
 
 def _wifi_mark(wifi):
-    """(icon, text) for the Wi-Fi access point: the arcs alone when on, with the number of TCP clients, or with
-    '!' when it failed to start; None when it is off."""
+    """(icon, text) for the Wi-Fi access point: the arcs alone when it is on, with '!' when it failed to start;
+    None when it is off. (The number of clients is on the Wi-Fi page.)"""
     if not wifi:
         return None
     if wifi[0].startswith('ON'):
-        return ICON_WIFI, (str(min(wifi[3], 9)) if wifi[3] else '')
+        return ICON_WIFI, ''
     return (ICON_WIFI, '!') if wifi[0] == 'ERR' else None
 
 
@@ -172,90 +173,125 @@ def _draw_speed(oled, font_large, parser, no_fix, banner):
     _gauge(oled, font_large, 66, '' if banner else 'SOG', speed, 'kn')
 
 
+def _title(oled, text, right='', badge=''):
+    """Title row of the instrument pages: the name on the left, optionally a plain text and an inverted badge
+    (the state) on the right, and a rule below."""
+    oled.text(text, 0, 1, 1)
+    edge = 128
+    if badge:
+        width = 8 * len(badge) + 4
+        oled.fill_rect(edge - width, 0, width, 9, 1)
+        oled.text(badge, edge - width + 2, 1, 0)
+        edge -= width + 4
+    if right and edge - 8 * len(right) >= 8 * len(text) + 8:     # the plain text gives way when it does not fit
+        oled.text(right, edge - 8 * len(right), 1, 1)
+    oled.hline(0, 10, 128, 1)
+
+
+def _hbar(oled, x, y, w, h, percent):
+    """Horizontal gauge: an outline with a filled part of percent (0-100) of its inside."""
+    oled.hline(x, y, w, 1)
+    oled.hline(x, y + h - 1, w, 1)
+    oled.vline(x, y, h, 1)
+    oled.vline(x + w - 1, y, h, 1)
+    inner = (w - 4) * max(0, min(100, percent)) // 100
+    if inner:
+        oled.fill_rect(x + 2, y + 2, inner, h - 4, 1)
+
+
+def _readout(oled, font, x, label, value, base):
+    """A framed 62 x 28 instrument: label at the top, the value in the large font and the baseline it is
+    compared with in the small font next to it."""
+    _frame(oled, x, 12, 62, 28)
+    oled.text(label, x + (62 - 8 * len(label)) // 2, 14, 1)
+    total = _width(font, value) + 8 * len(base)
+    left = x + (62 - total) // 2
+    Writer.set_textpos(oled, 23, left)
+    font.printstring(value)
+    oled.text(base, left + _width(font, value), 29, 1)
+
+
 def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None, spoof=None, wifi=None, info=None,
          ctx=None):
     """Render one screen into the frame buffer (caller calls oled.show()). ctx (optional dict) carries what
     only the controller knows: 'pages' (page indicator), 'fix_age_s' (seconds since the last fix, None if
-    never), 'banner' (True to show the alert banner), 'heartbeat' (key of HEARTBEAT, Main page) and 'hold' (Wi-Fi gesture
-    progress, see _draw_hold). 'wifi' is used by the Wi-Fi page and, as a small mark, by the Main page."""
+    never), 'banner' (True to show the alert banner), 'heartbeat' (key of HEARTBEAT, Main page) and 'hold'
+    (Wi-Fi gesture progress, see _draw_hold). 'wifi' is used by the Wi-Fi page and, as a small icon, by the
+    Main page."""
     ctx = ctx or {}
     banner = banner_text(jam, spoof) if ctx.get('banner') else ''
     oled.fill(0)
     if screen == PAGE_SPEED:
         _draw_speed(oled, font_large, parser, no_fix, banner)
     elif screen == PAGE_MAIN:
-        if banner:
-            _banner(oled, banner, 13)
-        else:
-            _status_row(oled, parser, jam, spoof, wifi, ctx.get('heartbeat'))
-        oled.hline(0, 14, 128, 1)
-        if no_fix:
-            oled.text('NO FIX', 40, 28, 1)
-            age = ctx.get('fix_age_s')
-            if age is not None:
-                text = age_text(age)
-                oled.text(text, (128 - 8 * len(text)) // 2, 38, 1)
-        else:
-            Writer.set_textpos(oled, 17, 0)
-            font_large.printstring(parser.get_lat_string())
-            Writer.set_textpos(oled, 32, 0)
-            font_large.printstring(parser.get_lon_string())
-        oled.hline(0, 48, 128, 1)
-        oled.text((parser.fix_type + ' ' + parser.mode + ' ' +
-                   str(parser.birds_in_use) + '/' + str(parser.birds_in_view))[:13], 0, 54, 1)  # ends before x=104
-        oled.text(parser.get_dop_string(type='PDOP') + parser.get_dop_string(type='HDOP') +
-                  parser.get_dop_string(type='VDOP'), 104, 54, 1)
+        _draw_main(oled, font_large, parser, no_fix, jam, spoof, wifi, banner, ctx)
     elif screen == PAGE_STATS:
-        rcv = stats['rcv'] or 1  # avoid division by zero in empty windows
-        oled.text('rx{}/m d{}'.format(_cap(round(stats['rcvpm']), 9999), _cap(dropped, 9999)), 0, 0, 1)
-        for row, (key, last) in enumerate((('val', parser.sentence_last_valid_type),
-                                           ('inv', parser.sentence_last_invalid_type),
-                                           ('par', parser.sentence_last_parsed_type),
-                                           ('ign', parser.sentence_last_ignored_type)), 1):
-            oled.text(key + ": " + str(round(stats[key] / rcv * 100)) + '% ' + last, 0, row * 10, 1)
-        if jam:
-            tracked, mean, _ = parser.cn0_stats()
-            oled.text('CN {}/{} n{}/{}'.format(round(mean), round(jam.base_mean), tracked,
-                                               round(jam.base_tracked)), 0, 54, 1)   # 16 chars at most
-    elif screen == PAGE_WIFI:
-        state, ssid, ip, clients, max_clients, password = wifi if wifi else ('OFF', '', '', 0, 0, '')
-        oled.text('WiFi: ' + state, 0, 0, 1)
-        oled.text(ssid[:16], 0, 10, 1)
-        oled.text('PW ' + password[:13], 0, 20, 1)
-        oled.text(('IP ' + ip)[:16] if ip else 'IP -', 0, 30, 1)
-        oled.text('TCP clients {}/{}'.format(clients, max_clients)[:16], 0, 40, 1)
-        oled.text('UP 3s: toggle', 0, 54, 1)
+        _draw_stats(oled, parser, stats, dropped, jam)
     elif screen == PAGE_SATS:
         _draw_sats(oled, parser)
     elif screen == PAGE_SIGNAL:
-        _draw_signal(oled, parser, jam)
-    _page_indicator(oled, screen, ctx.get('pages'))
-    if ctx.get('hold'):
-        _draw_hold(oled, ctx['hold'])
+        _draw_signal(oled, font_large, parser, jam)
     elif screen == PAGE_SPOOF:
         _draw_spoof(oled, spoof, info)
     elif screen == PAGE_SYSTEM:
         _draw_system(oled, info)
     elif screen == PAGE_DEBUG:
-        oled.text(parser.last_valid_sentence.strip()[:16], 0, 0, 1)
-        oled.text(parser.date, 0, 10, 1)
-        aic = parser.pmtk_acks.get(286)
-        oled.text('AIC' + ('?' if aic is None else '+' if aic == 3 else '-'), 96, 10, 1)
-        oled.hline(0, 20, 128, 1)
-        oled.text('GPS:' + str(parser.birds_GPS), 0, 24, 1)
-        oled.text('SBAS:' + str(parser.birds_SBAS), 0, 34, 1)
-        oled.text('BD:' + str(parser.birds_BD), 0, 44, 1)
-        if spoof:
-            oled.text('S:' + spoof.reason[:8], 48, 44, 1)    # 10 characters from x=48 end at the edge
-        oled.text('OTHER:' + str(parser.birds_OTHER), 0, 54, 1)
-        if jam:
-            oled.text('why:' + jam.reason, 64, 54, 1)
-        oled.hline(0, 63, 128, 1)
+        _draw_debug(oled, font_large, parser, jam, spoof)
+    elif screen == PAGE_WIFI:
+        _draw_wifi(oled, font_large, wifi)
+    _page_indicator(oled, screen, ctx.get('pages'))
+    if ctx.get('hold'):
+        _draw_hold(oled, ctx['hold'])
+
+
+def _draw_main(oled, font_large, parser, no_fix, jam, spoof, wifi, banner, ctx):
+    if banner:
+        _banner(oled, banner, 13)
+    else:
+        _status_row(oled, parser, jam, spoof, wifi, ctx.get('heartbeat'))
+    oled.hline(0, 14, 128, 1)
+    if no_fix:
+        oled.text('NO FIX', 40, 28, 1)
+        age = ctx.get('fix_age_s')
+        if age is not None:
+            text = age_text(age)
+            oled.text(text, (128 - 8 * len(text)) // 2, 38, 1)
+    else:
+        Writer.set_textpos(oled, 17, 0)
+        font_large.printstring(parser.get_lat_string())
+        Writer.set_textpos(oled, 32, 0)
+        font_large.printstring(parser.get_lon_string())
+    oled.hline(0, 48, 128, 1)
+    oled.text((parser.fix_type + ' ' + parser.mode + ' ' +
+               str(parser.birds_in_use) + '/' + str(parser.birds_in_view))[:13], 0, 54, 1)  # ends before x=104
+    oled.text(parser.get_dop_string(type='PDOP') + parser.get_dop_string(type='HDOP') +
+              parser.get_dop_string(type='VDOP'), 104, 54, 1)
 
 
 def _cap(value, limit):
     """Clip a counter for display: '9999+' instead of a number too wide for its line."""
     return str(value) if value <= limit else '{}+'.format(limit)
+
+
+def _draw_stats(oled, parser, stats, dropped, jam):
+    """Sentence statistics: a bar per category with its share of the last 10 s, and the last type seen."""
+    rcv = stats['rcv'] or 1  # avoid division by zero in empty windows
+    _title(oled, 'STATS', 'rx{}/m'.format(_cap(round(stats['rcvpm']), 9999)),
+           'd{}'.format(_cap(dropped, 99)) if dropped else '')
+    for row, (key, last) in enumerate((('val', parser.sentence_last_valid_type),
+                                       ('inv', parser.sentence_last_invalid_type),
+                                       ('par', parser.sentence_last_parsed_type),
+                                       ('ign', parser.sentence_last_ignored_type))):
+        y = 13 + 10 * row
+        percent = round(stats[key] / rcv * 100)
+        oled.text(key, 0, y, 1)
+        _hbar(oled, 26, y, 40, 8, percent)
+        oled.text('{:>4}'.format(str(percent) + '%'), 70, y, 1)
+        oled.text(last[:3], 104, y, 1)
+    if jam:
+        tracked, mean, _ = parser.cn0_stats()
+        oled.text('CN {}/{} n{}/{}'.format(round(mean), round(jam.base_mean), tracked,
+                                           round(jam.base_tracked)), 0, 53, 1)   # 16 chars at most
 
 
 def _group(talker):
@@ -274,57 +310,69 @@ def _tracked(parser):
 
 
 def _draw_sats(oled, parser):
-    """Column labels (aligned with the data below), a rule, then the five strongest satellites:
-    id (G = GPS, B = BeiDou + PRN), elevation, a C/N0 bar and the C/N0 value in dB-Hz."""
+    """The five strongest tracked satellites: id (G = GPS, B = BeiDou + PRN), elevation, a C/N0 gauge (full at
+    50 dB-Hz, a tick at 35) and the C/N0 value; the title row counts the satellites tracked."""
     rows = _tracked(parser)
-    oled.text('sat  el C/N0', 0, 0, 1)
-    oled.hline(0, 9, 128, 1)
+    _title(oled, 'SATS', badge=str(len(rows)) if rows else '')
+    oled.text('el', 36, 1, 1)                               # column titles, over the columns below
+    oled.text('C/N0', 68, 1, 1)
     if not rows:
-        oled.text('no satellites', 0, 24, 1)
+        oled.text('no satellites', 16, 30, 1)
     for i, (cn, grp, prn, el) in enumerate(rows[:5]):
-        y = 12 + 10 * i
-        oled.text('{:<4}{:>3}'.format('{}{:02d}'.format(grp, prn), '--' if el is None else el), 0, y, 1)
-        oled.fill_rect(64, y, min(36, cn * 36 // 50), 7, 1)
-        oled.text(str(cn), 104, y, 1)
+        y = 13 + 9 * i
+        oled.text('{}{:02d}'.format(grp, prn), 0, y, 1)
+        oled.text('{:>2}'.format('--' if el is None else el), 36, y, 1)
+        _hbar(oled, 60, y, 44, 8, cn * 100 // 50)
+        oled.vline(60 + 44 * 70 // 100, y + 6, 2, 1)       # the 35 dB-Hz tick on the bottom edge
+        oled.text(str(cn), 108, y, 1)
 
 
-def _draw_signal(oled, parser, jam):
+def _draw_signal(oled, font, parser, jam):
+    """Jamming indicator as a panel: the state as a badge, C/N0 and tracked satellites against their learned
+    baselines in two readouts, then the per-constellation means, the module's own verdict and the reasons."""
     if not jam:
-        oled.text('Jamming: off', 0, 0, 1)
+        _title(oled, 'JAMMING', badge='off')
         return
-    oled.text('JAM ' + jam.state, 0, 0, 1)
-    oled.text(' '.join(JAM_WORDS.get(c, c) for c in jam.reason)[:16] or 'no issue', 0, 10, 1)
+    _title(oled, 'JAMMING', badge=jam.state)
     tracked, mean, _ = parser.cn0_stats()
-    oled.text('CN0 {}/{} dB'.format(round(mean), round(jam.base_mean)), 0, 20, 1)
-    oled.text('sats {}/{}'.format(tracked, round(jam.base_tracked)), 0, 30, 1)
+    _readout(oled, font, 0, 'C/N0 dB', str(round(mean)), '/{}'.format(round(jam.base_mean)))
+    _readout(oled, font, 66, 'SATS', str(tracked), '/{}'.format(round(jam.base_tracked)))
+    reason = ' '.join(JAM_WORDS.get(c, c) for c in jam.reason)
+    oled.text(reason[:11] or 'no issue', 0, 42, 1)
+    aic = parser.pmtk_acks.get(286)
+    oled.text('AIC' + ('?' if aic is None else '+' if aic == 3 else '-'), 96, 42, 1)
     means = {}
     for cn, grp, _, _ in _tracked(parser):
         means.setdefault(grp, []).append(cn)
-    oled.text('GP{} BD{} dB'.format(*(round(sum(means[g]) / len(means[g])) if g in means else '-'
-                                      for g in ('G', 'B'))), 0, 40, 1)
-    aic = parser.pmtk_acks.get(286)
-    oled.text('mod:{} AIC{}'.format(MODULE_JAM.get(parser.module_jam_status, '?'),
-                                    '?' if aic is None else '+' if aic == 3 else '-'), 0, 50, 1)
+    oled.text('GP{} BD{} m:{}'.format(*(round(sum(means[g]) / len(means[g])) if g in means else '-'
+                                        for g in ('G', 'B')), MODULE_JAM.get(parser.module_jam_status, '?')),
+              0, 51, 1)
 
 
 def _draw_spoof(oled, spoof, info):
+    """Spoofing indicator as an annunciator panel: one tile per indicator, lit (inverted) while it counts."""
     if not spoof:
-        oled.text('Spoofing: off', 0, 0, 1)
+        _title(oled, 'SPOOFING', badge='off')
         return
-    oled.text('SPF ' + spoof.state, 0, 0, 1)
+    _title(oled, 'SPOOFING', badge=spoof.state)
+    active = spoof.active_codes()
+    for i, (code, name) in enumerate(SPOOF_TILES):
+        x, y = i % 4 * 32, 12 + i // 4 * 19
+        if code in active:
+            oled.fill_rect(x, y, 30, 18, 1)
+            color = 0
+        else:
+            _frame(oled, x, y, 30, 18)
+            color = 1
+        oled.text(code, x + 7, y + 1, color)
+        oled.text(name, x + 3, y + 9, color)
     from spoofing import WARMUP_FIXES
-    oled.text('armed' if spoof.armed else 'warm-up {}/{}'.format(spoof.warm_fixes, WARMUP_FIXES), 0, 10, 1)
-    codes = spoof.active_codes()
-    for i, code in enumerate(codes[:3]):
-        oled.text('{} {}'.format(code, SPOOF_NAMES.get(code, '')), 0, 20 + 10 * i, 1)
-    if len(codes) > 3:
-        oled.text('+{} more'.format(len(codes) - 3), 64, 40, 1)
-    if not codes:
-        oled.text('no indicators', 0, 20, 1)
+    oled.text('armed' if spoof.armed else 'warm {}/{}'.format(spoof.warm_fixes, WARMUP_FIXES), 0, 51, 1)
     if info:
         left = spoof.latch_remaining_ms(info['now_ms']) // 1000
         if left:
-            oled.text('latch {}:{:02d}'.format(left // 60, left % 60), 0, 52, 1)
+            text = 'latch {}:{:02d}'.format(left // 60, left % 60)
+            oled.text(text, 128 - 8 * len(text), 51, 1)
 
 
 def _baud_line(baud, found):
@@ -336,18 +384,73 @@ def _baud_line(baud, found):
     return 'b{}<{}'.format(baud, found)
 
 
+HEAP_FULL_KB = 192        # the Pico W's heap is about this big: a full heap bar means nothing is used
+
+
 def _draw_system(oled, info):
     if not info:
         return
     up = info['uptime_s']
-    oled.text('up {}h{:02d}m{:02d}s'.format(up // 3600, up // 60 % 60, up % 60), 0, 0, 1)
-    oled.text('heap {}k free'.format(info['heap'] // 1024), 0, 9, 1)
-    oled.text('drop{} inv{}%'.format(_cap(info['dropped'], 999), min(info['inv_pct'], 100)), 0, 18, 1)
-    oled.text(_baud_line(info['baud'], info['found']), 0, 27, 1)
-    oled.text('fix{}ms {}'.format(info['fix_ms'], info['gnss']), 0, 36, 1)
-    oled.text(('v' + info.get('version', '?'))[:16], 0, 45, 1)
+    up_text = 'up {}h{:02d}m'.format(up // 3600, up // 60 % 60)
+    version = ('v' + info.get('version', '?'))[:15 - len(up_text)]
+    oled.text(up_text, 0, 1, 1)
+    oled.text(version, 128 - 8 * len(version), 1, 1)
+    oled.hline(0, 10, 128, 1)
+    kb = info['heap'] // 1024
+    oled.text('heap', 0, 13, 1)
+    _hbar(oled, 36, 13, 56, 8, kb * 100 // HEAP_FULL_KB)
+    oled.text('{}k'.format(kb), 96, 13, 1)
+    oled.text('drop{} inv{}%'.format(_cap(info['dropped'], 999), min(info['inv_pct'], 100)), 0, 23, 1)
+    oled.text(_baud_line(info['baud'], info['found']), 0, 33, 1)
+    oled.text('fix{}ms {}'.format(info['fix_ms'], info['gnss']), 0, 43, 1)
     errors = (info.get('rerr', 0), info.get('gerr', 0), info.get('stale', 0))
     if any(errors):    # contained failures that are otherwise invisible; the board id returns when all is well
-        oled.text('ERR r{} g{} s{}'.format(*(_cap(e, 99) for e in errors)), 0, 54, 1)
+        oled.text('ERR r{} g{} s{}'.format(*(_cap(e, 99) for e in errors)), 0, 53, 1)
     else:
-        oled.text(info['uid'][:16], 0, 54, 1)
+        oled.text(info['uid'][:16], 0, 53, 1)
+
+
+def _draw_debug(oled, font, parser, jam, spoof):
+    """Last sentence and date, the satellites used per system as four counters, the detectors' reasons."""
+    oled.text(parser.last_valid_sentence.strip()[:16], 0, 0, 1)
+    oled.text(parser.date, 0, 9, 1)
+    aic = parser.pmtk_acks.get(286)
+    oled.text('AIC' + ('?' if aic is None else '+' if aic == 3 else '-'), 96, 9, 1)
+    oled.hline(0, 18, 128, 1)
+    for i, (label, value) in enumerate((('GPS', parser.birds_GPS), ('SBS', parser.birds_SBAS),
+                                        ('BDS', parser.birds_BD), ('OTH', parser.birds_OTHER))):
+        x = i * 32
+        _frame(oled, x, 20, 30, 29)
+        oled.text(label, x + 3, 22, 1)
+        text = str(value)
+        Writer.set_textpos(oled, 32, x + (30 - _width(font, text)) // 2)
+        font.printstring(text)
+    if spoof:
+        oled.text('S:' + (spoof.reason[:6] or '-'), 0, 52, 1)
+    if jam:
+        text = 'J:' + (jam.reason or '-')
+        oled.text(text, 128 - 8 * len(text), 52, 1)
+
+
+def _draw_wifi(oled, font, wifi):
+    state, ssid, ip, clients, max_clients, password = wifi if wifi else ('OFF', '', '', 0, 0, '')
+    _title(oled, 'WI-FI', badge=state[:7])
+    oled.text(ssid[:16], 0, 13, 1)
+    oled.text('PW', 0, 27, 1)
+    _frame(oled, 18, 22, 110, 18)
+    if len(password) <= 8:
+        Writer.set_textpos(oled, 24, 22)
+        font.printstring(password)
+    else:                               # a longer password of your own: the small font fits 13 characters
+        oled.text(password[:13], 22, 27, 1)
+    oled.text(('IP ' + ip)[:16] if ip else 'IP -', 0, 43, 1)
+    oled.text('TCP', 0, 52, 1)
+    count = '{}/{}'.format(clients, max_clients)
+    oled.text(count, 32, 52, 1)
+    start = 32 + 8 * len(count) + 8
+    for i in range(min(max_clients, (128 - start) // 12)):        # one square per client slot, filled when taken
+        x = start + 12 * i
+        if i < clients:
+            oled.fill_rect(x, 52, 8, 8, 1)
+        else:
+            _frame(oled, x, 52, 8, 8)
