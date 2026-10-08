@@ -46,7 +46,7 @@ def jam_states(result):
 
 
 def alert_with(result, code):
-    return any(state == 'ALERT' and code in reason for state, reason in spoof_states(result))
+    return any(state == 'HIGH' and code in reason for state, reason in spoof_states(result))
 
 
 def test_a_quiet_log_raises_no_alarms_and_the_summary_says_so():
@@ -61,7 +61,7 @@ def test_a_persistent_jump_in_the_log_is_reported_as_an_alert():
     r = run(make_log(jump_at=40))
     assert alert_with(r, 'K1')                              # K2 usually joins on the same fix: 'K1K2'
     assert r['episodes']['spoof'] == 1
-    assert 'ALERT' in replay.format_transition(r['transitions'][-1])
+    assert 'HIGH' in replay.format_transition(r['transitions'][-1])
     assert 'alarm episodes: 1' in replay.format_summary(r)
 
 
@@ -94,7 +94,7 @@ def test_jamming_at_boot_is_seen_by_the_replay():
     for k in range(12):                                     # no fix, nine satellites overhead, none tracked
         lines.append('{} {}'.format(100000 + 5000 * k, with_checksum('GPGSV,1,1,09')))
     r = run(lines)
-    assert any(state == 'JAM?' and 'M' in reason and 'F' in reason for state, reason in jam_states(r)), r['transitions']
+    assert any(state == 'HIGH' and 'M' in reason and 'F' in reason for state, reason in jam_states(r)), r['transitions']
     assert r['episodes']['jam'] == 1
 
 
@@ -127,7 +127,7 @@ def test_command_line_prints_transitions_and_a_summary(tmp_path=None):
         with contextlib.redirect_stdout(out):
             replay.main([path, '--baud', '9600', '--gnss', 'gps'])
         text = out.getvalue()
-        assert 'SPOOF ALERT' in text and '--- summary ---' in text
+        assert 'SPOOF HIGH' in text and '--- summary ---' in text
         quiet = io.StringIO()
         with contextlib.redirect_stdout(quiet):
             replay.main([path, '-q'])

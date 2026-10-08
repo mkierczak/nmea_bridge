@@ -32,11 +32,12 @@ are on.
 whichever the release will switch to) with a progress bar that fills over the 3 s; at full it reads `Release now!`.
 Releasing earlier does nothing but the usual short/long press.
 
-**Alert banner and blink.** A strong alert (spoofing `ALERT`, jamming `JAM?`) replaces the top row of the Main and
-Speed pages with a white bar showing the alert (`SPF! K1 T1`, `JAM? cn0`, or `SPF! JAM?` for both), and the display
+**Alert banner and blink.** The detectors report the probability of spoofing and of jamming as `OK`, `LOW`,
+`MEDIUM` or `HIGH`; `MEDIUM` and `HIGH` are alerts. An alert replaces the top row of the Main and
+Speed pages with a white bar showing it (`SPF! K1 T1` for high, `JAM? cn0` for medium, `SPF! JAM?` for both), and the display
 blinks (inverted) for 3 s when the alert starts. The first key press on one of those pages dismisses the banner and
-the blink (it does not change the page); the small `SPF!`/`JAM?` labels stay. A new alert shows the banner again.
-`SUSPECT` and `LOW` only use the small labels.
+the blink (it does not change the page); the small labels stay. A new alert shows the banner again.
+`LOW` is not an alert: it only shows the small label (`SPF.` / `JAM.`) and does not keep the screen on.
 
 ![Spoofing alert banner on the Main page](img/main-alert.png)
 
@@ -57,10 +58,10 @@ GPS 3D 9/14        BBB   <- fix, mode, satellites used/in view, DOP letters
 |---|---|
 | Time | UTC from the last RMC/GGA/ZDA time field, `hh:mm:ss` followed by `Z` (Zulu = UTC); `--:--:--` until a time has been received. |
 | Heartbeat icon (last column) | Shows that position sentences (RMC/GGA) are reaching the radio. A **filled heart** for 0.35 s after each sentence was written to the radio and an **outline heart** in between, so it beats once per fix. A **short bar** means nothing was forwarded for 3 s (no data, no fix, the types switched off in the menu, or blocked by a spoofing alert in block mode). A **cross** means the radio write failed, or a position sentence was dropped for being more than 3 s late; it stays for 10 s. It shows that the bridge wrote to the radio, not that the radio received it. |
-| Jamming label | Only shown when something is wrong: `LOW` (suspected signal degradation) or `JAM?` (strong evidence). Blank when the detector is off, learning, or `OK`. See [jamming-detection.md](jamming-detection.md). |
-| Spoofing label | Blank when `OK` or the detector is off; `SPF?` (suspect) or `SPF!` (alert). See [spoofing-detection.md](spoofing-detection.md). |
+| Jamming label | The probability of jamming, only when it is above `OK`: `JAM.` (low), `JAM?` (medium), `JAM!` (high). Blank when the detector is off, learning, or `OK`. See [jamming-detection.md](jamming-detection.md). |
+| Spoofing label | The probability of spoofing, only when it is above `OK`: `SPF.` (low), `SPF?` (medium), `SPF!` (high). Blank when `OK` or the detector is off. See [spoofing-detection.md](spoofing-detection.md). |
 | Wi-Fi icon | Only while the access point is on: the **Wi-Fi arcs** (followed by `!` if the access point failed to start). The number of clients is on the Wi-Fi page. |
-| Label space | The labels and the Wi-Fi icon share five character cells, right-aligned before the heartbeat icon. When they do not fit, the labels shrink (`SPF?` to `S?`, `JAM?` to `J?`, `LOW` to `L`), and if that is not enough the Wi-Fi icon is dropped. |
+| Label space | The labels and the Wi-Fi icon share five character cells, right-aligned before the heartbeat icon. When they do not fit, the labels shrink (`SPF?` to `S?`, `JAM!` to `J!`), and if that is not enough the Wi-Fi icon is dropped. |
 | Latitude / longitude | Hemisphere letter, whole degrees, decimal minutes always with two digits before the point and two after: `N59°12.34`, `E018°03.21`. Replaced by `NO FIX` when there is no usable position. |
 | `NO FIX` | Shown when the last GGA says no fix, no position sentence has arrived yet, or the last position sentence is older than 10 s. Under it `lost m:ss` (or `lost 1h02m`) counts the time since the last valid fix; nothing is shown if there has been no fix since boot. |
 | Alert banner | While a strong alert is active and not dismissed, the time/label row is replaced by a white bar with the alert text (see Navigation). |
@@ -149,7 +150,7 @@ The five strongest tracked satellites (C/N0 > 0), strongest first. `no satellite
 ![Signal page](img/signal.png)
 
 ```
-JAMMING           [LOW]  <- title and state badge
+JAMMING        [MEDIUM]  <- title and probability badge
 .----------.  .----------.
 |  C/N0 dB |  |   SATS   |
 |  37 /41  |  |  10 /10  |  <- now (large) and learned baseline (small)
@@ -162,7 +163,7 @@ The page shows `off` in the badge (and nothing else) when the detector is disabl
 
 | Item | Meaning |
 |---|---|
-| badge | `INIT` (learning the baseline, no verdict yet), `OK`, `LOW`, `JAM?`. |
+| badge | `INIT` (learning the baseline, no verdict yet), `OK`, `LOW`, `MEDIUM`, `HIGH`: the probability of jamming. `MEDIUM` and `HIGH` are alerts. |
 | `C/N0 dB` panel | Current mean C/N0 of the tracked satellites (large) and the learned baseline (`/41`). |
 | `SATS` panel | Tracked satellites now (large) and the baseline (`/10`). |
 | reason line | Words for the indicators that were true at the last evaluation: `cn0` (mean C/N0 dropped), `sat` (fewer satellites tracked), `fix` (no fix although many satellites are in view), `mod` (module reports interference). `no issue` when none. |
@@ -175,22 +176,22 @@ The page shows `off` in the badge (and nothing else) when the detector is disabl
 ![Spoofing page](img/spoofing.png)
 
 ```
-SPOOFING        [ALERT]  <- title and state badge
+SPOOFING         [HIGH]  <- title and probability badge
 [K1 ][T1 ][K2 ][S1 ]     <- one tile per indicator, lit (inverted) while it counts
 [jmp][tim][spd][flt]
 [C1 ][K3 ][S2 ][S3 ]
 [g/b][alt][elv][pwr]
-armed       latch 9:41   <- warm-up progress or "armed", ALERT hold-off countdown
+armed       latch 9:41   <- warm-up progress or "armed", HIGH hold-off countdown
 ```
 
 The badge shows `off` (and nothing else) when the detector is disabled.
 
 | Item | Meaning |
 |---|---|
-| badge | `OK`, `SUSPECT` or `ALERT`. |
+| badge | The probability of spoofing: `OK`, `LOW` (one weak indicator), `MEDIUM` (alert: one medium or two weak indicators) or `HIGH` (alert: a strong indicator or two medium ones). |
 | tiles | A lit (white) tile is an indicator currently counting (younger than 60 s). `K1 jmp` position jump, `T1 tim` GPS time step, `K2 spd` movement not explained by speed, `S1 flt` uniform C/N0 ("flat"), `C1 g/b` GPS vs BeiDou level offset changed, `K3 alt` altitude step, `S2 elv` C/N0 unrelated to elevation, `S3 pwr` power rise / satellite change. |
 | `armed` / `warm n/N` | After boot the detector only learns for the first N valid fixes (menu Advanced > Warm-up, default 30); no indicator can fire during warm-up. |
-| `latch m:ss` | Once an ALERT was raised it stays for 10 minutes after the last strong evidence (menu Advanced > Latch min); this is the time left. |
+| `latch m:ss` | Once `HIGH` was reached it stays for 10 minutes after the last strong evidence (menu Advanced > Latch min); this is the time left. |
 
 Details of each indicator: [spoofing-detection.md](spoofing-detection.md).
 

@@ -163,7 +163,7 @@ def test_screen_off_timer_wake_key_is_swallowed_and_alert_keeps_the_screen_on():
     # an alert wakes it and keeps it on, however long nobody presses a key
     r.step(advance=40000)
     assert r.ui.screen_off
-    r.bridge.spoof = FakeDetector('ALERT')
+    r.bridge.spoof = FakeDetector('HIGH')
     r.step(advance=1000)
     assert not r.ui.screen_off
     r.step(advance=120000)
@@ -225,7 +225,7 @@ def test_strong_alert_shows_a_banner_that_the_first_key_press_dismisses():
     r = Rig()
     r.step()
     assert r.ctxs[-1]['banner'] is False
-    r.bridge.spoof = FakeDetector('ALERT')
+    r.bridge.spoof = FakeDetector('HIGH')
     r.step(advance=10)
     assert r.ctxs[-1]['banner'] is True
     page = r.navigator.page
@@ -237,7 +237,7 @@ def test_strong_alert_shows_a_banner_that_the_first_key_press_dismisses():
     assert r.ctxs[-1]['banner'] is False                   # stays dismissed while the same alert lasts
     r.bridge.spoof.state = 'OK'                            # alert over ...
     r.step(advance=1000)
-    r.bridge.spoof.state = 'ALERT'                         # ... and a new one
+    r.bridge.spoof.state = 'HIGH'                         # ... and a new one
     r.press(DN_LONG)                                       # back to Main
     r.step(advance=1000)
     assert r.ctxs[-1]['banner'] is True and not r.ui.alert_acked
@@ -248,7 +248,7 @@ def test_banner_only_swallows_keys_on_pages_that_show_it():
     r.step()
     r.press(UP_SHORT, UP_SHORT)                            # Main -> Speed -> Stats
     assert r.navigator.page == nav.PAGE_STATS
-    r.bridge.spoof = FakeDetector('ALERT')
+    r.bridge.spoof = FakeDetector('HIGH')
     r.step(advance=10)
     r.press(UP_SHORT)
     assert r.navigator.page == nav.PAGE_SATS and not r.ui.alert_acked
@@ -257,7 +257,7 @@ def test_banner_only_swallows_keys_on_pages_that_show_it():
 def test_new_strong_alert_blinks_the_display_for_a_while_unless_dismissed():
     r = Rig()
     r.step()
-    r.bridge.detector = FakeDetector('JAM?')
+    r.bridge.detector = FakeDetector('MEDIUM')
     r.step(advance=10)
     assert r.oled.inverts == [True]
     r.step(advance=ui.BLINK_HALF_MS)
@@ -267,7 +267,7 @@ def test_new_strong_alert_blinks_the_display_for_a_while_unless_dismissed():
     assert r.oled.inverts[-1] is False and not r.ui._inverted     # ends normal, not inverted
     r2 = Rig()
     r2.step()
-    r2.bridge.detector = FakeDetector('JAM?')
+    r2.bridge.detector = FakeDetector('MEDIUM')
     r2.step(advance=10)
     r2.press(UP_SHORT)
     assert r2.oled.inverts == [True, False]                # dismissing stops the blink at once
@@ -275,7 +275,7 @@ def test_new_strong_alert_blinks_the_display_for_a_while_unless_dismissed():
 
 def test_suspect_or_low_neither_banner_nor_blink():
     r = Rig()
-    r.bridge.spoof = FakeDetector('SUSPECT')
+    r.bridge.spoof = FakeDetector('LOW')
     r.bridge.detector = FakeDetector('LOW')
     r.step()
     r.step(advance=100)
@@ -290,7 +290,7 @@ def test_night_mode_turns_the_screen_off_after_30_seconds_but_an_alert_keeps_it_
     assert not r.ui.screen_off
     r.step(advance=2000)
     assert r.ui.screen_off
-    r.bridge.spoof = FakeDetector('ALERT')
+    r.bridge.spoof = FakeDetector('HIGH')
     r.step(advance=1000)
     assert not r.ui.screen_off
     r2 = Rig(screen_off_s=30)                              # a shorter user setting still wins

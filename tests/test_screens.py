@@ -134,12 +134,12 @@ def test_spoof_page_lights_the_tiles_of_active_indicators():
     spoof.warm_fixes = 100
     spoof._events = {'K1': 0, 'T1': 0, 'S1': 0, 'K3': 0}
     spoof._alert_at = 0
-    spoof.state = 'ALERT'
+    spoof.state = 'HIGH'
     oled = Oled()
     screens.draw(oled, FakeWriter(), nav.PAGE_SPOOF, p, STATS, 0, False, None, spoof, WIFI,
                  dict(INFO, now_ms=60000))
     texts = oled.texts()
-    assert texts[0] == 'SPOOFING' and 'ALERT' in texts                       # the state is a badge
+    assert texts[0] == 'SPOOFING' and 'HIGH' in texts                       # the state is a badge
     for code, name in screens.SPOOF_TILES:
         assert code in texts and name in texts                               # all eight tiles are there
     assert len([r for r in oled.rects if r[2:] == (30, 18)]) == 4            # four of them lit (filled)
@@ -205,7 +205,7 @@ def worst_case_detectors(p):
     jam.level, jam.samples, jam.reason = 2, 99, 'CNFM'
     jam.base_mean, jam.base_tracked = 45.4, 12.2
     spoof = SpoofDetector(p)
-    spoof.state, spoof.warm_fixes = 'SUSPECT', 999
+    spoof.state, spoof.warm_fixes = 'MEDIUM', 999
     spoof._events = {code: 0 for code in spoofing_codes()}
     spoof._alert_at = 0
     return jam, spoof
@@ -318,8 +318,8 @@ ICON_NAMES = ('wifi', 'heart', 'outline', 'idle', 'fault')
 def test_main_page_title_row_never_overlaps_and_keeps_a_gap_after_the_time():
     wifis = (None, ('OFF', '', '', 0, 4, ''), ('ON sta1', '', '', 0, 4, ''), ('ON sta1', '', '', 3, 4, ''),
              ('ERR', '', '', 0, 4, ''))
-    for jam in (None, '', 'OK', 'LOW', 'JAM?'):
-        for spoof in (None, '', 'SPF?', 'SPF!'):
+    for jam in (None, '', 'JAM.', 'JAM?', 'JAM!'):
+        for spoof in (None, '', 'SPF.', 'SPF?', 'SPF!'):
             for wifi in wifis:
                 for heartbeat in (None, 'on', 'fault'):
                     row = title_row(jam, spoof, wifi, heartbeat)
@@ -333,11 +333,11 @@ def test_main_page_title_row_never_overlaps_and_keeps_a_gap_after_the_time():
 
 
 def test_main_page_title_row_typical_cases():
-    assert title_row('OK', '') == [(0, '--:--:--')]                        # an OK jamming label is not shown
+    assert title_row('', '') == [(0, '--:--:--')]                          # nothing wrong: no labels
     assert title_row(None, 'SPF!') == [(0, '--:--:--'), (88, 'SPF!')]
-    assert title_row('LOW', '') == [(0, '--:--:--'), (96, 'LOW')]
+    assert title_row('JAM.', '') == [(0, '--:--:--'), (88, 'JAM.')]
     assert title_row('JAM?', 'SPF?') == [(0, '--:--:--'), (80, 'J?'), (104, 'S?')]     # both: shortened
-    assert title_row('LOW', 'SPF!') == [(0, '--:--:--'), (88, 'L'), (104, 'S!')]
+    assert title_row('JAM.', 'SPF!') == [(0, '--:--:--'), (80, 'J.'), (104, 'S!')]
 
 
 def test_main_page_time_gets_a_z_when_there_is_one():
@@ -360,7 +360,7 @@ def test_main_page_wifi_icon_has_no_client_count_and_gives_way_to_the_labels():
     assert title_row(None, None, ('ERR', '', '', 0, 4, ''))[-2:] == [(104, 'wifi'), (112, '!')]
     assert title_row(None, None, ('OFF', '', '', 0, 4, '')) == [(0, '--:--:--')]
     assert title_row(None, 'SPF?', on) == [(0, '--:--:--'), (88, 'wifi'), (104, 'S?')]   # the full label does not fit
-    assert title_row('LOW', 'SPF?', on) == [(0, '--:--:--'), (88, 'L'), (104, 'S?')]     # labels first: no Wi-Fi icon
+    assert title_row('JAM.', 'SPF?', on) == [(0, '--:--:--'), (80, 'J.'), (104, 'S?')]   # labels first: no Wi-Fi icon
 
 
 def test_icons_are_8_by_8_and_drawn_inside_the_display():
@@ -440,10 +440,10 @@ def test_no_fix_shows_how_long_ago_the_last_fix_was():
     assert screens.age_text(3725) == 'lost 1h02m'
 
 
-def test_alert_banner_only_for_strong_alerts_and_only_when_asked():
+def test_alert_banner_only_for_medium_and_high_and_only_when_asked():
     p = NMEA.Parser()
     spoof, jam = SpoofDetector(p), JamDetector(p)
-    spoof.state, spoof.reason = 'ALERT', 'K1T1'
+    spoof.state, spoof.reason = 'HIGH', 'K1T1'
     for page in (nav.PAGE_MAIN, nav.PAGE_SPEED):
         oled = Oled()
         screens.draw(oled, FakeWriter(), page, p, STATS, 0, False, jam, spoof, WIFI, INFO, {'banner': True})
@@ -451,14 +451,18 @@ def test_alert_banner_only_for_strong_alerts_and_only_when_asked():
         oled = Oled()
         screens.draw(oled, FakeWriter(), page, p, STATS, 0, False, jam, spoof, WIFI, INFO, {})
         assert 'SPF! K1 T1' not in oled.texts() and not oled.rects
+
     class Jam:
         def __init__(self, state, reason):
             self.state, self.reason = state, reason
-    spoof.state = 'SUSPECT'
-    assert screens.banner_text(Jam('LOW', 'C'), spoof) == ''
-    assert screens.banner_text(Jam('JAM?', 'C'), spoof) == 'JAM? cn0'
-    spoof.state = 'ALERT'
-    assert screens.banner_text(Jam('JAM?', 'C'), spoof) == 'SPF! JAM?'
+    spoof.state = 'LOW'
+    assert screens.banner_text(Jam('LOW', 'C'), spoof) == ''                     # LOW only gets the small label
+    spoof.state = 'MEDIUM'
+    assert screens.banner_text(Jam('OK', ''), spoof) == 'SPF? K1 T1'
+    assert screens.banner_text(Jam('MEDIUM', 'C'), spoof.__class__(p)) == 'JAM? cn0'
+    spoof.state = 'HIGH'
+    assert screens.banner_text(Jam('MEDIUM', 'C'), spoof) == 'SPF! JAM?'
+    assert screens.banner_text(Jam('HIGH', 'C'), spoof) == 'SPF! JAM!'
     spoof.reason = 'K1T1S1C1S3K3'
     assert len(screens.banner_text(Jam('OK', ''), spoof)) <= 16
 

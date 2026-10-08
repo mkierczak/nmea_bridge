@@ -96,7 +96,7 @@ def test_loss_of_tracking_and_fix_is_jam():
     for _ in range(jamming.ENTER_CYCLES):
         gsv(p, [0] * 8, in_view=9)  # satellites visible, none tracked
         state = clk.step(det, fix_ok=False)
-    assert state == jamming.JAM
+    assert state == jamming.HIGH                            # N, F and (no fix at all) C: three kinds agree
     assert set(det.reason) >= {'N', 'F'}
 
 
@@ -106,7 +106,7 @@ def test_stale_gsv_counts_as_lost_signal():
     for _ in range(12):  # no GSV cycles any more
         clk.now += jamming.STALE_MS + 1000
         states.append(det.evaluate(clk.now, False)[0])
-    assert states[-1] in (jamming.LOW, jamming.JAM)
+    assert states[-1] in (jamming.MEDIUM, jamming.HIGH)
 
 
 def test_pmtk_ack_parsed_and_not_forwardable_type():
@@ -139,7 +139,7 @@ def test_stale_detection_survives_ticks_wrap():
             t += jamming.STALE_MS + 1000
             states.append(det.evaluate(wrap(t), True)[0])
         assert t >= (1 << 30)                     # the clock really did wrap during the test
-        assert states[-1] == jamming.JAM, states
+        assert states[-1] == jamming.MEDIUM, states
     finally:
         if saved is not None:
             jamming._ticks_diff = saved
@@ -153,7 +153,7 @@ def test_jamming_at_boot_without_fix_is_not_hidden_by_missing_baseline():
     for i in range(6):
         gsv(p, [0] * 9, in_view=9)                          # nine satellites overhead, none tracked
         states.append(det.evaluate(4000 * (i + 1), False)[0])
-    assert states[0] == jamming.INIT and states[-1] == jamming.JAM, states
+    assert states[0] == jamming.INIT and states[-1] == jamming.HIGH, states
     assert 'F' in det.reason and 'M' in det.reason
     assert det.samples == 0                                 # trouble is never learned as "normal"
 
@@ -184,3 +184,27 @@ def test_gps_and_beidou_are_one_sample_per_settled_cycle():
     assert det.samples == 1
     det.evaluate(2400, True)
     assert det.samples == 1                                 # and it is not counted twice
+
+
+def test_probability_follows_the_number_of_agreeing_kinds_of_evidence():
+    weak_signal = [32, 30, 34, 28, 33, 31, 29, 32]             # C/N0 well below the 39-ish baseline, all tracked
+    for module, expected in ((None, jamming.LOW),              # C alone
+                             ('PMTKSPF,2', jamming.MEDIUM),     # C plus the module's warning
+                             ('PMTKSPF,3', jamming.HIGH)):      # C plus the module's critical status (counts twice)
+        p, det, clk = warmed_up()
+        if module:
+            p.parse_sentence(with_checksum(module))
+        for _ in range(jamming.ENTER_CYCLES):
+            gsv(p, weak_signal)
+            state = clk.step(det)
+        assert state == expected and 'C' in det.reason, (module, state, det.reason)
+
+
+def test_labels_mark_the_probability_and_are_blank_when_ok_or_unknown():
+    p = NMEA.Parser()
+    det = JamDetector(p)
+    assert det.state == jamming.INIT and det.label() == ''
+    for state, label in ((jamming.OK, ''), (jamming.LOW, 'JAM.'), (jamming.MEDIUM, 'JAM?'), (jamming.HIGH, 'JAM!')):
+        det.level = jamming._STATES.index(state)
+        det.samples = jamming.BASELINE_MIN_SAMPLES
+        assert det.state == state and det.label() == label

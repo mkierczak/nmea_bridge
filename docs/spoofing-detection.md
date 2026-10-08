@@ -37,13 +37,15 @@ example, in a DSC distress call.
 The detector looks for **inconsistencies** that a genuine receiver on a real vessel would not show:
 positions that jump, a GPS clock that disagrees with the board's own clock, movement that does not
 match the reported speed, and signal-strength patterns that look more like one transmitter than a
-sky full of satellites. It reports one of three states:
+sky full of satellites. It reports the **probability** of spoofing in four levels; `MEDIUM` and `HIGH`
+are alerts (banner, blink, the display stays on):
 
-| Label | State | Meaning |
+| Label | Level | Meaning |
 |---|---|---|
 | *(blank)* | `OK` | no relevant indicator in the last 60 s |
-| `SPF?` | `SUSPECT` | some evidence of inconsistency (a single medium indicator, or two weak ones) |
-| `SPF!` | `ALERT` | strong evidence (a strong indicator, or two different medium ones); stays up for about 11 min after the last such evidence (60 s evidence window + 10 min latch, see section 6) |
+| `SPF.` | `LOW` | a single weak indicator: worth knowing, not an alert |
+| `SPF?` | `MEDIUM` | **alert**: some evidence of inconsistency (a single medium indicator, or two different weak ones); clears when the evidence is older than 60 s |
+| `SPF!` | `HIGH` | **alert**: strong evidence (a strong indicator, or two different medium ones); stays up for about 11 min after the last such evidence (60 s evidence window + 10 min latch, see section 6) |
 
 **Important.** This is a heuristic *suspicion* indicator. The L76B gives NMEA sentences only: no raw
 pseudoranges, no RAIM integrity monitoring and no signal authentication (such as Galileo OSNMA, which
@@ -144,8 +146,8 @@ with a lost or out-of-order message and drops the data of a constellation that h
 
 ## 5. The indicators in detail
 
-Strength: **strong** (alone enough for ALERT), **medium** (two different ones give ALERT, one gives
-SUSPECT), **weak** (two different ones give SUSPECT; never an ALERT on their own).
+Strength: **strong** (alone enough for `HIGH`), **medium** (two different ones give `HIGH`, one gives
+`MEDIUM`), **weak** (one gives `LOW`, two different ones give `MEDIUM`; never `HIGH` on their own).
 
 ### K1 - persistent position jump (strong)
 
@@ -322,14 +324,15 @@ strong = events that are K1 or T1
 medium = distinct events among K2, S1, C1
 weak   = distinct events among K3, S2, S3
 
-if strong or len(medium) >= 2:                     state = ALERT   (and remember the time + reason)
-elif an ALERT was raised < LATCH_MS (10 min) ago:  state = ALERT   (latched, shows the remembered reason)
-elif medium or len(weak) >= 2:                     state = SUSPECT
+if strong or len(medium) >= 2:                     state = HIGH    (and remember the time + reason)
+elif a HIGH was raised < LATCH_MS (10 min) ago:    state = HIGH    (latched, shows the remembered reason)
+elif medium or len(weak) >= 2:                     state = MEDIUM
+elif weak:                                         state = LOW
 else:                                              state = OK      (clears the latch)
 ```
 
 * Different codes are counted once each: repeated S1 flags do not add up to "two mediums".
-* The **latch** keeps an alert visible after the evidence has gone. Every evaluation at which the ALERT
+* The **latch** keeps a `HIGH` alert visible after the evidence has gone. Every evaluation at which the HIGH
   condition holds restarts the 10-minute timer, and the condition holds for as long as the evidence is
   younger than `WINDOW_MS` (60 s). In practice an alert therefore lasts **about 11 minutes** after the
   last strong evidence (observed in simulation: 659 s), and the "latch" countdown on the Spoofing
@@ -344,9 +347,9 @@ else:                                              state = OK      (clears the l
 
 `SPOOF_ACTION` (default `'display'`; changeable in **Menu > Detection > Spoof act.**):
 
-* **`display`** - only show `SPF?`/`SPF!` and the Spoofing page. Sentences keep flowing to the radio
+* **`display`** - only show the probability (`SPF.`/`SPF?`/`SPF!`, the banner for `MEDIUM` and `HIGH`) and the Spoofing page. Sentences keep flowing to the radio
   and Wi-Fi.
-* **`block`** - while the state is `ALERT` (including the latch, about 11 minutes in total), sentences of the types in
+* **`block`** - while the state is `HIGH` (including the latch, about 11 minutes in total), sentences of the types in
   `SPOOF_BLOCK_TYPES` (default `RMC`, `GGA`, constant in `main.py`) are **not** forwarded to the radio
   or Wi-Fi. The radio then has no fresh position instead of a suspicious one; other sentences (GSA,
   GSV, ZDA) continue.
@@ -388,7 +391,7 @@ live (stored in `settings.json`).
 | `REBASE_AFTER` | 10 | - | consecutive flagged cycles after which S3/C1 accept the new level as normal |
 | `WARMUP_FIXES` | 30 | *Warm-up* (`warmup_fixes`, 10-120) | valid fixes before any indicator may fire |
 | `WINDOW_MS` | 60000 | - | how long an indicator counts |
-| `LATCH_MS` | 600000 | *Latch min* (`latch_min`, 1-60 minutes) | ALERT hold time, counted from the end of the 60 s evidence window (so the total is `WINDOW_MS` + `LATCH_MS`) |
+| `LATCH_MS` | 600000 | *Latch min* (`latch_min`, 1-60 minutes) | HIGH hold time, counted from the end of the 60 s evidence window (so the total is `WINDOW_MS` + `LATCH_MS`) |
 
 Runtime options in `main.py`/menu: spoofing on/off (re-enabling restarts warm-up and baselines),
 `SPOOF_ACTION`, `SPOOF_BLOCK_TYPES`, `GNSS_MODE` (needs `GPS+BD` for C1), `GPS_BAUDRATE` (affects the
@@ -404,14 +407,14 @@ T1 tolerance).
 | K2 | at the end of the 10 s window (up to about 10-30 s after the movement starts) |
 | S1, S3, C1 | on the next settled GSV cycle (about 4-5 s plus the 0.8 s settling time) |
 | S2 | after 12 smoothed readings (about 1 minute from the first GSV) and while the smoothed correlation stays low |
-| Alert clears | about 11 minutes after the last alerting evidence (60 s window + `LATCH_MS` of 10 min); `SUSPECT` clears when the evidence is older than 60 s |
+| Alert clears | about 11 minutes after the last alerting evidence (60 s window + `LATCH_MS` of 10 min); `MEDIUM` and `LOW` clear when the evidence is older than 60 s |
 
 ## 10. Worked examples
 
 **Persistent jump (K1).** Vessel at 5 kn, 1 s fixes. At one fix the position moves 5.5 km north. Allowed
 distance is 61 m, so this is a suspected jump: it becomes the candidate and the state stays `OK`. At the
 next fix the position is still at the new place (`not jump(candidate, cur)`), so **K1** is flagged: a
-strong indicator, state `ALERT`, reason `K1`, held for about 11 minutes. (About 10 s later K2 usually joins it: reason `K1K2`.) With `block` active, the RMC of the
+strong indicator, state `HIGH`, reason `K1`, held for about 11 minutes. (About 10 s later K2 usually joins it: reason `K1K2`.) With `block` active, the RMC of the
 confirming fix is blocked; the RMC/GGA of the first jumped fix had already gone out.
 
 **Glitch ignored.** A single fix is 120 m off, the next is back where it should be. The 120 m fix
@@ -420,30 +423,30 @@ candidate is dropped silently. Nothing is flagged.
 
 **Time step (T1).** GPS time advances 4.0 s between two fixes while the Pico measured 1.0 s: the
 difference of 3.0 s exceeds the tolerance (1.875 s at 4800 baud with BeiDou) -> **T1**, strong ->
-`ALERT` on that fix.
+`HIGH` on that fix.
 
 **Movement without speed (K2).** Over 10 s the position moves 150 m (about 29 kn implied) while RMC
 speed reports about 0: `|29 - 0| > max(3, 0.5 x 29 = 14.5)` -> **K2**, a single medium indicator ->
-`SUSPECT`. If **S1** (uniform signal strength) also fires within 60 s, two different medium
-indicators -> `ALERT`.
+`MEDIUM`. If **S1** (uniform signal strength) also fires within 60 s, two different medium
+indicators -> `HIGH`.
 
 **Flat signal levels (S1).** Eight tracked GPS satellites at `[40, 40, 41, 40, 40, 41, 40, 40]`
-dB-Hz: standard deviation 0.43 < 1.5 -> **S1**, medium -> `SUSPECT`.
+dB-Hz: standard deviation 0.43 < 1.5 -> **S1**, medium -> `MEDIUM`.
 
 **GPS vs BeiDou shift (C1).** The learned offset GPS minus BeiDou is +2 dB. A later GSV cycle shows the
 GPS satellites averaging 13 dB above BeiDou: shift of 11 dB > 8 -> **C1** (medium). Note a GPS-only
 interference source can also cause this; the jamming indicator would then fire too.
 
 **Altitude alone is not enough.** An altitude jump of 75 m flags **K3** (weak); one weak indicator never
-raises the state above `OK`. A second weak indicator (for example S2) would give `SUSPECT`.
+raises the state above `LOW`, which is not an alert. A second weak indicator (for example S2) would give `MEDIUM`.
 
 ## 11. Where you see it
 
-* **Main page**, top row right: `SPF?` / `SPF!` (blank when `OK`).
-* **Spoofing page**: state, `warm-up n/30` or `armed`, the active indicators by name (up to three,
-  `+n more`), and `latch m:ss` while an alert is latched.
+* **Main page**, top row right: `SPF.` / `SPF?` / `SPF!` (blank when `OK`); a `MEDIUM` or `HIGH` level also shows the alert banner and blinks the display.
+* **Spoofing page**: the level as a badge, a tile for each of the eight indicators (lit while it counts),
+  `warm n/30` or `armed`, and `latch m:ss` while a `HIGH` alert is latched.
 * **Debug page**: indicator letters (`S:` field).
-* **Screen-off timer**: a non-`OK` state wakes a sleeping display and keeps it on.
+* **Screen-off timer**: a `MEDIUM` or `HIGH` state wakes a sleeping display and keeps it on.
 * **Menu > Detection**: *Spoofing* on/off and *Spoof act.* (`display`/`block`).
 
 ## 12. False positives and what the detector cannot catch
@@ -493,7 +496,7 @@ raises the state above `OK`. A second weak indicator (for example S2) would give
    of every talker is printed as `<arrival ms> <sentence>` (several hours at the dock and under way,
    including manoeuvres, different sea states and equipment use).
 2. **Replay** them: `python3 tools/replay.py log.txt --baud 4800 --gnss gps+bd` drives a real `Bridge` with
-   both detectors, prints every state change (`SPOOF ALERT K1K2` etc.) and ends with the time in each
+   both detectors, prints every state change (`SPOOF HIGH K1K2` etc.) and ends with the time in each
    state and the alarm episodes per hour. `--baud`/`--gnss` set the GPS-time check's tolerance as on the
    board. Without timestamps the tool synthesises the arrival time from GPS time, which makes T1 meaningless;
    keep the timestamps to test it.
@@ -510,11 +513,11 @@ raises the state above `OK`. A second weak indicator (for example S2) would give
 
 `tests/test_spoofing.py` covers the parser fields (decimal-degree conversion with hemispheres, SOG,
 UTC, rx time, altitude, `$PMTKSPF`, BeiDou GSA, per-satellite elevation) and the detector:
-steady track stays `OK`; a 35 kn vessel stays `OK`; a persistent 5.5 km jump gives `ALERT` (K1) while
+steady track stays `OK`; a 35 kn vessel stays `OK`; a persistent 5.5 km jump gives `HIGH` (K1) while
 the first jumped fix does not; a single glitch is ignored; jumps during warm-up are ignored; a GPS
-time step and time going backwards give `ALERT` (T1); movement without reported speed gives `SUSPECT`
+time step and time going backwards give `HIGH` (T1); movement without reported speed gives `MEDIUM`
 (K2); the alert latches past the 60 s window and clears after the latch (the test evaluates sparsely; the 11-minute total with once-per-second evaluation was checked separately by simulation); an altitude step alone stays
-`OK`; uniform C/N0 gives `SUSPECT` (S1); natural C/N0 spread stays `OK`; a GPS-BeiDou offset shift
+`OK`; uniform C/N0 gives `MEDIUM` (S1); natural C/N0 spread stays `OK`; a GPS-BeiDou offset shift
 flags C1; the T1 tolerance is configurable. Settings mapping is covered by `tests/test_settings.py`,
 the page rendering by `tests/test_screens.py`, and the link-rate arithmetic by `tests/test_l76x.py`.
 

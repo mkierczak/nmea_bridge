@@ -28,14 +28,15 @@ Implementation: [`jamming.py`](../jamming.py) (class `JamDetector`). Inputs come
 
 The detector watches the **quality of the GNSS signal** the L76B module reports and raises a flag when
 that quality collapses in the way it does under radio-frequency interference (jamming). The result is a
-three-level status shown at the top of the main screen:
+probability of jamming in four levels; `MEDIUM` and `HIGH` are alerts (banner, blink, the display stays on):
 
-| Label | Internal state | Meaning |
+| Label | Level | Meaning |
 |---|---|---|
 | *(blank)* | `INIT` | still learning what "normal" looks like (no verdict yet) |
-| `OK` | `OK` | signal quality is consistent with the learned baseline |
-| `LOW` | `LOW` | signal quality is clearly degraded (one kind of evidence, or the module warns) |
-| `JAM?` | `JAM` | strong evidence of loss of signal: several indicators agree, or the module reports a critical state |
+| *(blank)* | `OK` | signal quality is consistent with the learned baseline |
+| `JAM.` | `LOW` | signal quality is clearly degraded: one kind of evidence, or the module warns. Not an alert. |
+| `JAM?` | `MEDIUM` | **alert**: two kinds of evidence agree (or the module reports a critical state) |
+| `JAM!` | `HIGH` | **alert**: three or more agree, for example loss of tracking and of the fix together with a critical module status |
 
 **Important.** The L76B only gives us NMEA sentences. It does not expose raw RF measurements such as
 AGC level or the noise floor. Everything that reduces signal strength therefore looks the same to this
@@ -103,7 +104,7 @@ every JAM_EVAL_PERIOD_MS (2 s) Bridge.step() calls evaluate(now, fix_ok)
               N = tracked < TRACKED_DROP_FRACTION * baseline_tracked   (only with a valid baseline)
         |
         v
- raw level (0 OK / 1 LOW / 2 JAM) from the indicators      (section 5.4)
+ raw level (0 OK / 1 LOW / 2 MEDIUM / 3 HIGH) from the indicators   (section 5.4)
         |
         v
  debounce (hysteresis): worse for ENTER_CYCLES in a row -> state worsens
@@ -155,7 +156,7 @@ samples += 1
 While the baseline is not valid the state is `INIT`, and the **C and N indicators cannot be raised**
 (there is nothing to compare with). The F and M indicators *are* evaluated during this time, so a unit
 that boots under interference (no fix with many satellites overhead, or the module reporting a warning or
-critical state) shows `LOW` or `JAM?` instead of staying blank. A sample on which F or M is active is
+critical state) shows `LOW`, `MEDIUM` or `HIGH` instead of staying blank. A sample on which F or M is active is
 never learned into the baseline. Learning the baseline takes about 25 s of good data after boot
 (5 samples x 4-5 s).
 
@@ -190,17 +191,16 @@ C/N0 > 0, in the last complete GSV cycle of each talker.
 ### 5.4 From indicators to a raw level
 
 ```
-if (C and N) or (F and (C or N)):      level = 2   # JAM?   two kinds of evidence agree
-elif C or N or F:                      level = 1   # LOW    one kind of evidence
-else:                                  level = 0   # OK
-if module status == 2:                 level = max(level, 1)
-if module status == 3:                 level = max(level, 2)
+level = C + N + F                      # each indicator that is true counts once
+if module status == 2:                 level += 1  # the module's warning counts once ...
+if module status == 3:                 level += 2  # ... its critical status twice
+level = min(level, 3)                  # 0 OK / 1 LOW / 2 MEDIUM / 3 HIGH
 ```
 
-Requiring agreement between *different* kinds of evidence before showing `JAM?` keeps single odd
-measurements (one satellite blocked, a brief dip) at the milder `LOW`. The module's critical status can
-raise the level on its own because it is derived from receiver-internal RF measurements this detector
-cannot see.
+The probability grows with the number of agreeing *different* kinds of evidence, so single odd
+measurements (one satellite blocked, a brief dip) stay at the mild `LOW`. The module's critical status
+alone gives `MEDIUM` (it is derived from receiver-internal RF measurements this detector cannot see);
+together with one more indicator it gives `HIGH`.
 
 The `reason` string lists the letters that were true on the last evaluation (for example `CN` or `CNM`);
 the Signal page spells them out as words (`cn0`, `sat`, `fix`, `mod`).
@@ -218,23 +218,23 @@ equal                : _up = _down = 0
 Defaults: `ENTER_CYCLES = 2`, `EXIT_CYCLES = 3`. Entering is quicker than leaving on purpose: an alarm
 should appear promptly but not flap on and off. With about 5 s per sample the state worsens after
 roughly 10 s of continuous bad data and recovers after roughly 15 s of continuous good data. When
-the state changes, it jumps straight to the new raw level (OK -> JAM? in one step is possible).
+the state changes, it jumps straight to the new raw level (OK -> MEDIUM in one step is possible).
 
 ### 5.6 Stale data
 
 A jammed receiver may stop producing useful GSV cycles. If **no** new GSV cycle has arrived for
 `STALE_MS` (20 s) and the baseline is valid, the detector treats the period as a sample with
-`tracked = 0, mean = 0`. That satisfies C and N (and usually F as well), so the raw level is 2. A
-stale period is counted once per `STALE_MS`, so `ENTER_CYCLES = 2` stale periods (about 42 s) are
-needed to reach `JAM?`. When GSV returns, normal hysteresis applies (`EXIT_CYCLES` good samples).
+`tracked = 0, mean = 0`. That satisfies C and N (and F as well when the fix is lost), so the raw level is
+2 (`MEDIUM`) or 3 (`HIGH`). A stale period is counted once per `STALE_MS`, so `ENTER_CYCLES = 2` stale
+periods (about 42 s) are needed to reach it. When GSV returns, normal hysteresis applies (`EXIT_CYCLES` good samples).
 Stale handling is inactive while the baseline is not yet valid. The elapsed time is computed with
 `ticks_diff`, so it keeps working when MicroPython's millisecond counter wraps (about every 12.4 days;
 covered by a regression test).
 
 ### 5.7 Outputs
 
-`evaluate()` returns `(state, reason)`; `state` property gives `INIT/OK/LOW/JAM?`; `label()` returns
-`''` for `INIT`, otherwise the state; `signature()` returns a tuple used by the display code to decide
+`evaluate()` returns `(state, reason)`; `state` property gives `INIT/OK/LOW/MEDIUM/HIGH`; `label()` returns
+`''` for `INIT` and `OK`, otherwise `JAM.`, `JAM?` or `JAM!`; `signature()` returns a tuple used by the display code to decide
 whether a redraw is needed.
 
 ## 6. Parameters
@@ -257,7 +257,7 @@ constants (the detector reads them on every call).
 ## 7. Worked examples
 
 The C/N0 and satellite numbers are illustrative. The timings (2 bad samples to `LOW`, 3 good samples
-to recover, 2 stale periods of about 21 s to `JAM?`) were confirmed by running the detector on
+to recover, 2 stale periods of about 21 s to `MEDIUM`) were confirmed by running the detector on
 simulated GSV data.
 
 **Interference appears.** Baseline: `base_mean = 39.5 dB-Hz`, `base_tracked = 8`. A jammer comes up and
@@ -265,14 +265,14 @@ all eight satellites drop to about 19.5 dB-Hz but stay tracked.
 * Sample 1: C is true (19.5 < 39.5 - 6), N false (8 >= 4.8), F false -> raw level 1. `_up = 1`, state stays `OK`.
 * Sample 2: raw level 1 again -> `_up = 2 >= ENTER_CYCLES` -> state `LOW`, reason `C`. (about 10 s)
 * The jammer gets stronger and satellites are lost (`tracked = 3`, receiver loses the fix with 9 in
-  view): C, N and F are all true -> raw level 2 -> after two samples `JAM?`, reason `CNF`.
+  view): C, N and F are all true -> raw level 3 -> after two samples `HIGH`, reason `CNF`.
 
 **Recovery.** The interference stops. Three consecutive healthy samples (about 15 s) are needed
 (`EXIT_CYCLES = 3`), then the state returns to `OK`. During those samples the baseline is *not* updated
 (the state is not yet `OK`).
 
 **Receiver goes silent.** No GSV for 20 s: stale period 1 (`tracked = 0`): raw level 2, `_up = 1`.
-After another 20 s: stale period 2, `_up = 2` -> `JAM?` with reason `CN` (about 42 s in total).
+After another 20 s: stale period 2, `_up = 2` -> `MEDIUM` with reason `CN` (about 42 s in total).
 
 **Cold start in a poor location.** Steady 10 dB-Hz with two satellites from the beginning: the
 baseline learns *that* as normal, so no alarm is raised (`INIT` then `OK`). This is by design (it cannot
@@ -280,12 +280,12 @@ know it should be better) and is a limitation (section 11).
 
 ## 8. Where you see it
 
-* **Main page**, top row, to the right of the time: `OK`, `LOW`, `JAM?` (blank while `INIT`).
-* **Signal page** (short-press through the pages): state, reasons in words, `CN0 mean/baseline dB`,
+* **Main page**, top row, to the right of the time: `JAM.`, `JAM?`, `JAM!` for `LOW`, `MEDIUM`, `HIGH` (blank while `OK` or `INIT`); `MEDIUM` and `HIGH` also show the alert banner and blink the display.
+* **Signal page** (short-press through the pages): the level as a badge, reasons in words, `CN0 mean/baseline dB`,
   `sats tracked/baseline`, mean C/N0 per constellation (GP, BD), module jamming status
   (`ok/warn/CRIT/?`) and the AIC result (`AIC+`, `AIC-`, `AIC?`).
 * **Stats page**: a line `CN mean/baseline nTracked/baseline`.
-* **Screen-off timer**: an active `LOW`/`JAM?` wakes a sleeping display and keeps it on.
+* **Screen-off timer**: an active `MEDIUM`/`HIGH` wakes a sleeping display and keeps it on.
 * **Enable/disable:** *Menu > Detection > Jamming* (live; re-enabling restarts the baseline learning).
 
 ## 9. The module's own detector and interference cancellation
@@ -300,8 +300,8 @@ section 3.43, PDF pages 47-48; found in our research of the vendor documents):
   with a position, it moves 1 -> 2 -> 3 on continuous jamming.
 
 `main.py` sends `$PMTK838,1` at boot. The parser stores the last reported value in
-`module_jam_status`; the detector uses it as indicator M (status 2 raises the level to at least `LOW`,
-status 3 to `JAM?`). This is valuable because the module sees RF-level information we do not.
+`module_jam_status`; the detector uses it as indicator M (status 2 counts once, which alone gives `LOW`,
+status 3 counts twice, which alone gives `MEDIUM`). This is valuable because the module sees RF-level information we do not.
 Caveats: we have not verified on hardware that the L76B really emits `$PMTKSPF`; and because the
 parser keeps the last value, a status of 2 or 3 persists until the module reports 1 again.
 
@@ -316,11 +316,11 @@ mitigation, not a detector, and it does not help against wide-band jamming.
 
 | Situation | Effect | Why |
 |---|---|---|
-| Passing under a bridge, entering a covered berth, heavy rain, snow on the antenna | `LOW` or `JAM?` while it lasts | Physically the same as jamming: signal drops for all satellites. |
-| Antenna cable fault, loose connector | `LOW`/`JAM?` | Same. Actually a useful fault detector. |
-| Own electronics (Wi-Fi radio, switching supplies, VHF/AIS transmitters near the antenna) | `LOW`/`JAM?` or a lower baseline | Local interference is real interference. Compare C/N0 with the equipment on and off. |
+| Passing under a bridge, entering a covered berth, heavy rain, snow on the antenna | `LOW` to `HIGH` while it lasts | Physically the same as jamming: signal drops for all satellites. |
+| Antenna cable fault, loose connector | `LOW`-`HIGH` | Same. Actually a useful fault detector. |
+| Own electronics (Wi-Fi radio, switching supplies, VHF/AIS transmitters near the antenna) | `LOW`-`HIGH` or a lower baseline | Local interference is real interference. Compare C/N0 with the equipment on and off. |
 | Slow, steady degradation over hours | Not detected | The baseline follows it (EMA). |
-| Jamming that is already present when the system starts | C and N cannot fire (no earlier "normal"), and the baseline learns the degraded state if the receiver still gets a fix | The F and M indicators work from the first sample: no fix with many satellites in view, or the module's own warning, raises `LOW`/`JAM?` immediately. |
+| Jamming that is already present when the system starts | C and N cannot fire (no earlier "normal"), and the baseline learns the degraded state if the receiver still gets a fix | The F and M indicators work from the first sample: no fix with many satellites in view, or the module's own warning, raises `LOW`-`HIGH` immediately. |
 | Narrow-band jamming absorbed by AIC | Little or no effect on C/N0 -> no alarm | Nothing to see; that is the point of AIC. |
 | Very short bursts (< `ENTER_CYCLES` samples, ~10 s) | Not shown | Debounce. Lower `Jam enter` to catch them (more false alarms). |
 | Jamming plus spoofing (jam to break lock, then spoof) | Jamming indicator fires first; spoofing detector may follow | See [spoofing detection](spoofing-detection.md); the two run independently. |
@@ -362,22 +362,22 @@ and spoofing states with the time, reasons and C/N0 figures, and ends with a sum
 ```
      40.0s JAM   LOW   why=C    cn0=19.5 base=39.5 n=4
      60.0s JAM   OK    why=     cn0=39.5 base=39.5 n=4
-     41.0s SPOOF ALERT   K1K2
+     41.0s SPOOF HIGH   K1K2
 --- summary ---
 log duration   3600 s (1h00m), 7200 sentences: 7190 valid, 10 invalid, 0 with unreadable fields
-jamming        INIT 0.7%  OK 98.9%  LOW 0.4%  JAM? 0.0%
+jamming        INIT 0.7%  OK 98.9%  LOW 0.4%  MEDIUM 0.0%  HIGH 0.0%
                alarm episodes: 2 (2.00 per hour)
 ```
 
 `--set` overrides the advanced thresholds of the menu (`cn0_drop_db`, `tracked_drop_pct`,
 `jam_enter_cycles`, `jam_exit_cycles`, and the spoofing ones) so you can sweep them on the same data;
-the alarm episodes per hour on a log recorded in normal conditions are the false-alarm rate.
+the alarm episodes per hour (periods at `MEDIUM` or `HIGH`, the levels that raise an alert on the board) on a log recorded in normal conditions are the false-alarm rate.
 `--baud` and `--gnss` only matter for the spoofing detector's GPS-time tolerance.
 
 **Provoke a controlled signal drop.** The only legitimate way to test the detector on hardware is to
 reduce the signal: cover the antenna with a metal box or foil, or unplug it briefly. **Never transmit
 a jamming signal**: jamming GNSS is illegal in most jurisdictions and dangerous to others nearby.
-Check that the state goes `LOW`/`JAM?` after the expected delay and recovers after uncovering.
+Check that the state goes `LOW`/`MEDIUM` after the expected delay and recovers after uncovering.
 
 **Suggested procedure:** log a few hours at the dock and a few under way, replay, and set `CN0 drop`,
 `Sats drop%` and the cycle counts so that normal operation produces no alarms with margin.
@@ -386,7 +386,7 @@ Check that the state goes `LOW`/`JAM?` after the expected delay and recovers aft
 
 `tests/test_jamming.py` covers: C/N0 parsing across multi-message GSV and talkers; no alert during
 warm-up; healthy data stays `OK`; a C/N0 drop produces `LOW` after the debounce and recovers after the
-exit cycles; loss of tracking plus fix produces `JAM?`; stale GSV counts as lost signal; the module's
+exit cycles; loss of tracking plus fix produces `HIGH`; the probability follows the number of agreeing indicators; stale GSV counts as lost signal; the module's
 `$PMTKSPF` status feeds the detector. Parser behaviour is covered in `tests/test_nmea.py`; the
 settings that map to the thresholds in `tests/test_settings.py`.
 

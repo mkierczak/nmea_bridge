@@ -48,12 +48,13 @@ BASELINE_MIN_SAMPLES = 5     # GSV cycles before statistical baselines are trust
 REBASE_AFTER = 10            # consecutive flagged cycles after which the new level is accepted as normal
 WARMUP_FIXES = 30            # valid fixes after boot before any indicator may fire
 WINDOW_MS = 60 * 1000        # indicators count while younger than this
-LATCH_MS = 10 * 60 * 1000    # ALERT stays up this long after the last strong evidence
+LATCH_MS = 10 * 60 * 1000    # HIGH stays up this long after the last strong evidence
 
 STRONG = ('K1', 'T1')
 MEDIUM = ('K2', 'S1', 'C1')
 WEAK = ('K3', 'S2', 'S3')
-OK, SUSPECT, ALERT = 'OK', 'SUSPECT', 'ALERT'
+OK, LOW, MEDIUM_P, HIGH = 'OK', 'LOW', 'MEDIUM', 'HIGH'   # the probability of spoofing; MEDIUM and HIGH are alerts
+_MARKS = {LOW: '.', MEDIUM_P: '?', HIGH: '!'}
 
 _KN_PER_MS = 1.943844        # knots per (m/s)
 _DAY_MS = 86400000
@@ -117,7 +118,7 @@ class SpoofDetector(object):
         self.reason = ''
         self.warm_fixes = 0
         self._events = {}             # indicator code -> ticks when last seen
-        self._alert_at = None         # ticks of the last ALERT-level evidence
+        self._alert_at = None         # ticks of the last HIGH-level evidence
         self._alert_reason = ''
         self._fix_seen = parser.fix_count
         self._alt_seen = parser.alt_version
@@ -142,7 +143,8 @@ class SpoofDetector(object):
         self._elev_n = 0
 
     def label(self):
-        return 'SPF!' if self.state == ALERT else 'SPF?' if self.state == SUSPECT else ''
+        mark = _MARKS.get(self.state)
+        return 'SPF' + mark if mark else ''
 
     def signature(self):
         return (self.state, self.reason)
@@ -152,7 +154,7 @@ class SpoofDetector(object):
         return [c for c in STRONG + MEDIUM + WEAK if c in self._events]
 
     def latch_remaining_ms(self, now_ms):
-        """Milliseconds until a latched ALERT may clear (0 if not latched)."""
+        """Milliseconds until a latched HIGH may clear (0 if not latched)."""
         if self._alert_at is None:
             return 0
         return max(0, LATCH_MS - _ticks_diff(now_ms, self._alert_at))
@@ -316,11 +318,13 @@ class SpoofDetector(object):
         reason = ''.join(c for c in STRONG + MEDIUM + WEAK if c in codes)
         if strong or len(medium) >= 2:
             self._alert_at, self._alert_reason = now_ms, reason
-            state = ALERT
+            state = HIGH
         elif self._alert_at is not None and _ticks_diff(now_ms, self._alert_at) < LATCH_MS:
-            state, reason = ALERT, self._alert_reason  # latched
+            state, reason = HIGH, self._alert_reason   # latched
         elif medium or len(weak) >= 2:
-            state = SUSPECT
+            state = MEDIUM_P
+        elif weak:
+            state = LOW
         else:
             state = OK
         if state == OK:

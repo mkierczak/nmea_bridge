@@ -7,6 +7,7 @@ stay correct after MicroPython's millisecond counter wraps, which `ticks_diff` o
 import gc
 
 import nav
+from bridge import ALERT_STATES
 
 try:
     from utime import ticks_diff
@@ -45,7 +46,7 @@ class UiController(object):
         self.up_held = up_held                # () -> ms the UP key has been held (None if not), or no gesture
         self.wifi_ms = wifi_ms
         self.alert_acked = False              # a key press dismissed the banner of the current strong alert
-        self._strong = False                  # a strong alert (spoofing ALERT, JAM?) is active
+        self._strong = False                  # an alert (spoofing or jamming at MEDIUM or HIGH) is active
         self._alert_ms = 0                    # uptime when it began
         self._inverted = False
         self.menu = None
@@ -85,7 +86,7 @@ class UiController(object):
     # --- internals ------------------------------------------------------------------------
     def _strong_alert(self):
         b = self.bridge
-        return bool((b.spoof and b.spoof.state == 'ALERT') or (b.detector and b.detector.state == 'JAM?'))
+        return bool((b.spoof and b.spoof.state in ALERT_STATES) or (b.detector and b.detector.state in ALERT_STATES))
 
     def _track_alert(self):
         """Banner and blink bookkeeping: a new strong alert un-dismisses the banner and starts the blink."""

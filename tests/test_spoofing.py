@@ -115,7 +115,7 @@ def test_persistent_jump_is_alert():
     sim.warm()
     sim.fix(jump_lat=0.05)           # ~5.5 km north
     assert sim.state == spoofing.OK  # unconfirmed: could be a glitch
-    assert sim.fix() == spoofing.ALERT
+    assert sim.fix() == spoofing.HIGH
     assert 'K1' in sim.det.reason
 
 
@@ -140,21 +140,21 @@ def test_jump_during_warmup_is_ignored():
 def test_gps_time_step_is_alert():
     sim = Sim()
     sim.warm()
-    assert sim.fix(gps_dt=0.8 + 3.0) == spoofing.ALERT   # GPS clock jumped 3 s, local did not
+    assert sim.fix(gps_dt=0.8 + 3.0) == spoofing.HIGH   # GPS clock jumped 3 s, local did not
     assert 'T1' in sim.det.reason
 
 
 def test_time_going_backwards_is_alert():
     sim = Sim()
     sim.warm()
-    assert sim.fix(gps_dt=-20.0) == spoofing.ALERT
+    assert sim.fix(gps_dt=-20.0) == spoofing.HIGH
 
 
 def test_movement_without_reported_speed_is_suspect():
     sim = Sim()
     sim.warm()
     states = [sim.fix(east_kn=30.0, sog=0.0) for _ in range(20)]
-    assert spoofing.SUSPECT in states and spoofing.ALERT not in states
+    assert spoofing.MEDIUM_P in states and spoofing.HIGH not in states
     assert 'K2' in sim.det.reason
 
 
@@ -162,9 +162,9 @@ def test_alert_latches_then_clears():
     sim = Sim()
     sim.warm()
     sim.fix(jump_lat=0.05)
-    assert sim.fix() == spoofing.ALERT
+    assert sim.fix() == spoofing.HIGH
     sim.local_ms += spoofing.WINDOW_MS + 5000        # evidence expired, latch still holds
-    assert sim.det.evaluate(sim.local_ms)[0] == spoofing.ALERT
+    assert sim.det.evaluate(sim.local_ms)[0] == spoofing.HIGH
     assert sim.det.reason == 'K1'
     sim.local_ms += spoofing.LATCH_MS
     assert sim.det.evaluate(sim.local_ms)[0] == spoofing.OK
@@ -177,14 +177,14 @@ def test_altitude_step_alone_is_not_alarming():
         sim.p.parse_sentence(with_checksum('GNGGA,123519,4807.038,N,01131.000,E,1,08,0.9,{},M,46.9,M,,'.format(alt)))
         sim.det.evaluate(sim.local_ms)
     assert 'K3' in sim.det.reason
-    assert sim.det.state == spoofing.OK    # one weak indicator class is not enough
+    assert sim.det.state == spoofing.LOW   # one weak indicator class is only a low probability
 
 
 def test_uniform_cn0_is_suspect():
     sim = Sim()
     sim.warm()
     gsv(sim.p, [40, 40, 41, 40, 40, 41, 40, 40])
-    assert sim.det.evaluate(sim.local_ms)[0] == spoofing.SUSPECT
+    assert sim.det.evaluate(sim.local_ms)[0] == spoofing.MEDIUM_P
     assert 'S1' in sim.det.reason
 
 
@@ -216,14 +216,14 @@ def test_module_jamming_status_feeds_jam_detector():
     for _ in range(jamming.ENTER_CYCLES):
         gsv(p, [40, 38, 42, 36, 41, 39, 37, 40])
         state = clk.step(det)
-    assert state == jamming.JAM
+    assert state == jamming.MEDIUM                          # the critical module status counts twice
     assert 'M' in det.reason
 
 
 def test_time_tolerance_is_configurable():
     sim = Sim()
     sim.warm()
-    assert sim.fix(gps_dt=0.8 + 1.0) == spoofing.ALERT   # 1 s mismatch exceeds the default 500 ms
+    assert sim.fix(gps_dt=0.8 + 1.0) == spoofing.HIGH   # 1 s mismatch exceeds the default 500 ms
     sim = Sim()
     sim.det.time_tolerance_ms = 2000                      # e.g. slow GPS link delaying RMC
     sim.warm()
@@ -280,7 +280,7 @@ def test_circling_does_not_flag_k2_but_unexplained_movement_does():
     assert 'K2' not in sim.det.active_codes()
     sim2 = Sim()                                            # control: low reported speed still flags
     sim2.warm()
-    assert spoofing.SUSPECT in [sim2.fix(east_kn=30.0, sog=0.0) for _ in range(20)]
+    assert spoofing.MEDIUM_P in [sim2.fix(east_kn=30.0, sog=0.0) for _ in range(20)]
 
 
 def test_antimeridian_crossing_is_not_a_jump():
@@ -345,3 +345,25 @@ def test_s2_flags_persistent_inverse_correlation():
         _gsv_el(sim.p, els, inverse)
         sim.det.evaluate(sim.local_ms)
     assert 'S2' in sim.det.reason
+
+
+def test_labels_mark_the_probability_and_are_blank_when_ok():
+    det = SpoofDetector(NMEA.Parser())
+    for state, label in ((spoofing.OK, ''), (spoofing.LOW, 'SPF.'), (spoofing.MEDIUM_P, 'SPF?'),
+                         (spoofing.HIGH, 'SPF!')):
+        det.state = state
+        assert det.label() == label
+
+
+def test_probability_low_medium_high_follow_the_indicator_classes():
+    sim = Sim()
+    sim.warm()
+    det = sim.det
+    for events, expected in (({}, spoofing.OK), ({'K3': 0}, spoofing.LOW), ({'K3': 0, 'S2': 0}, spoofing.MEDIUM_P),
+                             ({'S1': 0}, spoofing.MEDIUM_P), ({'S1': 0, 'K2': 0}, spoofing.HIGH),
+                             ({'K1': 0}, spoofing.HIGH)):
+        det._alert_at = None
+        det._events = {code: sim.local_ms for code in events}
+        assert det._update_state(sim.local_ms)[0] == expected, events
+    assert spoofing.MEDIUM_P in ('MEDIUM',)                    # the level names the screens and the UI rely on
+    assert (spoofing.LOW, spoofing.HIGH) == ('LOW', 'HIGH')

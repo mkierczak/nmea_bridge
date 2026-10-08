@@ -17,6 +17,7 @@ except ImportError:
 MAX_SENTENCE_LEN = 100        # longer buffers are garbage; resync on the next '$'
 MAX_AGE_MS = 3000             # position sentences older than this (after a stall) are not forwarded
 POSITION_TYPES = ('RMC', 'GGA')
+ALERT_STATES = ('MEDIUM', 'HIGH')   # the probability levels of the detectors that count as an alert
 SPOOF_TYPES = ('RMC', 'GGA')    # GSV statistics are picked up at the next fix or by the periodic evaluation
 STATS_PERIOD_MS = 10 * 1000
 JAM_EVAL_PERIOD_MS = 2 * 1000
@@ -300,9 +301,9 @@ class Bridge(object):
         return sum(count for name, count in self.errors.items() if name != 'radio')
 
     def alert(self):
-        """True while a jamming or spoofing alert should keep the display on."""
-        return bool((self.spoof and self.spoof.state != 'OK') or
-                    (self.detector and self.detector.state in ('LOW', 'JAM?')))
+        """True while a jamming or spoofing alert (MEDIUM or HIGH probability) should keep the display on."""
+        return bool((self.spoof and self.spoof.state in ALERT_STATES) or
+                    (self.detector and self.detector.state in ALERT_STATES))
 
     # --- the loop body ---------------------------------------------------------------------
     def step(self, now):
@@ -336,7 +337,7 @@ class Bridge(object):
         if self.spoof is not None and sentence_type in SPOOF_TYPES:
             self._guard('spoof', self.spoof.evaluate, now)
         block = (self.spoof_action == 'block' and self.spoof is not None
-                 and self.spoof.state == 'ALERT')
+                 and self.spoof.state == 'HIGH')
         code = self._forward_code(sentence_type, p.sentence_last_valid_talker, block)
         to_radio = bool(code & _TO_RADIO)
         to_wifi = bool(code & _TO_WIFI) and bool(self.broadcaster and self.broadcaster.active)

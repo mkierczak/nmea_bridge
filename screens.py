@@ -9,16 +9,21 @@ SPOOF_TILES = (('K1', 'jmp'), ('T1', 'tim'), ('K2', 'spd'), ('S1', 'flt'),
 MODULE_JAM = {0: '?', 1: 'ok', 2: 'warn', 3: 'CRIT'}
 
 
+ALERT_STATES = ('MEDIUM', 'HIGH')
+MARKS = {'LOW': '.', 'MEDIUM': '?', 'HIGH': '!'}     # after SPF / JAM: SPF. low, SPF? medium, SPF! high
+
+
 def banner_text(jam, spoof):
-    """Text of the alert banner, or '' when nothing strong is going on (SUSPECT / LOW stay small labels)."""
-    spf = bool(spoof and spoof.state == 'ALERT')
-    jm = bool(jam and jam.state == 'JAM?')
+    """Text of the alert banner, or '' when nothing is at MEDIUM or HIGH (LOW only gets the small label)."""
+    spf = spoof.state if spoof and spoof.state in ALERT_STATES else ''
+    jm = jam.state if jam and jam.state in ALERT_STATES else ''
     if spf and jm:
-        return 'SPF! JAM?'
+        return 'SPF{} JAM{}'.format(MARKS[spf], MARKS[jm])
     if spf:
-        return ('SPF! ' + ' '.join(spoof.reason[i:i + 2] for i in range(0, len(spoof.reason), 2)))[:16]
+        return ('SPF{} '.format(MARKS[spf]) + ' '.join(spoof.reason[i:i + 2]
+                                                        for i in range(0, len(spoof.reason), 2)))[:16]
     if jm:
-        return ('JAM? ' + ' '.join(JAM_WORDS.get(c, c) for c in jam.reason))[:16]
+        return ('JAM{} '.format(MARKS[jm]) + ' '.join(JAM_WORDS.get(c, c) for c in jam.reason))[:16]
     return ''
 
 
@@ -52,8 +57,8 @@ def _wifi_mark(wifi):
 
 
 def _short(label):
-    """'SPF?' -> 'S?', 'JAM?' -> 'J?', 'LOW' -> 'L'."""
-    return label[0] + ('?' if label.endswith('?') else '!' if label.endswith('!') else '')
+    """'SPF?' -> 'S?', 'JAM!' -> 'J!'."""
+    return label[0] + label[-1]
 
 
 def _status_row(oled, parser, jam, spoof, wifi, heartbeat):

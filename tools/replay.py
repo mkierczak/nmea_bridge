@@ -27,10 +27,10 @@ import settings                            # noqa: E402
 import spoofing                            # noqa: E402
 from bridge import Bridge, RxQueue         # noqa: E402
 
-JAM_STATES = ('INIT', 'OK', 'LOW', 'JAM?')
-JAM_ALARMS = ('LOW', 'JAM?')
-SPOOF_STATES = ('OK', 'SUSPECT', 'ALERT')
-SPOOF_ALARMS = ('SUSPECT', 'ALERT')
+JAM_STATES = ('INIT', 'OK', 'LOW', 'MEDIUM', 'HIGH')
+JAM_ALARMS = ('MEDIUM', 'HIGH')            # the levels that raise an alert on the board
+SPOOF_STATES = ('OK', 'LOW', 'MEDIUM', 'HIGH')
+SPOOF_ALARMS = ('MEDIUM', 'HIGH')
 
 
 class NullRadio(object):

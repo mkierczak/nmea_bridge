@@ -138,7 +138,7 @@ class Jam(object):
         self.state, self.reason = state, reason
 
     def label(self):
-        return self.state
+        return {'LOW': 'JAM.', 'MEDIUM': 'JAM?', 'HIGH': 'JAM!'}.get(self.state, '')
 
 
 def make_spoof(parser, state, events, reason):
@@ -146,7 +146,7 @@ def make_spoof(parser, state, events, reason):
     s.warm_fixes = 100
     s._events = {code: 0 for code in events}
     s.state, s.reason = state, reason
-    if state == 'ALERT':
+    if state == 'HIGH':
         s._alert_at = 0
     return s
 
@@ -190,14 +190,14 @@ def menu_scene(group, cursor, change=None):
 
 def scenes():
     p = make_parser()
-    alert_spoof = make_spoof(p, 'ALERT', ('K1', 'T1', 'S1', 'K3'), 'K1T1S1K3')
-    suspect_spoof = make_spoof(p, 'SUSPECT', ('S2',), 'S2')
+    alert_spoof = make_spoof(p, 'HIGH', ('K1', 'T1', 'S1', 'K3'), 'K1T1S1K3')
+    suspect_spoof = make_spoof(p, 'MEDIUM', ('S1',), 'S1')
     nofix = make_parser()
     nofix.fix_type = 'NO'
     return [
         ('main', 'Main', page_scene(nav.PAGE_MAIN, p, jam=Jam('OK'), spoof=make_spoof(p, 'OK', (), ''),
                                     heartbeat='on')),
-        ('main-suspect', 'Main, jamming and spoofing suspected',
+        ('main-suspect', 'Main, low jamming and medium spoofing probability',
          page_scene(nav.PAGE_MAIN, p, jam=Jam('LOW', 'C'), spoof=suspect_spoof, heartbeat='off')),
         ('main-fault', 'Main, radio write failure',
          page_scene(nav.PAGE_MAIN, p, jam=Jam('OK'), spoof=make_spoof(p, 'OK', (), ''), heartbeat='fault')),
@@ -208,10 +208,10 @@ def scenes():
          page_scene(nav.PAGE_MAIN, p, jam=Jam('OK'), hold=(55, True))),
         ('speed', 'Speed', page_scene(nav.PAGE_SPEED, p)),
         ('speed-alert', 'Speed, jamming alert banner',
-         page_scene(nav.PAGE_SPEED, p, jam=Jam('JAM?', 'CN'), banner=True)),
+         page_scene(nav.PAGE_SPEED, p, jam=Jam('MEDIUM', 'CN'), banner=True)),
         ('stats', 'Stats', page_scene(nav.PAGE_STATS, p, jam=Jam('OK'))),
         ('satellites', 'Satellites', page_scene(nav.PAGE_SATS, p)),
-        ('signal', 'Signal', page_scene(nav.PAGE_SIGNAL, p, jam=Jam('LOW', 'CN'))),
+        ('signal', 'Signal', page_scene(nav.PAGE_SIGNAL, p, jam=Jam('MEDIUM', 'CN'))),
         ('spoofing', 'Spoofing', page_scene(nav.PAGE_SPOOF, p, spoof=alert_spoof)),
         ('system', 'System', page_scene(nav.PAGE_SYSTEM, p)),
         ('system-errors', 'System with contained errors',

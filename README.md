@@ -130,10 +130,11 @@ widens its tolerance by the worst-case line time of a cycle so this delay does n
 Full algorithm description: [docs/jamming-detection.md](docs/jamming-detection.md).
 
 `jamming.py` watches per-satellite C/N0 from GSV and the fix status, learns a baseline of normal
-conditions, and shows `OK` / `LOW` / `JAM?` at the top right of the main screen (blank while the
-baseline is still being learned). Details (mean vs baseline C/N0, tracked satellites, reason letters
+conditions, and reports the probability of jamming as `OK` / `LOW` / `MEDIUM` / `HIGH` (the main screen shows
+`JAM.` / `JAM?` / `JAM!` for the last three; `MEDIUM` and `HIGH` are alerts with a banner; nothing is shown
+while the baseline is still being learned). Details (mean vs baseline C/N0, tracked satellites, reason letters
 C/N/F/M) are on the Signal page. NMEA exposes no RF/AGC data, so obstruction, indoor use or
-an antenna fault look the same as jamming: treat `JAM?` as "signal degraded, jamming possible".
+an antenna fault look the same as jamming: treat `MEDIUM`/`HIGH` as "signal degraded, jamming possible".
 Thresholds are constants at the top of `jamming.py`; tune them with `tools/replay.py` on a recorded
 NMEA log. Set `JAM_DETECT = False` in `main.py` to disable it. At init the module is also asked to
 enable Active Interference Cancellation (`$PMTK286,1`); the debug screen shows `AIC+` (acked),
@@ -142,8 +143,9 @@ enable Active Interference Cancellation (`$PMTK286,1`); the debug screen shows `
 ## Spoofing-suspicion indicator
 Full algorithm description: [docs/spoofing-detection.md](docs/spoofing-detection.md).
 
-`spoofing.py` raises `SPF?` (suspect) or `SPF!` (alert, held for about 11 min) at the top right of the
-main screen. It is **heuristic**: the L76B gives NMEA only (no raw measurements, no RAIM, no signal
+`spoofing.py` reports the probability of spoofing as `OK` / `LOW` / `MEDIUM` / `HIGH` (the main screen shows
+`SPF.` / `SPF?` / `SPF!` for the last three; `MEDIUM` and `HIGH` are alerts with a banner, `HIGH` is held for
+about 11 min). It is **heuristic**: the L76B gives NMEA only (no raw measurements, no RAIM, no signal
 authentication), so a careful spoofer (smooth drift, consistent time, realistic power) will pass.
 Treat it as "spoofing suspected", never as proof or protection. Indicators (letters on the debug
 screen):
@@ -159,10 +161,10 @@ screen):
 | S2 | weak | C/N0 not correlated with elevation |
 | S3 | weak | sudden C/N0 rise or abrupt change of the tracked satellites |
 
-ALERT = any strong indicator or two medium ones within 60 s; SUSPECT = one medium or two weak. No
+HIGH = any strong indicator or two medium ones within 60 s; MEDIUM = one medium or two weak; LOW = one weak. No
 indicator fires during the first 30 fixes after boot. `SPOOF_ACTION` in `main.py` is `'display'`
 (default: only show it) or `'block'` (also stop forwarding `SPOOF_BLOCK_TYPES`, default RMC and GGA,
-to the radio during an ALERT, so the radio shows "no position" instead of a suspect one). Measure the
+to the radio while the level is HIGH, so the radio shows "no position" instead of a suspect one). Measure the
 false-alarm rate on recorded logs (`tools/replay.py`) before using `'block'`.
 
 `GNSS_MODE` selects GPS-only or GPS+BeiDou (the L76B supports no other constellations; BeiDou

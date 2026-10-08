@@ -425,7 +425,12 @@ def test_block_mode_holds_back_positions_only_while_alerting():
         push(b, s)
     b.step(clock.now)
     assert len(b.radio_.written) == 3 and len(b.broadcaster.sent[0].split('\r\n')) == 4
-    b.spoof.state = 'ALERT'
+    b.spoof.state = 'MEDIUM'                               # only a high probability holds the positions back
+    b.radio_.written.clear()
+    push(b, RMC)
+    b.step(clock.now)
+    assert b.radio_.written[-1].startswith('$GPRMC')
+    b.spoof.state = 'HIGH'
     b.radio_.written.clear()
     b.broadcaster.sent.clear()
     for s in (RMC, GGA, ZDA, GSV):
@@ -535,8 +540,12 @@ def test_no_fix_logic_and_alert():
     assert b.no_fix(clock.now + B.FIX_STALE_TIMEOUT_MS + 1)
     assert not b.alert()
     b.detector = FakeDetector('LOW')
+    assert not b.alert()                                   # LOW is not an alert
+    b.detector.state = 'MEDIUM'
     assert b.alert()
-    b.detector.state, b.spoof = 'OK', FakeDetector('SUSPECT')
+    b.detector.state, b.spoof = 'OK', FakeDetector('LOW')
+    assert not b.alert()
+    b.spoof.state = 'HIGH'
     assert b.alert()
     b.spoof.state = 'OK'
     assert not b.alert()

@@ -21,8 +21,9 @@ ENTER_CYCLES = 2             # consecutive worse cycles before the state worsens
 EXIT_CYCLES = 3              # consecutive better cycles before the state improves
 STALE_MS = 20 * 1000         # no complete GSV cycle for this long counts as zero tracked
 
-INIT, OK, LOW, JAM = 'INIT', 'OK', 'LOW', 'JAM?'
-_STATES = (OK, LOW, JAM)
+INIT, OK, LOW, MEDIUM, HIGH = 'INIT', 'OK', 'LOW', 'MEDIUM', 'HIGH'   # INIT: no baseline yet, no verdict
+_STATES = (OK, LOW, MEDIUM, HIGH)       # the probability of jamming; MEDIUM and HIGH are alerts
+_MARKS = {LOW: '.', MEDIUM: '?', HIGH: '!'}
 
 
 class JamDetector(object):
@@ -52,8 +53,10 @@ class JamDetector(object):
         return _STATES[self.level] if self.level > 0 else INIT
 
     def label(self):
-        """Short text for the main screen; blank until the baseline is trusted."""
-        return '' if self.state == INIT else self.state
+        """Short text for the main screen: 'JAM.' (low), 'JAM?' (medium), 'JAM!' (high); blank while OK or
+        until the baseline is trusted."""
+        mark = _MARKS.get(self.state)
+        return 'JAM' + mark if mark else ''
 
     def signature(self):
         return (self.state, self.reason, round(self.base_mean), round(self.base_tracked))
@@ -84,14 +87,9 @@ class JamDetector(object):
             n = tracked < TRACKED_DROP_FRACTION * self.base_tracked
         else:
             c = n = False  # nothing to compare with yet
-        if (c and n) or (f and (c or n)):
-            level = 2
-        elif c or n or f:
-            level = 1
-        else:
-            level = 0
-        if m >= 2:
-            level = max(level, 1 if m == 2 else 2)
+        # the probability grows with the number of agreeing kinds of evidence; the module's own warning
+        # counts once, its critical status twice: 1 = LOW, 2 = MEDIUM, 3 or more = HIGH
+        level = min(3, bool(c) + bool(n) + bool(f) + (0 if m < 2 else 1 if m == 2 else 2))
         self.reason = ('C' if c else '') + ('N' if n else '') + ('F' if f else '') + ('M' if m >= 2 else '')
 
         if level > self.level:
