@@ -312,3 +312,36 @@ def test_gps_and_beidou_are_evaluated_together_once_per_cycle():
     assert calls['n'] == 0                                  # still settling
     sim.det.evaluate(t + 300 + 800)
     assert calls['n'] == 1                                  # one evaluation with both constellations
+
+
+def _gsv_el(parser, els, cns, talker='GP'):
+    """One GSV cycle with explicit elevation and C/N0 per satellite."""
+    sats = list(zip(els, cns))
+    groups = [sats[i:i + 4] for i in range(0, len(sats), 4)]
+    for m, group in enumerate(groups, 1):
+        fields = ''.join(',{:02d},{},083,{}'.format(i + 1, e, c) for i, (e, c) in enumerate(group))
+        assert parser.parse_sentence(with_checksum(
+            '{}GSV,{},{},{:02d}{}'.format(talker, len(groups), m, len(sats), fields)))
+
+
+def test_s2_ignores_brief_or_weak_decorrelation():
+    sim = Sim()
+    sim.warm()
+    els = [10, 20, 30, 40, 50, 60, 70, 80]
+    good = [30, 33, 36, 39, 41, 43, 44, 46]
+    bad = [44, 31, 46, 33, 40, 35, 42, 30]       # no relation to elevation
+    for i in range(40):                          # mostly healthy with a decorrelated spell now and then
+        _gsv_el(sim.p, els, bad if i % 4 == 0 else good)
+        sim.det.evaluate(sim.local_ms)
+        assert 'S2' not in sim.det.reason
+
+
+def test_s2_flags_persistent_inverse_correlation():
+    sim = Sim()
+    sim.warm()
+    els = [10, 20, 30, 40, 50, 60, 70, 80]
+    inverse = [46, 44, 43, 41, 39, 36, 33, 30]
+    for _ in range(spoofing.ELEV_CYCLES + 15):
+        _gsv_el(sim.p, els, inverse)
+        sim.det.evaluate(sim.local_ms)
+    assert 'S2' in sim.det.reason

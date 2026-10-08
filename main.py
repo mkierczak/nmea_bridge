@@ -57,6 +57,7 @@ WIFI_CHANNEL = 6                  # 2.4 GHz channel 1-11 (0 = firmware default)
 WIFI_PORT = 10110                 # NMEA 0183 over TCP (server) and UDP (broadcast)
 WIFI_MAX_CLIENTS = 4
 WIFI_FORWARD_TALKERS = ('GP', 'GN', 'BD')
+HEAP_REFRESH_MS = 3000           # System page: how often free heap is re-measured (after gc.collect)
 MEM_REPORT_PERIOD = 60 * 1000     # print free/used heap this often when DEBUG is on
 UARTx = 0                         # GPS UART
 GPS_BAUDRATE = 4800               # GPS link rate: 4800, 9600, 14400, 19200, 38400, 57600 or 115200 (module is switched at boot)
@@ -319,9 +320,21 @@ def make_menu():
     return menu_mod.Menu(cfg, menu_hooks)
 
 
+_heap = [0, None]   # ticks of last reading, free bytes
+
+
+def free_heap(now_ms):
+    """Free heap after a collection (a raw reading swings with the uncollected garbage), refreshed every
+    HEAP_REFRESH_MS and rounded down to 4 KiB so it does not force screen redraws."""
+    if _heap[1] is None or utime.ticks_diff(now_ms, _heap[0]) >= HEAP_REFRESH_MS:
+        gc.collect()
+        _heap[0], _heap[1] = now_ms, gc.mem_free() // 4096 * 4096
+    return _heap[1]
+
+
 def system_info():
     inv_base = core.stats['rcv'] or 1
-    return {'uptime_s': screen_ui.uptime_ms // 1000, 'heap': gc.mem_free(),
+    return {'uptime_s': screen_ui.uptime_ms // 1000, 'heap': free_heap(utime.ticks_ms()),
             'dropped': rx_queue.dropped, 'inv_pct': round(core.stats['inv'] * 100 / inv_base),
             'baud': GPS_BAUDRATE, 'found': reader.found, 'fix_ms': FIX_INTERVAL_MS, 'gnss': GNSS_MODE,
             'uid': binascii.hexlify(machine.unique_id()).decode(), 'now_ms': utime.ticks_ms(),

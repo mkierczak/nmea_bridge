@@ -269,11 +269,12 @@ positively correlated. For fake satellites from one antenna the power need not f
 receiver computes for them. (The elevations reported in GSV are computed by the receiver from its own
 position and the broadcast orbits, so they describe the *spoofed* geometry.)
 
-*Rule.* Using all tracked satellites that have an elevation value, if there are at least `ELEV_MIN_SATS`
-(8), compute the Pearson correlation between elevation and C/N0. If it is **<= `ELEV_CORR_MAX` (0)**
-for `ELEV_CYCLES` (3) evaluations in a row, flag S2; any evaluation with a positive correlation resets
-the count. Weak because many real installations (marine multipath, antenna patterns, few satellites)
-show a poor correlation at times.
+*Rule.* For each constellation with at least `ELEV_MIN_SATS` (6) tracked satellites that have an
+elevation value, compute the Pearson correlation between elevation and C/N0; the readings of the
+constellations are averaged per GSV cycle and smoothed (`ELEV_ALPHA`, 0.15). Once `ELEV_CYCLES` (12)
+readings have been taken, S2 is flagged on every cycle in which the smoothed value is **<=
+`ELEV_CORR_MAX` (-0.2)**. Weak because many real installations (marine multipath, antenna patterns,
+few satellites) show a poor correlation at times; the smoothing keeps such spells from flagging.
 
 ### S3 - sudden power rise or abrupt satellite-set change (weak)
 
@@ -377,7 +378,7 @@ live (stored in `settings.json`).
 | `ALT_STEP_M` | 30 | *Alt step* (`alt_step_m`, 10-100) | altitude step (K3) |
 | `UNIFORM_STD_DB` | 1.5 | *Flat C/N0* (`uniform_std_x10`, 5-40 = 0.5-4.0 dB) | std dev below which signals are "too uniform" (S1) |
 | `UNIFORM_MIN_SATS` | 6 | - | satellites needed for S1 |
-| `ELEV_CORR_MAX` / `ELEV_MIN_SATS` / `ELEV_CYCLES` | 0.0 / 8 / 3 | - | S2 |
+| `ELEV_CORR_MAX` / `ELEV_MIN_SATS` / `ELEV_ALPHA` / `ELEV_CYCLES` | -0.2 / 6 / 0.15 / 12 | - | S2 |
 | `CN0_RISE_DB` | 8 | - | power rise above baseline (S3) |
 | `JACCARD_MIN` / `JACCARD_MIN_SATS` | 0.5 / 6 | - | set-change test (S3) |
 | `CROSS_SHIFT_DB` / `CROSS_MIN_SATS` | 8 / 3 | - | GPS-BeiDou offset shift (C1) |
@@ -400,7 +401,7 @@ T1 tolerance).
 | K3 | on the next GGA with the altitude step |
 | K2 | at the end of the 10 s window (up to about 10-30 s after the movement starts) |
 | S1, S3, C1 | on the next settled GSV cycle (about 4-5 s plus the 0.8 s settling time) |
-| S2 | three settled GSV cycles in a row (about 12-15 s) |
+| S2 | after 12 smoothed readings (about 1 minute from the first GSV) and while the smoothed correlation stays low |
 | Alert clears | about 11 minutes after the last alerting evidence (60 s window + `LATCH_MS` of 10 min); `SUSPECT` clears when the evidence is older than 60 s |
 
 ## 10. Worked examples

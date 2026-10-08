@@ -145,7 +145,7 @@ vb48139d
 | Line | Meaning |
 |---|---|
 | `up` | Time since boot (hours, minutes, seconds). |
-| `heap` | Free MicroPython memory in KiB. If it keeps falling, report it. |
+| `heap` | Free MicroPython memory in KiB, measured after a garbage collection every 3 s and rounded down to 4 KiB. If it keeps falling, report it. |
 | `drop` / `inv` | Dropped sentences (capped at `999`) and the share of invalid sentences in the last window (capped at 100). |
 | baud line | `baud 4800 ok`: module already at the configured rate. `b4800<9600`: the module was found at 9600 and switched to 4800. `baud 4800 ?`: no module was heard (check wiring/power; the bridge keeps looking). |
 | `fix..ms <gnss>` | Configured fix interval and GNSS mode (`GPS` or `GPS+BD`). |

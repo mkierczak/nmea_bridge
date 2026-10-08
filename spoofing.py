@@ -34,9 +34,10 @@ K2_REL = 0.5                 # ... and this fraction of the larger of implied / 
 ALT_STEP_M = 30
 UNIFORM_STD_DB = 1.5         # std dev of C/N0 below this (>= UNIFORM_MIN_SATS tracked) is "too clean"
 UNIFORM_MIN_SATS = 6
-ELEV_CORR_MAX = 0.0          # elevation/C-N0 correlation at or below this is suspicious
-ELEV_MIN_SATS = 8
-ELEV_CYCLES = 3              # consecutive GSV cycles before S2 fires
+ELEV_CORR_MAX = -0.2         # smoothed elevation/C-N0 correlation at or below this is suspicious
+ELEV_MIN_SATS = 6            # tracked satellites with elevation, per constellation, to take a reading
+ELEV_ALPHA = 0.15            # smoothing of the per-cycle correlation
+ELEV_CYCLES = 12             # smoothed readings (GSV cycles) before S2 may fire
 CN0_RISE_DB = 8              # mean C/N0 above baseline by this much
 JACCARD_MIN = 0.5            # similarity of tracked-satellite sets between GSV cycles
 JACCARD_MIN_SATS = 6
@@ -137,7 +138,8 @@ class SpoofDetector(object):
         self._offset_samples = 0
         self._offset_flagged = 0
         self._prev_prns = None
-        self._elev_bad = 0
+        self._elev_corr = None        # smoothed elevation/C-N0 correlation
+        self._elev_n = 0
 
     def label(self):
         return 'SPF!' if self.state == ALERT else 'SPF?' if self.state == SUSPECT else ''
@@ -253,15 +255,19 @@ class SpoofDetector(object):
             if len(cns) >= UNIFORM_MIN_SATS and _std(cns) < UNIFORM_STD_DB:
                 self._flag('S1', now_ms)
 
-        # S2: real signals get stronger with elevation
-        pairs = [(el, cn) for _, _, el, cn in tracked if el is not None]
-        if len(pairs) >= ELEV_MIN_SATS:
-            if _corr([e for e, _ in pairs], [c for _, c in pairs]) <= ELEV_CORR_MAX:
-                self._elev_bad += 1
-                if self._elev_bad >= ELEV_CYCLES:
-                    self._flag('S2', now_ms)
-            else:
-                self._elev_bad = 0
+        # S2: real signals get stronger with elevation. Correlated per constellation (their power
+        # levels differ), averaged over the constellations, and smoothed over many cycles
+        corrs = []
+        for talker, lst in sats.items():
+            pairs = [(el, cn) for _, el, cn in lst if cn > 0 and el is not None]
+            if len(pairs) >= ELEV_MIN_SATS:
+                corrs.append(_corr([e for e, _ in pairs], [c for _, c in pairs]))
+        if corrs:
+            r = _mean(corrs)
+            self._elev_corr = r if self._elev_corr is None else self._elev_corr + ELEV_ALPHA * (r - self._elev_corr)
+            self._elev_n += 1
+            if self._elev_n >= ELEV_CYCLES and self._elev_corr <= ELEV_CORR_MAX:
+                self._flag('S2', now_ms)
 
         # S3: sudden power rise, or the set of tracked satellites changes abruptly
         mean = _mean([cn for _, _, _, cn in tracked])
