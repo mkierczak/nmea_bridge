@@ -285,7 +285,7 @@ def test_suspect_or_low_neither_banner_nor_blink():
 
 def test_night_mode_turns_the_screen_off_after_30_seconds_but_an_alert_keeps_it_on():
     r = Rig()
-    r.cfg.set('night', True)
+    r.cfg.set('night', 'on')
     r.step()
     r.step(advance=29000)
     assert not r.ui.screen_off
@@ -295,7 +295,7 @@ def test_night_mode_turns_the_screen_off_after_30_seconds_but_an_alert_keeps_it_
     r.step(advance=1000)
     assert not r.ui.screen_off
     r2 = Rig(screen_off_s=30)                              # a shorter user setting still wins
-    r2.cfg.set('night', True)
+    r2.cfg.set('night', 'on')
     r2.cfg.set('screen_off_s', 0)
     r2.step()
     r2.step(advance=31000)
@@ -657,3 +657,49 @@ def test_hold_box_for_man_overboard_appears_after_a_normal_long_press():
     held[0] = 3200
     r.step(advance=ui.HOLD_REFRESH_MS + 1)
     assert r.ctxs[-1]['hold'] == (100, 'Release now!')
+
+
+def test_automatic_night_mode_follows_the_sun_with_hysteresis_and_calls_back_on_changes():
+    import sun
+    r = Rig()
+    calls = []
+    r.ui.on_night = calls.append
+    r.cfg.set('night', 'auto')
+    p = r.bridge.parser
+    p.fix_type, p.lat_u, p.lon_u = 'GPS', int(59.33 * 600000), int(18.07 * 600000)
+    p.utc_days = 20625                                       # 2026-06-21
+
+    def at(minute_of_day):
+        p.utc_ms = minute_of_day * 60000
+        r.clock.now += ui.DARK_CHECK_MS + 100
+        r.bridge.last_pos = r.clock.now                      # the fix stays fresh
+        r.step()
+    at(10 * 60 + 48)                                         # solar noon: bright
+    assert not r.ui.night_active() and calls == []
+    p.utc_days = 20808                                       # midwinter
+    at(22 * 60)                                              # the middle of the night
+    assert r.ui.night_active() and calls == [True]
+    assert sun.elevation_deg(59.33, 18.07, 20808, 22 * 60000 * 60) < -30
+    at(10 * 60 + 48)                                         # noon again, low sun but well above the horizon
+    assert not r.ui.night_active() and calls == [True, False]
+    r.cfg.set('night', 'on')
+    r.step(advance=10)
+    assert r.ui.night_active() and calls == [True, False, True]
+    r.cfg.set('night', 'off')
+    r.step(advance=10)
+    assert not r.ui.night_active() and calls[-1] is False
+
+
+def test_automatic_night_mode_keeps_the_last_answer_without_a_fix_and_does_not_turn_the_screen_off():
+    r = Rig(screen_off_s=0)
+    r.cfg.set('night', 'auto')
+    p = r.bridge.parser
+    p.fix_type, p.lat_u, p.lon_u, p.utc_days, p.utc_ms = 'GPS', int(59.33 * 600000), int(18.07 * 600000), 20808, 0
+    r.clock.now += ui.DARK_CHECK_MS + 100
+    r.bridge.last_pos = r.clock.now
+    r.step()
+    assert r.ui.night_active()
+    r.step(advance=60000)                                    # no fix any more: the last answer stays
+    assert r.ui.night_active()
+    r.step(advance=600000)
+    assert not r.ui.screen_off                               # auto only dims; "on" also switches the screen off

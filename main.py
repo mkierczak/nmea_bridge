@@ -83,7 +83,7 @@ RS485_TXBUF = 512                 # TX buffer so uart.write doesn't block the ma
 # User settings (menu): the constants above are the defaults, settings.json holds the user's overrides
 DEFAULTS = {'gps_baud': GPS_BAUDRATE, 'gnss_mode': GNSS_MODE, 'jam_detect': JAM_DETECT,
             'spoof_detect': SPOOF_DETECT, 'spoof_action': SPOOF_ACTION, 'contrast': 0, 'screen_off_s': 0,
-            'buzzer': True, 'anchor_radius_m': anchor.DEFAULT_RADIUS_M, 'night': False, 'speed_unit': units.SPEED_UNIT, 'coord_fmt': units.COORD_FORMAT,
+            'buzzer': True, 'anchor_radius_m': anchor.DEFAULT_RADIUS_M, 'night': 'off', 'speed_unit': units.SPEED_UNIT, 'coord_fmt': units.COORD_FORMAT,
             'utc_offset_h': units.UTC_OFFSET_H, 'log_raw': False}
 for _t in FORWARD_TYPES_ALL:
     DEFAULTS['fwd_' + _t] = _t in FORWARD_TYPES
@@ -101,8 +101,8 @@ spi1 = SPI(1, baudrate=OLED_SPI_BAUDRATE, sck=Pin(PIN_OLED_SCK), mosi=Pin(PIN_OL
 oled = sh1107.SH1107_SPI(128, 64, spi1, Pin(PIN_OLED_DC), Pin(PIN_OLED_RST), Pin(PIN_OLED_CS), rotate=180)
 font_large = Writer(oled, roboto14)
 oled.init_display()
-if cfg.is_overridden('contrast') or cfg.get('night'):
-    oled.contrast(0 if cfg.get('night') else cfg.get('contrast'))  # the driver starts at 0
+if cfg.is_overridden('contrast') or cfg.get('night') == 'on':
+    oled.contrast(0 if cfg.get('night') == 'on' else cfg.get('contrast'))  # the driver starts at 0
 oled.fill(0)
 oled.text('NMEA bridge', 16, 8, 1)               # splash: what is running and how it is set up
 oled.text(VERSION[:16], 0, 20, 1)
@@ -296,7 +296,7 @@ def apply_setting(key):
     elif key.startswith('fwd_'):
         core.forward_types = tuple(t for t in FORWARD_TYPES_ALL if cfg.get('fwd_' + t))
     elif key == 'contrast' or key == 'night':
-        oled.contrast(0 if cfg.get('night') else cfg.get('contrast'))   # night mode: the dimmest setting
+        set_contrast(screen_ui.night_active())
     elif key == 'log_raw':
         set_raw_log(cfg.get(key))
     elif key == 'anchor_radius_m':
@@ -308,6 +308,11 @@ def apply_setting(key):
         if core.spoof:
             core.spoof.time_tolerance_ms = (spoofing.TIME_JUMP_MS +
                                             l76x.nmea_burst_ms(GPS_BAUDRATE, GNSS_MODE == 'GPS+BD'))
+
+
+def set_contrast(night):
+    """Night mode (on, or auto after sunset) uses the dimmest setting, otherwise the Contrast setting."""
+    oled.contrast(0 if night else cfg.get('contrast'))
 
 
 def reset_settings():
@@ -376,7 +381,7 @@ screen_ui = ui.UiController(cfg, oled, font_large, screens.draw, navigator, even
                             menu_timeout_ms=60 * 1000,
                             up_held=up_tracker.held_ms if WIFI_ENABLE else None, wifi_ms=WIFI_TOGGLE_PRESS,
                             chord_held=lambda now: nav.chord_held_ms(up_tracker, dn_tracker, now),
-                            wifi_up=wifi_shown, dn_held=dn_tracker.held_ms)
+                            wifi_up=wifi_shown, dn_held=dn_tracker.held_ms, on_night=set_contrast)
 
 buzzer_pwm = None
 if PIN_BUZZER is not None:

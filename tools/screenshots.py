@@ -173,7 +173,7 @@ def page_scene(page, parser=None, no_fix=False, jam=None, spoof=None, info=INFO,
 def menu_scene(group, cursor, change=None):
     def render():
         defaults = {'gps_baud': 4800, 'gnss_mode': 'GPS+BD', 'jam_detect': True, 'spoof_detect': True,
-                    'spoof_action': 'display', 'contrast': 0, 'screen_off_s': 0, 'night': False, 'speed_unit': 'kn',
+                    'spoof_action': 'display', 'contrast': 0, 'screen_off_s': 0, 'night': 'off', 'speed_unit': 'kn',
                     'coord_fmt': 'ddmm.mm', 'utc_offset_h': 0, 'log_raw': False}
         defaults.update({'fwd_' + t: True for t in ('RMC', 'GGA', 'GSA', 'GSV', 'ZDA')})
         defaults.update(settings.threshold_defaults(jamming, spoofing))

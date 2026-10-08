@@ -8,6 +8,7 @@ import gc
 
 import alerts
 import nav
+import sun
 
 try:
     from utime import ticks_diff
@@ -29,6 +30,7 @@ TOAST_MS = 2500               # how long a notice ("Anchor dropped") stays
 SNOOZE_MS = 30 * 1000         # a silenced anchor alarm sounds again after this long if the boat is still dragging
 TREND_SPAN_MS = 10 * 1000      # the speed trend compares the speed now with the speed this long ago
 TREND_DELTA_KN = 0.5          # ... and calls it rising or falling beyond this
+DARK_CHECK_MS = 10 * 1000        # how often the sun is looked at for the automatic night mode
 DEBUG_TIMEOUT_MS = 2 * 60 * 1000   # no key for this long in the debug loop: back to the Main page
 
 
@@ -41,7 +43,8 @@ class UiController(object):
     def __init__(self, cfg, oled, font, draw, navigator, events, bridge, menu_factory,
                  wifi_info, system_info, wifi_toggle, clock,
                  menu_timeout_ms=MENU_TIMEOUT_MS, refresh_ms=REFRESH_MS, up_held=None, wifi_ms=3000,
-                 chord_held=None, chord_ms=nav.CHORD_MS, wifi_up=None, dn_held=None, mob_ms=nav.MOB_MS):
+                 chord_held=None, chord_ms=nav.CHORD_MS, wifi_up=None, dn_held=None, mob_ms=nav.MOB_MS,
+                 on_night=None):
         self.cfg = cfg
         self.oled = oled
         self.font = font
@@ -61,6 +64,10 @@ class UiController(object):
         self.chord_ms = chord_ms
         self.dn_held = dn_held                # (now) -> ms the DN key has been held on its own, or None
         self.mob_ms = mob_ms
+        self.on_night = on_night              # (night: bool) -> apply the contrast; called when it changes
+        self._dark = False                    # the sun is below the horizon at the boat's position
+        self._dark_ms = -DARK_CHECK_MS
+        self._night_applied = False
         self._confirm = None                  # (what, uptime ms it expires): a question waiting for UP long
         self._toast = None                    # (text, uptime ms until)
         self._silenced_ms = 0
@@ -89,6 +96,7 @@ class UiController(object):
         if self.wifi_up is not None:
             self.navigator.wifi_up = self.wifi_up()
         self.navigator.mob_active = self.bridge.mob.active
+        self._note_darkness()
         if self._confirm is not None and self.uptime_ms >= self._confirm[1]:
             self._confirm = None
             self.force_draw = True
@@ -109,7 +117,7 @@ class UiController(object):
         alert = self.bridge.alert()
         self._track_alert()
         off_s = self.cfg.get('screen_off_s')
-        if self.cfg.get('night') and (off_s == 0 or off_s > NIGHT_OFF_S):
+        if self.cfg.get('night') == 'on' and (off_s == 0 or off_s > NIGHT_OFF_S):
             off_s = NIGHT_OFF_S
         if alert:
             self.screen_idle_ms = 0           # an alert counts as activity: the screen stays on after it clears
@@ -121,6 +129,26 @@ class UiController(object):
         self._draw(now)
 
     # --- internals ------------------------------------------------------------------------
+    def _note_darkness(self):
+        """Automatic night mode: now and then compute the sun's elevation at the boat; tell the owner of the
+        display when 'night' (on, or auto and dark) changes."""
+        if self.cfg.get('night') == 'auto' and self.uptime_ms - self._dark_ms >= DARK_CHECK_MS:
+            self._dark_ms = self.uptime_ms
+            p = self.bridge.parser
+            if p.utc_days and not self.bridge.no_fix(self._last_tick):
+                elevation = sun.elevation_deg(p.lat_u / 600000.0, p.lon_u / 600000.0, p.utc_days, p.utc_ms)
+                self._dark = sun.is_dark(elevation, self._dark)
+        active = self.night_active()
+        if active != self._night_applied:
+            self._night_applied = active
+            if self.on_night is not None:
+                self.on_night(active)
+
+    def night_active(self):
+        """Dim the display: night mode on, or on auto and the sun is down."""
+        mode = self.cfg.get('night')
+        return mode == 'on' or (mode == 'auto' and self._dark)
+
     def _note_speed(self):
         """Once a second remember the speed, about 10 s of it, for the trend mark on the Speed page."""
         if self.uptime_ms - self._hist_ms < 1000:

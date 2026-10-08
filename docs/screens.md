@@ -417,14 +417,18 @@ reboot; items marked `*` after the label are applied only at the next boot. The 
 | Detection | Jamming, Spoofing, Spoof act. (`display` / `block`), Buzzer (on/off; only has an effect when a buzzer is wired and `PIN_BUZZER` is set in `main.py`) |
 | Radio output | RMC, GGA, GSA, GSV, ZDA (which sentence types go to the radio) |
 | Anchor | Radius (10-500 m, step 10) |
-| Display | Contrast, Screen off (`never`, `30s`, `60s`, `5m`), Night mode, Speed unit (`kn`, `km/h`, `m/s`), Coords (`ddmm.mm`, `dd.dddd`), UTC offset (-12 to +14 h) |
+| Display | Contrast, Screen off (`never`, `30s`, `60s`, `5m`), Night mode (`off`, `auto`, `on`), Speed unit (`kn`, `km/h`, `m/s`), Coords (`ddmm.mm`, `dd.dddd`), UTC offset (-12 to +14 h) |
 | Wi-Fi | Wi-Fi now (on/off), New password |
 | Advanced | Detector thresholds: CN0 drop, Sats drop%, Jam enter, Jam exit, Max speed, Time jump, Flat C/N0, Alt step, Latch min, Warm-up, S2 corr, S2 cycles |
 | System | Log raw, Reset defaults, Reboot now |
 
-**Night mode** forces the dimmest contrast (0) whatever the Contrast setting says, and switches the screen off after 30 s
-without a key press (or sooner if Screen off is set shorter). A jamming/spoofing alert still wakes the screen and keeps
-it on. Turning it off restores the Contrast setting.
+**Night mode** has three settings. `on` forces the dimmest contrast (0) whatever the Contrast setting says and switches
+the screen off after 30 s without a key press (or sooner if Screen off is set shorter). `auto` only dims, and only
+after sunset: every 10 s it works out from the GPS position and time where the sun is, dims when it is more than 3
+degrees below the horizon and goes back to the Contrast setting when it is higher than 1 degree below (so it does not
+flicker at dusk); without a fix it keeps its last answer. `off` leaves the display alone. A jamming, spoofing, anchor
+or man-overboard alert still wakes the screen and keeps it on. Contrast 0 is the dimmest the display can be, and it is
+also the default, so night mode makes a difference only after you have raised Contrast.
 
 In Advanced the bottom line shows the default of the highlighted threshold with its unit (`def 6 dB`), followed by
 `*chg` when you have changed it; other submenus and the edit mode show the key hints.

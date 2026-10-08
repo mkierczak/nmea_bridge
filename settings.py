@@ -29,7 +29,7 @@ SCHEMA = (
     ('anchor_radius_m', 'Radius', INT, 'Anchor', LIVE, (10, 500, 10)),
     ('contrast', 'Contrast', INT, 'Display', LIVE, (0, 255, 15)),
     ('screen_off_s', 'Screen off', CHOICE, 'Display', LIVE, (0, 30, 60, 300)),
-    ('night', 'Night mode', BOOL, 'Display', LIVE, None),
+    ('night', 'Night mode', CHOICE, 'Display', LIVE, ('off', 'auto', 'on')),
     ('speed_unit', 'Speed unit', CHOICE, 'Display', LIVE, ('kn', 'km/h', 'm/s')),
     ('coord_fmt', 'Coords', CHOICE, 'Display', LIVE, ('ddmm.mm', 'dd.dddd')),
     ('utc_offset_h', 'UTC offset', INT, 'Display', LIVE, (-12, 14, 1)),

@@ -321,11 +321,14 @@ def test_advanced_rows_show_their_default_and_a_change_marker_instead_of_the_key
         assert len(menu.default_hint(r.cfg, key)) <= 16
 
 
-def test_night_mode_is_a_live_toggle_in_the_display_menu():
+def test_night_mode_is_a_live_choice_in_the_display_menu():
     r = Rig()
     r.menu.name = 'Display'
-    items = r.menu.items()
-    idx = items.index(('set', 'night'))
-    r.menu.cursor = idx
-    r.send(UP_LONG)
-    assert r.cfg.get('night') is True and ('apply', 'night') in r.log
+    r.menu.cursor = r.menu.items().index(('set', 'night'))
+    r.send(UP_LONG)                                    # edit
+    r.send(UP_SHORT)                                   # off -> auto
+    assert r.cfg.get('night') == 'auto' and ('apply', 'night') in r.log
+    r.send(UP_SHORT)
+    assert r.cfg.get('night') == 'on'
+    r.send(UP_LONG)                                    # confirm
+    assert r.saved() == {'night': 'on'}
