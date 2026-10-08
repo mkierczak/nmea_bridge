@@ -447,10 +447,10 @@ def test_alert_banner_only_for_medium_and_high_and_only_when_asked():
     for page in (nav.PAGE_MAIN, nav.PAGE_SPEED):
         oled = Oled()
         screens.draw(oled, FakeWriter(), page, p, STATS, 0, False, jam, spoof, WIFI, INFO, {'banner': True})
-        assert 'SPF! K1 T1' in oled.texts() and oled.rects[0][2] == 128
+        assert 'SPOOFING HIGH' in oled.texts() and oled.rects[0][2] == 128
         oled = Oled()
         screens.draw(oled, FakeWriter(), page, p, STATS, 0, False, jam, spoof, WIFI, INFO, {})
-        assert 'SPF! K1 T1' not in oled.texts() and not oled.rects
+        assert 'SPOOFING HIGH' not in oled.texts() and not oled.rects
 
     class Jam:
         def __init__(self, state, reason):
@@ -458,13 +458,15 @@ def test_alert_banner_only_for_medium_and_high_and_only_when_asked():
     spoof.state = 'LOW'
     assert screens.banner_text(Jam('LOW', 'C'), spoof) == ''                     # LOW only gets the small label
     spoof.state = 'MEDIUM'
-    assert screens.banner_text(Jam('OK', ''), spoof) == 'SPF? K1 T1'
-    assert screens.banner_text(Jam('MEDIUM', 'C'), spoof.__class__(p)) == 'JAM? cn0'
+    assert screens.banner_text(Jam('OK', ''), spoof) == 'SPOOFING MEDIUM'
+    assert screens.banner_text(Jam('MEDIUM', 'C'), spoof.__class__(p)) == 'JAMMING MEDIUM'
     spoof.state = 'HIGH'
     assert screens.banner_text(Jam('MEDIUM', 'C'), spoof) == 'SPF! JAM?'
     assert screens.banner_text(Jam('HIGH', 'C'), spoof) == 'SPF! JAM!'
-    spoof.reason = 'K1T1S1C1S3K3'
-    assert len(screens.banner_text(Jam('OK', ''), spoof)) <= 16
+    for state in ('MEDIUM', 'HIGH'):
+        spoof.state = state
+        assert len(screens.banner_text(Jam('OK', ''), spoof)) <= 16
+        assert 'K1' not in screens.banner_text(Jam('OK', ''), spoof)       # no indicator codes in the banner
 
 
 class _Lines(Oled):

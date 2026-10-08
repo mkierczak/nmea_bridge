@@ -14,16 +14,16 @@ MARKS = {'LOW': '.', 'MEDIUM': '?', 'HIGH': '!'}     # after SPF / JAM: SPF. low
 
 
 def banner_text(jam, spoof):
-    """Text of the alert banner, or '' when nothing is at MEDIUM or HIGH (LOW only gets the small label)."""
+    """Text of the alert banner, or '' when nothing is at MEDIUM or HIGH (LOW only gets the small label):
+    'SPOOFING HIGH', 'JAMMING MEDIUM', or 'SPF! JAM?' (the marks stand for the levels) when both are."""
     spf = spoof.state if spoof and spoof.state in ALERT_STATES else ''
     jm = jam.state if jam and jam.state in ALERT_STATES else ''
     if spf and jm:
         return 'SPF{} JAM{}'.format(MARKS[spf], MARKS[jm])
     if spf:
-        return ('SPF{} '.format(MARKS[spf]) + ' '.join(spoof.reason[i:i + 2]
-                                                        for i in range(0, len(spoof.reason), 2)))[:16]
+        return 'SPOOFING ' + spf
     if jm:
-        return ('JAM{} '.format(MARKS[jm]) + ' '.join(JAM_WORDS.get(c, c) for c in jam.reason))[:16]
+        return 'JAMMING ' + jm
     return ''
 
 

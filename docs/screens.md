@@ -34,7 +34,7 @@ Releasing earlier does nothing but the usual short/long press.
 
 **Alert banner and blink.** The detectors report the probability of spoofing and of jamming as `OK`, `LOW`,
 `MEDIUM` or `HIGH`; `MEDIUM` and `HIGH` are alerts. An alert replaces the top row of the Main and
-Speed pages with a white bar showing it (`SPF! K1 T1` for high, `JAM? cn0` for medium, `SPF! JAM?` for both), and the display
+Speed pages with a white bar showing it (`SPOOFING HIGH`, `JAMMING MEDIUM`, or `SPF! JAM?` for both, the mark standing for the level: `?` medium, `!` high); the indicator codes are on the Spoofing and Signal pages, and the display
 blinks (inverted) for 3 s when the alert starts. The first key press on one of those pages dismisses the banner and
 the blink (it does not change the page); the small labels stay. A new alert shows the banner again.
 `LOW` is not an alert: it only shows the small label (`SPF.` / `JAM.`) and does not keep the screen on.
