@@ -306,7 +306,7 @@ def _draw_mob(oled, font, parser, mob, seconds):
     cog = parser.cog_deg
     if cog is not None and (parser.sog_kn or 0) >= 0.5:
         relative = (bearing - round(cog) + 180) % 360 - 180
-        oled.text('rel {:+04d}'.format(relative), 0, 52, 1)
+        oled.text('rel ' + ('+' if relative >= 0 else '-') + '{:03d}'.format(abs(relative)), 0, 52, 1)   # (no {:+d})
     else:
         oled.text('rel ---', 0, 52, 1)
 

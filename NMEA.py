@@ -390,8 +390,9 @@ class Parser(object):
         if len(value) > 0:
             try:
                 if units.COORD_FORMAT == 'dd.dddd':          # decimal degrees: N59.3057°
-                    return "{}{:0{w}.4f}{}".format(hemisphere, units.decimal_degrees(value, deg_digits), chr(176),
-                                                   w=deg_digits + 5)
+                    degrees = units.decimal_degrees(value, deg_digits)
+                    text = '{:07.4f}'.format(degrees) if deg_digits == 2 else '{:08.4f}'.format(degrees)
+                    return hemisphere + text + chr(176)
                 mm = round(float(value[deg_digits:]), 2)
                 return "{}{}{}{:05.2f}".format(hemisphere, value[0:deg_digits], chr(176), mm)   # 03.21, not 3.21
             except ValueError:
