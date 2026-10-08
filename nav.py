@@ -198,10 +198,10 @@ class Navigator(object):
             return TOGGLE_WIFI if self.wifi and self.page == PAGE_MAIN else None   # the Wi-Fi: from Main only
         if self.in_menu:
             return TO_MENU
-        if event == UP_SHORT:
-            self._step(1)
-        elif event == DN_SHORT:
-            self._step(-1)
+        if event == DN_SHORT:
+            self._step(1)                            # DOWN goes forward through the loop: Main, Speed, GPS, Anchor ...
+        elif event == UP_SHORT:
+            self._step(-1)                           # UP goes back: ... Anchor, GPS, Speed, Main
         elif event == UP_LONG and self.page == PAGE_ANCHOR and not self.debug:
             return ANCHOR_LIFT
         elif event == DN_LONG and self.page == PAGE_ANCHOR and not self.debug:

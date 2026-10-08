@@ -20,17 +20,17 @@ def test_main_loop_cycle_both_directions_and_wrap_with_and_without_the_wifi_page
     n = Navigator()
     assert n.page == nav.PAGE_MAIN and n.pages == (nav.PAGE_MAIN, nav.PAGE_SPEED, nav.PAGE_GPS, nav.PAGE_ANCHOR)
     for expected in (nav.PAGE_SPEED, nav.PAGE_GPS, nav.PAGE_ANCHOR):
-        assert n.handle(UP_SHORT) is None and n.page == expected
-    n.handle(UP_SHORT)
-    assert n.page == nav.PAGE_MAIN                    # wrapped
+        assert n.handle(DN_SHORT) is None and n.page == expected
     n.handle(DN_SHORT)
+    assert n.page == nav.PAGE_MAIN                    # wrapped
+    n.handle(UP_SHORT)
     assert n.page == nav.PAGE_ANCHOR
     n.mob_active = True                               # a man-overboard mark adds its page before Wi-Fi
     assert n.pages[-1] == nav.PAGE_MOB
     n.mob_active = False
     n.wifi_up = True
     assert n.pages[-1] == nav.PAGE_WIFI
-    n.handle(UP_SHORT)
+    n.handle(DN_SHORT)
     assert n.page == nav.PAGE_WIFI
     n = Navigator(wifi=False)
     n.wifi_up = True
@@ -42,9 +42,9 @@ def test_chord_toggles_the_debug_loop_and_a_long_down_leaves_it():
     assert n.handle(nav.CHORD) is None and n.debug and n.page == nav.PAGE_LOG
     assert n.pages == nav.DEBUG_PAGES
     for expected in nav.DEBUG_PAGES[1:]:
-        n.handle(UP_SHORT)
+        n.handle(DN_SHORT)
         assert n.page == expected
-    n.handle(UP_SHORT)
+    n.handle(DN_SHORT)
     assert n.page == nav.PAGE_LOG                     # wrapped inside the debug loop
     assert n.handle(DN_LONG) is None and not n.debug and n.page == nav.PAGE_MAIN     # no menu from here
     n.handle(nav.CHORD)
@@ -66,8 +66,8 @@ def test_chord_does_nothing_in_the_menu_and_the_wifi_page_disappears_with_the_ac
 
 def test_dn_long_returns_to_main():
     n = Navigator()
-    n.handle(UP_SHORT)
-    n.handle(UP_SHORT)
+    n.handle(DN_SHORT)
+    n.handle(DN_SHORT)
     n.handle(DN_LONG)
     assert n.page == nav.PAGE_MAIN
 
@@ -81,7 +81,7 @@ def test_long_down_on_the_main_page_opens_the_menu_then_events_are_forwarded():
         assert n.handle(ev) == nav.TO_MENU
     assert n.page == nav.PAGE_MAIN                    # pages untouched while in the menu
     n.close_menu()
-    assert not n.in_menu and n.handle(UP_SHORT) is None and n.page != nav.PAGE_MAIN
+    assert not n.in_menu and n.handle(DN_SHORT) is None and n.page != nav.PAGE_MAIN
 
 
 def test_wifi_gesture_toggles_outside_the_menu_but_is_a_long_up_inside_it():
@@ -150,8 +150,8 @@ def test_event_queue_fifo_full_and_empty():
 
 def test_long_down_elsewhere_goes_back_to_main_and_only_then_opens_the_menu():
     n = Navigator()
-    n.handle(UP_SHORT)
-    n.handle(UP_SHORT)
+    n.handle(DN_SHORT)
+    n.handle(DN_SHORT)
     assert n.page != nav.PAGE_MAIN
     assert n.handle(DN_LONG) is None and n.page == nav.PAGE_MAIN and not n.in_menu
     assert n.handle(DN_LONG) == nav.OPEN_MENU and n.in_menu     # the second long press enters the menu
@@ -244,9 +244,30 @@ def test_long_down_drops_and_long_up_lifts_the_anchor_on_its_page_only():
     n.page = nav.PAGE_ANCHOR
     assert n.handle(DN_LONG) == nav.ANCHOR_DROP and n.page == nav.PAGE_ANCHOR      # does not go back to Main
     assert n.handle(UP_LONG) == nav.ANCHOR_LIFT
-    assert n.handle(UP_SHORT) is None and n.page == nav.PAGE_MAIN               # the pages still cycle
+    assert n.handle(DN_SHORT) is None and n.page == nav.PAGE_MAIN               # the pages still cycle
     n.page = nav.PAGE_GPS
     assert n.handle(UP_LONG) is None and n.handle(DN_LONG) is None and n.page == nav.PAGE_MAIN   # as before
     n.debug = True
     n.page = nav.PAGE_ANCHOR                                    # (never shown in the debug loop)
     assert n.handle(UP_LONG) is None
+
+
+def test_down_goes_forward_through_the_loop_and_up_goes_back():
+    n = Navigator()
+    forward = []
+    for _ in range(4):
+        n.handle(DN_SHORT)
+        forward.append(n.page)
+    assert forward == [nav.PAGE_SPEED, nav.PAGE_GPS, nav.PAGE_ANCHOR, nav.PAGE_MAIN]      # and round again
+    backward = []
+    for _ in range(4):
+        n.handle(UP_SHORT)
+        backward.append(n.page)
+    assert backward == [nav.PAGE_ANCHOR, nav.PAGE_GPS, nav.PAGE_SPEED, nav.PAGE_MAIN]
+    n.handle(nav.CHORD)                                         # the debug loop works the same way
+    assert n.page == nav.PAGE_LOG
+    n.handle(DN_SHORT)
+    assert n.page == nav.PAGE_STATS
+    n.handle(UP_SHORT)
+    n.handle(UP_SHORT)
+    assert n.page == nav.PAGE_DEBUG                             # back from the first page wraps to the last

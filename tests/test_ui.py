@@ -10,7 +10,7 @@ import settings as S
 import ui
 from bridge import Bridge, RxQueue
 from menu import Menu
-from nav import UP_SHORT, UP_LONG, DN_SHORT, DN_LONG, WIFI
+from nav import DN_SHORT, UP_LONG, UP_SHORT, DN_LONG, WIFI
 from test_bridge import Clock, FakeDetector, FakeRadio
 from test_jamming import with_checksum
 from test_menu import FakeOled
@@ -94,11 +94,11 @@ def test_first_step_draws_once_and_idle_steps_do_not_redraw():
 def test_a_key_press_redraws_at_once_and_pages_cycle():
     r = Rig()
     r.step()
-    r.press(UP_SHORT)
-    assert r.navigator.page == nav.PAGE_SPEED and r.draws[-1][0] == nav.PAGE_SPEED
-    r.press(DN_SHORT, DN_SHORT)
-    assert r.navigator.page == nav.PAGE_ANCHOR               # the last page of the main loop (no Wi-Fi, no MOB)
     r.press(DN_SHORT)
+    assert r.navigator.page == nav.PAGE_SPEED and r.draws[-1][0] == nav.PAGE_SPEED
+    r.press(UP_SHORT, UP_SHORT)
+    assert r.navigator.page == nav.PAGE_ANCHOR               # the last page of the main loop (no Wi-Fi, no MOB)
+    r.press(UP_SHORT)
     assert r.navigator.page == nav.PAGE_GPS
     r.press(DN_LONG)
     assert r.navigator.page == nav.PAGE_MAIN
@@ -109,7 +109,7 @@ def test_system_info_is_only_gathered_for_the_pages_that_need_it():
     r.step()
     assert r.system_calls == 0
     r.navigator.debug, r.navigator.page = True, nav.PAGE_SYSTEM
-    r.press(UP_SHORT, DN_SHORT)                            # back to the system page via events
+    r.press(DN_SHORT, UP_SHORT)                            # back to the system page via events
     assert r.system_calls >= 1 and r.draws[-1] == (nav.PAGE_SYSTEM, True)
 
 
@@ -159,9 +159,9 @@ def test_screen_off_timer_wake_key_is_swallowed_and_alert_keeps_the_screen_on():
     r.step(advance=1000)
     assert r.oled.shows == shows                           # nothing is drawn while off
     page = r.navigator.page
-    r.press(UP_SHORT)                                      # first press only wakes the display
+    r.press(DN_SHORT)                                      # first press only wakes the display
     assert not r.ui.screen_off and r.oled.sleeps == [True, False] and r.navigator.page == page
-    r.press(UP_SHORT)
+    r.press(DN_SHORT)
     assert r.navigator.page != page                        # the next one acts
     # an alert wakes it and keeps it on, however long nobody presses a key
     r.step(advance=40000)
@@ -201,7 +201,7 @@ def test_uptime_and_idle_clocks_survive_the_tick_wrap():
 def test_unknown_menu_state_does_not_crash_the_loop():
     r = Rig()
     r.navigator.in_menu = True                             # inconsistent state: menu object missing
-    r.press(UP_SHORT)
+    r.press(DN_SHORT)
     assert not r.navigator.in_menu and r.ui.menu is None
 
 
@@ -212,7 +212,7 @@ def test_pages_are_not_redrawn_when_only_the_last_sentence_changes():
     r.bridge.parser.parse_sentence(with_checksum('GPTXT,01,01,02,ANTENNA OK'))   # nothing the main page shows
     r.step(advance=ui.REFRESH_MS + 10)
     assert len(r.draws) == n                                  # used to redraw every 500 ms regardless
-    r.press(UP_SHORT)                                         # the Stats page lists the last-seen types
+    r.press(DN_SHORT)                                         # the Stats page lists the last-seen types
     n = len(r.draws)
     r.bridge.parser.parse_sentence(with_checksum('GPZDA,201530.00,04,07,2002,00,00'))
     r.step(advance=ui.REFRESH_MS + 10)
@@ -232,9 +232,9 @@ def test_strong_alert_shows_a_banner_that_the_first_key_press_dismisses():
     r.step(advance=10)
     assert r.ctxs[-1]['banner'] is True
     page = r.navigator.page
-    r.press(UP_SHORT)                                      # dismisses the banner, does not change the page
+    r.press(DN_SHORT)                                      # dismisses the banner, does not change the page
     assert r.navigator.page == page and r.ui.alert_acked and r.ctxs[-1]['banner'] is False
-    r.press(UP_SHORT)
+    r.press(DN_SHORT)
     assert r.navigator.page != page
     r.step(advance=1000)
     assert r.ctxs[-1]['banner'] is False                   # stays dismissed while the same alert lasts
@@ -249,11 +249,11 @@ def test_strong_alert_shows_a_banner_that_the_first_key_press_dismisses():
 def test_banner_only_swallows_keys_on_pages_that_show_it():
     r = Rig()
     r.step()
-    r.press(UP_SHORT, UP_SHORT)                            # Main -> Speed -> GPS
+    r.press(DN_SHORT, DN_SHORT)                            # Main -> Speed -> GPS
     assert r.navigator.page == nav.PAGE_GPS
     r.bridge.spoof = FakeDetector('HIGH')
     r.step(advance=10)
-    r.press(DN_SHORT)                                      # the GPS page has no banner: the key acts
+    r.press(UP_SHORT)                                      # the GPS page has no banner: the key acts
     assert r.navigator.page == nav.PAGE_SPEED and not r.ui.alert_acked
 
 
@@ -272,7 +272,7 @@ def test_new_strong_alert_blinks_the_display_for_a_while_unless_dismissed():
     r2.step()
     r2.bridge.detector = FakeDetector('MEDIUM')
     r2.step(advance=10)
-    r2.press(UP_SHORT)
+    r2.press(DN_SHORT)
     assert r2.oled.inverts == [True, False]                # dismissing stops the blink at once
 
 
@@ -352,7 +352,7 @@ def test_main_page_heartbeat_changes_redraw_at_once_and_other_pages_do_not_care(
     state[0] = 'off'
     r.step(advance=50)
     assert len(r.draws) == n + 2 and r.ctxs[-1]['heartbeat'] == 'off'
-    r.press(UP_SHORT)                                      # another page: the heartbeat is not drawn there
+    r.press(DN_SHORT)                                      # another page: the heartbeat is not drawn there
     n = len(r.draws)
     state[0] = 'on'
     r.step(advance=50)
@@ -372,7 +372,7 @@ def test_chord_switches_to_the_debug_loop_and_back():
     r.press(nav.CHORD)
     assert r.navigator.debug and r.navigator.page == nav.PAGE_LOG and r.ctxs[-1]['debug'] is True
     assert r.ctxs[-1]['pages'] == nav.DEBUG_PAGES
-    r.press(UP_SHORT)
+    r.press(DN_SHORT)
     assert r.navigator.page == nav.PAGE_STATS
     r.press(DN_LONG)                                       # a long DOWN leaves the debug loop
     assert not r.navigator.debug and r.navigator.page == nav.PAGE_MAIN and r.ctxs[-1]['debug'] is False
@@ -416,7 +416,7 @@ def test_the_wifi_page_follows_the_access_point():
     up[0] = True
     r.step(advance=10)
     assert r.navigator.pages[-1] == nav.PAGE_WIFI
-    r.press(DN_SHORT)                                      # Main -> last page = Wi-Fi
+    r.press(UP_SHORT)                                      # Main -> last page = Wi-Fi
     assert r.navigator.page == nav.PAGE_WIFI
     up[0] = False                                          # the access point goes off while you look at it
     r.step(advance=10)
@@ -442,14 +442,14 @@ def test_an_alert_that_gets_worse_shows_the_banner_and_blink_again():
     r.step()
     r.bridge.spoof = FakeDetector('MEDIUM')
     r.step(advance=10)
-    r.press(UP_SHORT)                                      # dismissed
+    r.press(DN_SHORT)                                      # dismissed
     assert r.ui.alert_acked and r.ctxs[-1]['banner'] is False
     r.step(advance=ui.BLINK_MS + 100)
     n = len(r.oled.inverts)
     r.bridge.spoof.state = 'HIGH'
     r.step(advance=10)
     assert not r.ui.alert_acked and r.ctxs[-1]['banner'] is True and len(r.oled.inverts) > n
-    r.press(UP_SHORT)
+    r.press(DN_SHORT)
     r.bridge.spoof.state = 'MEDIUM'                        # getting better does not bring it back
     r.step(advance=10)
     assert r.ui.alert_acked
@@ -465,7 +465,7 @@ def test_the_debug_loop_times_out_without_keys():
     assert r.navigator.debug
     r.step(advance=ui.DEBUG_TIMEOUT_MS - 1000)
     assert r.navigator.debug
-    r.press(UP_SHORT)                                      # a key press restarts the timer
+    r.press(DN_SHORT)                                      # a key press restarts the timer
     r.step(advance=ui.DEBUG_TIMEOUT_MS - 1000)
     assert r.navigator.debug
     r.step(advance=2000)
@@ -479,7 +479,7 @@ def test_the_main_page_waits_for_the_first_fix_and_passes_the_uptime():
     assert r.ctxs[-1]['fix_age_s'] is None and r.ctxs[-1]['uptime_s'] == 0
     r.step(advance=2100)
     assert r.ctxs[-1]['uptime_s'] == 2                     # redrawn every second while waiting
-    r.press(UP_SHORT)
+    r.press(DN_SHORT)
     assert r.ctxs[-1]['uptime_s'] is None                  # only the Main page needs it
 
 
@@ -526,7 +526,7 @@ def test_alarm_level_follows_the_alert_and_any_key_press_silences_it_until_it_ge
     r.bridge.spoof = FakeDetector('MEDIUM')
     r.step(advance=10)
     assert r.ui.alarm_level() == alerts.MEDIUM
-    r.press(UP_SHORT)                                      # any key, on any page
+    r.press(DN_SHORT)                                      # any key, on any page
     assert r.ui.alarm_level() == alerts.NONE
     r.bridge.spoof.state = 'HIGH'                          # worse: sounds again
     r.step(advance=10)
@@ -556,7 +556,7 @@ def test_anchor_page_long_down_drops_and_long_up_lifts_the_anchor():
     r = Rig()
     r.bridge.anchor = anchor.AnchorWatch(radius_m=50)
     r.step()
-    r.press(UP_SHORT, UP_SHORT, UP_SHORT)                  # Main -> Speed -> GPS -> Anchor
+    r.press(DN_SHORT, DN_SHORT, DN_SHORT)                  # Main -> Speed -> GPS -> Anchor
     assert r.navigator.page == nav.PAGE_ANCHOR and r.ctxs[-1]['anchor'] is r.bridge.anchor
     r.press(UP_LONG)                                       # nothing to lift yet
     assert r.ctxs[-1]['toast'] == 'No anchor set'
@@ -573,7 +573,7 @@ def test_anchor_page_long_down_drops_and_long_up_lifts_the_anchor():
     assert not r.bridge.anchor.is_set and r.ctxs[-1]['toast'] == 'Anchor lifted'
     r.press(WIFI)                                          # the Wi-Fi gesture does nothing here ...
     assert r.toggles == 0
-    r.press(DN_SHORT, DN_SHORT, DN_SHORT)                  # ... and works on the Main page
+    r.press(UP_SHORT, UP_SHORT, UP_SHORT)                  # ... and works on the Main page
     assert r.navigator.page == nav.PAGE_MAIN
     r.press(WIFI)
     assert r.toggles == 1
@@ -597,7 +597,7 @@ def test_anchor_alarm_banner_urgent_buzzer_snooze_and_repeat():
     assert r.bridge.anchor.alarming
     assert r.ctxs[-1]['banner'] is True and r.ctxs[-1]['banner_text'] == 'ANCHOR DRAG'
     assert r.ui.alarm_level() == alerts.URGENT
-    r.press(UP_SHORT)                                      # dismisses the banner and silences the buzzer
+    r.press(DN_SHORT)                                      # dismisses the banner and silences the buzzer
     assert r.ui.alarm_level() == alerts.NONE and r.ctxs[-1]['banner'] is False
     r.step(advance=ui.SNOOZE_MS - 5000)
     with_fix(r, (HOME[0] + 1080, HOME[1]))
@@ -624,7 +624,7 @@ def test_man_overboard_gesture_marks_the_position_and_raises_the_alarm_from_any_
     assert r.navigator.mob_active and nav.PAGE_MOB in r.navigator.pages
     assert r.ctxs[-1]['banner_text'] == 'MAN OVERBOARD' and r.ctxs[-1]['mob'] is mob
     assert r.ui.alarm_level() == alerts.URGENT and r.bridge.alert_log.entries[-1][1:] == ('MOB!', 'marked')
-    r.press(DN_SHORT)                                      # the first key press acknowledges (banner, buzzer)
+    r.press(UP_SHORT)                                      # the first key press acknowledges (banner, buzzer)
     assert not mob.alerting and r.ui.alarm_level() == alerts.NONE and mob.active
     r.press(nav.MOB)                                       # DN held again: no second mark, just the page
     assert r.ctxs[-1]['toast'] == 'MOB already marked' and r.bridge.alert_log.total == 1
@@ -745,11 +745,11 @@ def test_hold_box_for_up_held_is_the_wifi_on_main_lift_mob_on_its_page_and_nothi
     r.step(advance=ui.HOLD_REFRESH_MS + 1)
     assert r.ctxs[-1]['hold'] == (100, 'Release now!')
     held[0] = None
-    r.press(UP_SHORT, UP_SHORT, UP_SHORT)                  # Anchor: UP held does nothing, so no box
+    r.press(DN_SHORT, DN_SHORT, DN_SHORT)                  # Anchor: UP held does nothing, so no box
     held[0] = 2000
     r.step(advance=ui.REFRESH_MS + 1)
     assert r.ctxs[-1]['hold'] is None
-    r.press(UP_SHORT)                                      # the Wi-Fi is not on this page either (GPS-less loop: Main)
+    r.press(DN_SHORT)                                      # the Wi-Fi is not on this page either (GPS-less loop: Main)
     r.bridge.mob.set(HOME, 0)
     r.navigator.mob_active = True
     r.navigator.page = nav.PAGE_MOB

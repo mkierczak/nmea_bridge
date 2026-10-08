@@ -10,14 +10,14 @@ beside them show what each line is.
 
 ## Navigation
 
-The pages are in two loops. The **main loop** is what you look at under way: **Main, Speed, GPS, Anchor**, the
+The pages are in two loops, and DOWN goes forward through them (Main, Speed, GPS, Anchor, ...) while UP goes back. The **main loop** is what you look at under way: **Main, Speed, GPS, Anchor**, the
 **MOB** page while a man-overboard mark exists and, while the Wi-Fi access point is on, **Wi-Fi**. The **debug loop** holds the pages with the details: **Alerts,
 Stats, Satellites, Signal, Spoofing, System, Debug**.
 
 | Key | On a page | In the menu |
 |---|---|---|
-| UP short | next page of the loop | previous item / increase value |
-| DN short | previous page of the loop | next item / decrease value |
+| UP short | **back** one page in the loop (Main, then Anchor, GPS, Speed ...) | previous item / increase value |
+| DN short | **forward** one page in the loop (Main, Speed, GPS, Anchor ...) | next item / decrease value |
 | UP long (1 s) | nothing; **on Anchor: lift the anchor** | select / confirm |
 | DN long (1 s) | back to Main; **on Main: open the menu**; in the debug loop: leave it; **on Anchor: drop the anchor** | back / cancel / leave the menu |
 | UP held 3 s | **on Main only:** Wi-Fi access point on/off; on the **MOB** page: lift the mark; nowhere else | treated as a normal long press |

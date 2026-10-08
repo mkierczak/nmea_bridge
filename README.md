@@ -58,11 +58,11 @@ Two keys, classified when released: short (< 1 s) and long (>= 1 s).
 
 | | UP | DOWN |
 |---|---|---|
-| **Pages** | short: next page; **hold 3 s: Wi-Fi on/off, on the Main page only** (on the MOB page it lifts the mark); long on the Anchor page: lift the anchor | short: previous page; long: back to Main, and **on the Main page: open the menu**; **hold 3 s: man overboard** (marks the position); long on the Anchor page: drop the anchor |
+| **Pages** | short: back one page; **hold 3 s: Wi-Fi on/off, on the Main page only** (on the MOB page it lifts the mark); long on the Anchor page: lift the anchor | short: forward one page (Main, Speed, GPS, Anchor ...); long: back to Main, and **on the Main page: open the menu**; **hold 3 s: man overboard** (marks the position); long on the Anchor page: drop the anchor |
 | **Menu** | short: cursor up; long: select / toggle / start editing | short: cursor down; long: back (leaves the menu at the top level) |
 | **Editing a value** | short: increase / next; long: confirm | short: decrease / previous; long: cancel (value reverts) |
 
-**Hold both keys for 2 s** to switch between the two page loops. The **main loop** (short presses cycle through it):
+**Hold both keys for 2 s** to switch between the two page loops. The **main loop** (DOWN steps forward through it, UP back):
 **Main**, **Speed** (COG and SOG gauges), **GPS** (satellites used, mean C/N0, the interference-cancellation tag and
 the jamming and spoofing probability gauges), **Anchor** (anchor watch with a drag alarm), **MOB** (while a
 man-overboard mark exists: distance and bearing back to it) and, while the access point is on, **Wi-Fi**. The **debug
