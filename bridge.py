@@ -250,6 +250,8 @@ class Bridge(object):
         self.watchdog = WatchdogPolicy()
         self.stats = {'rcvpm': 1, 'rcv': 1, 'val': 0, 'inv': 0, 'par': 0, 'ign': 0}
         self.last_pos = None
+        self.last_fix = None               # when the last valid fix (RMC status A) arrived
+        self._fix_seen = 0
         self.stale_dropped = 0
         self.radio_errors = 0
         self.errors = {}                   # guard name -> failure count
@@ -270,6 +272,14 @@ class Bridge(object):
         p = self.parser
         return (p.fix_type == 'NO' or self.last_pos is None
                 or ticks_diff(now, self.last_pos) > FIX_STALE_TIMEOUT_MS)
+
+    def fix_age_ms(self, now):
+        """Milliseconds since the last valid fix, or None if there has not been one since boot."""
+        return None if self.last_fix is None else ticks_diff(now, self.last_fix)
+
+    def guard_errors(self):
+        """Failures contained in the optional parts (everything but the radio), since boot."""
+        return sum(count for name, count in self.errors.items() if name != 'radio')
 
     def alert(self):
         """True while a jamming or spoofing alert should keep the display on."""
@@ -302,6 +312,9 @@ class Bridge(object):
         sentence_type = p.sentence_last_valid_type
         if sentence_type in POSITION_TYPES:
             self.last_pos = now
+        if p.fix_count != self._fix_seen:
+            self._fix_seen = p.fix_count
+            self.last_fix = now
         if self.spoof is not None and sentence_type in SPOOF_TYPES:
             self._guard('spoof', self.spoof.evaluate, now)
         block = (self.spoof_action == 'block' and self.spoof is not None

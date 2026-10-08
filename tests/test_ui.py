@@ -22,6 +22,10 @@ class UiOled(FakeOled):
         super().__init__()
         self.shows = 0
         self.sleeps = []
+        self.inverts = []
+
+    def invert(self, flag):
+        self.inverts.append(flag)
 
     def show(self):
         self.shows += 1
@@ -42,12 +46,14 @@ class Rig:
         self.events = nav.EventQueue(8)
         self.navigator = nav.Navigator()
         self.draws = []
+        self.ctxs = []
         self.toggles = 0
         self.system_calls = 0
         self.hook_log = []
 
-        def draw(oled, font, page, parser, stats, dropped, no_fix, jam, spoof, wifi, info):
+        def draw(oled, font, page, parser, stats, dropped, no_fix, jam, spoof, wifi, info, ctx=None):
             self.draws.append((page, info is not None))
+            self.ctxs.append(ctx)
         self.hooks = {'apply': lambda k: self.hook_log.append(k), 'reset': lambda: None,
                       'reboot': lambda: self.hook_log.append('reboot'),
                       'wifi_active': lambda: False, 'wifi_toggle': lambda: None}
@@ -86,7 +92,7 @@ def test_a_key_press_redraws_at_once_and_pages_cycle():
     r = Rig()
     r.step()
     r.press(UP_SHORT)
-    assert r.navigator.page == nav.PAGE_STATS and r.draws[-1][0] == nav.PAGE_STATS
+    assert r.navigator.page == nav.PAGE_SPEED and r.draws[-1][0] == nav.PAGE_SPEED
     r.press(DN_SHORT, DN_SHORT)
     assert r.navigator.page == nav.PAGES[-1]
     r.press(DN_LONG)
@@ -211,3 +217,117 @@ def test_pages_are_not_redrawn_when_only_the_last_sentence_changes():
     r.bridge.parser.parse_sentence(with_checksum('GNGGA,123520,4807.040,N,01131.000,E,1,08,0.9,5.4,M,46.9,M,,'))
     r.step(advance=ui.REFRESH_MS + 10)
     assert len(r.draws) == n + 2                              # visible data changed: redrawn
+
+
+def test_strong_alert_shows_a_banner_that_the_first_key_press_dismisses():
+    r = Rig()
+    r.step()
+    assert r.ctxs[-1]['banner'] is False
+    r.bridge.spoof = FakeDetector('ALERT')
+    r.step(advance=10)
+    assert r.ctxs[-1]['banner'] is True
+    page = r.navigator.page
+    r.press(UP_SHORT)                                      # dismisses the banner, does not change the page
+    assert r.navigator.page == page and r.ui.alert_acked and r.ctxs[-1]['banner'] is False
+    r.press(UP_SHORT)
+    assert r.navigator.page != page
+    r.step(advance=1000)
+    assert r.ctxs[-1]['banner'] is False                   # stays dismissed while the same alert lasts
+    r.bridge.spoof.state = 'OK'                            # alert over ...
+    r.step(advance=1000)
+    r.bridge.spoof.state = 'ALERT'                         # ... and a new one
+    r.press(DN_LONG)                                       # back to Main
+    r.step(advance=1000)
+    assert r.ctxs[-1]['banner'] is True and not r.ui.alert_acked
+
+
+def test_banner_only_swallows_keys_on_pages_that_show_it():
+    r = Rig()
+    r.step()
+    r.press(UP_SHORT, UP_SHORT)                            # Main -> Speed -> Stats
+    assert r.navigator.page == nav.PAGE_STATS
+    r.bridge.spoof = FakeDetector('ALERT')
+    r.step(advance=10)
+    r.press(UP_SHORT)
+    assert r.navigator.page == nav.PAGE_SATS and not r.ui.alert_acked
+
+
+def test_new_strong_alert_blinks_the_display_for_a_while_unless_dismissed():
+    r = Rig()
+    r.step()
+    r.bridge.detector = FakeDetector('JAM?')
+    r.step(advance=10)
+    assert r.oled.inverts == [True]
+    r.step(advance=ui.BLINK_HALF_MS)
+    r.step(advance=ui.BLINK_HALF_MS)
+    assert r.oled.inverts == [True, False, True]
+    r.step(advance=ui.BLINK_MS)
+    assert r.oled.inverts[-1] is False and not r.ui._inverted     # ends normal, not inverted
+    r2 = Rig()
+    r2.step()
+    r2.bridge.detector = FakeDetector('JAM?')
+    r2.step(advance=10)
+    r2.press(UP_SHORT)
+    assert r2.oled.inverts == [True, False]                # dismissing stops the blink at once
+
+
+def test_suspect_or_low_neither_banner_nor_blink():
+    r = Rig()
+    r.bridge.spoof = FakeDetector('SUSPECT')
+    r.bridge.detector = FakeDetector('LOW')
+    r.step()
+    r.step(advance=100)
+    assert r.ctxs[-1]['banner'] is False and r.oled.inverts == []
+
+
+def test_night_mode_turns_the_screen_off_after_30_seconds_but_an_alert_keeps_it_on():
+    r = Rig()
+    r.cfg.set('night', True)
+    r.step()
+    r.step(advance=29000)
+    assert not r.ui.screen_off
+    r.step(advance=2000)
+    assert r.ui.screen_off
+    r.bridge.spoof = FakeDetector('ALERT')
+    r.step(advance=1000)
+    assert not r.ui.screen_off
+    r2 = Rig(screen_off_s=30)                              # a shorter user setting still wins
+    r2.cfg.set('night', True)
+    r2.cfg.set('screen_off_s', 0)
+    r2.step()
+    r2.step(advance=31000)
+    assert r2.ui.screen_off
+
+
+def test_wifi_hold_box_appears_while_up_is_held_and_follows_the_progress():
+    r = Rig()
+    held = [None]
+    r.ui.up_held = lambda now: held[0]
+    r.step()
+    assert r.ctxs[-1]['hold'] is None
+    held[0] = 200
+    r.step(advance=200)
+    assert r.ctxs[-1]['hold'] is None                      # a short press shows nothing
+    n = len(r.draws)
+    held[0] = 1500
+    r.step(advance=200)
+    assert r.ctxs[-1]['hold'] == (50, True) and len(r.draws) == n + 1
+    held[0] = 2000
+    r.step(advance=ui.HOLD_REFRESH_MS + 1)
+    assert r.ctxs[-1]['hold'] == (66, True)
+    held[0] = 9000
+    r.step(advance=ui.HOLD_REFRESH_MS + 1)
+    assert r.ctxs[-1]['hold'] == (100, True)
+    held[0] = ui.HOLD_STALE_MS + 1                         # a lost release edge must not leave it on screen
+    r.step(advance=ui.REFRESH_MS + 1)
+    assert r.ctxs[-1]['hold'] is None
+
+
+def test_fix_age_is_passed_while_there_is_no_fix():
+    r = Rig()
+    r.step()
+    assert r.ctxs[-1]['fix_age_s'] is None                 # no fix ever: nothing to count from
+    r.bridge.last_fix = r.clock.now - 5000
+    r.bridge.parser.fix_type = 'NO'
+    r.step(advance=ui.REFRESH_MS + 1)
+    assert r.ctxs[-1]['fix_age_s'] == 5

@@ -27,6 +27,7 @@ SCHEMA = (
     ('fwd_ZDA', 'ZDA', BOOL, 'Radio output', LIVE, None),
     ('contrast', 'Contrast', INT, 'Display', LIVE, (0, 255, 15)),
     ('screen_off_s', 'Screen off', CHOICE, 'Display', LIVE, (0, 30, 60, 300)),
+    ('night', 'Night mode', BOOL, 'Display', LIVE, None),
     ('log_raw', 'Log raw', BOOL, 'System', LIVE, None),
     ('cn0_drop_db', 'CN0 drop', INT, 'Advanced', LIVE, (3, 15, 1)),
     ('tracked_drop_pct', 'Sats drop%', INT, 'Advanced', LIVE, (30, 90, 5)),
@@ -42,10 +43,19 @@ SCHEMA = (
     ('elev_cycles', 'S2 cycles', INT, 'Advanced', LIVE, (3, 60, 1)),
 )
 _SPEC = {row[0]: row for row in SCHEMA}
+# unit shown after the default in the menu hint line (the advanced thresholds have cryptic labels)
+UNITS = {'cn0_drop_db': ' dB', 'tracked_drop_pct': '%', 'max_speed_kn': ' kn', 'time_jump_ms': ' ms',
+         'uniform_std_x10': ' x0.1dB', 'alt_step_m': ' m', 'latch_min': ' min', 'warmup_fixes': ' fixes',
+         'elev_corr_x100': ' x0.01', 'jam_enter_cycles': ' cyc', 'jam_exit_cycles': ' cyc',
+         'elev_cycles': ' cyc'}
 
 
 def spec(key):
     return _SPEC[key]
+
+
+def unit(key):
+    return UNITS.get(key, '')
 
 
 def coerce(key, value):

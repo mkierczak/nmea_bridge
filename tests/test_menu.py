@@ -295,3 +295,37 @@ def test_system_menu_offers_log_raw_before_the_actions():
     assert labels == ['Log raw', 'Reset defaults', 'Reboot now']
     r.send(UP_LONG)                                    # cursor starts on Log raw: toggle it
     assert r.cfg.get('log_raw') is True and r.log == [('apply', 'log_raw')] and r.saved() == {'log_raw': True}
+
+
+def test_advanced_rows_show_their_default_and_a_change_marker_instead_of_the_key_hint():
+    r = Rig()
+    r.menu.name = 'Advanced'
+    r.menu.cursor = 0
+    oled = FakeOled()
+    r.menu.draw(oled)
+    assert oled.calls[-1][0] == 'def 6 dB'                  # cn0_drop_db default; first Advanced row
+    r.cfg.set('cn0_drop_db', 9)
+    oled = FakeOled()
+    r.menu.draw(oled)
+    assert oled.calls[-1][0] == 'def 6 dB *chg'
+    r.menu.edit = ('cn0_drop_db', 6)
+    oled = FakeOled()
+    r.menu.draw(oled)
+    assert oled.calls[-1][0] == menu.EDIT_HINT              # editing keeps its own hint
+    r.menu.edit = None
+    r.menu.name, r.menu.cursor = 'Display', 0
+    oled = FakeOled()
+    r.menu.draw(oled)
+    assert oled.calls[-1][0] == menu.BROWSE_HINT            # other groups keep the key hint
+    for key in (row[0] for row in S.SCHEMA if row[3] == 'Advanced'):
+        assert len(menu.default_hint(r.cfg, key)) <= 16
+
+
+def test_night_mode_is_a_live_toggle_in_the_display_menu():
+    r = Rig()
+    r.menu.name = 'Display'
+    items = r.menu.items()
+    idx = items.index(('set', 'night'))
+    r.menu.cursor = idx
+    r.send(UP_LONG)
+    assert r.cfg.get('night') is True and ('apply', 'night') in r.log

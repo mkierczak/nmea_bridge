@@ -20,8 +20,10 @@ class FakeWriter:
     def __init__(self, *a, **k):
         pass
 
+    printed = []
+
     def printstring(self, s):
-        pass
+        FakeWriter.printed.append(s)
 
 
 class Oled(FakeOled):
@@ -323,3 +325,108 @@ def test_satellites_page_rows_without_elevation_keep_their_columns():
     screens.draw(oled, FakeWriter(), nav.PAGE_SATS, p, STATS, 0, False, None, None, WIFI, INFO)
     rows = [text for text, x, y in oled.calls if text[:1] in 'GB' and y >= 12]
     assert rows == ['G05  --', 'G193  7']                            # fixed-width columns, no crash on None
+
+
+def _speed_page(sog, cog, no_fix=False, **ctx):
+    p = NMEA.Parser()
+    p.sog_kn, p.cog_deg = sog, cog
+    FakeWriter.printed.clear()
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_SPEED, p, STATS, 0, no_fix, None, None, WIFI, INFO, ctx)
+    return oled, list(FakeWriter.printed)
+
+
+def test_speed_page_shows_sog_and_cog():
+    oled, printed = _speed_page(5.24, 123.6)
+    assert printed == ['5.2', '124' + chr(176)]
+    check_fits([(nav.PAGE_SPEED, oled)])
+
+
+def test_speed_page_hides_course_when_nearly_stationary_and_values_without_fix():
+    assert _speed_page(0.2, 123.0)[1] == ['0.2', '---']
+    assert _speed_page(None, None)[1] == ['--', '---']
+    assert _speed_page(8.0, 90.0, no_fix=True)[1] == ['--', '---']
+    assert _speed_page(8.0, 359.6)[1][1] == '000' + chr(176)          # rounds up past north
+
+
+def test_no_fix_shows_how_long_ago_the_last_fix_was():
+    p = NMEA.Parser()
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, p, STATS, 0, True, None, None, WIFI, INFO, {'fix_age_s': 42})
+    assert 'NO FIX' in oled.texts() and 'lost 0:42' in oled.texts()
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, p, STATS, 0, True, None, None, WIFI, INFO, {'fix_age_s': None})
+    assert oled.texts()[-3:].count('NO FIX') == 1 and not any(t.startswith('lost') for t in oled.texts())
+    assert screens.age_text(59) == 'lost 0:59' and screens.age_text(754) == 'lost 12:34'
+    assert screens.age_text(3725) == 'lost 1h02m'
+
+
+def test_alert_banner_only_for_strong_alerts_and_only_when_asked():
+    p = NMEA.Parser()
+    spoof, jam = SpoofDetector(p), JamDetector(p)
+    spoof.state, spoof.reason = 'ALERT', 'K1T1'
+    for page in (nav.PAGE_MAIN, nav.PAGE_SPEED):
+        oled = Oled()
+        screens.draw(oled, FakeWriter(), page, p, STATS, 0, False, jam, spoof, WIFI, INFO, {'banner': True})
+        assert 'SPF! K1 T1' in oled.texts() and oled.rects[0][2] == 128
+        oled = Oled()
+        screens.draw(oled, FakeWriter(), page, p, STATS, 0, False, jam, spoof, WIFI, INFO, {})
+        assert 'SPF! K1 T1' not in oled.texts() and not oled.rects
+    class Jam:
+        def __init__(self, state, reason):
+            self.state, self.reason = state, reason
+    spoof.state = 'SUSPECT'
+    assert screens.banner_text(Jam('LOW', 'C'), spoof) == ''
+    assert screens.banner_text(Jam('JAM?', 'C'), spoof) == 'JAM? cn0'
+    spoof.state = 'ALERT'
+    assert screens.banner_text(Jam('JAM?', 'C'), spoof) == 'SPF! JAM?'
+    spoof.reason = 'K1T1S1C1S3K3'
+    assert len(screens.banner_text(Jam('OK', ''), spoof)) <= 16
+
+
+class _Lines(Oled):
+    def __init__(self):
+        super().__init__()
+        self.lines = []
+
+    def hline(self, x, y, w, c):
+        self.lines.append((x, y, w))
+
+
+def test_page_indicator_marks_the_current_page_along_the_bottom():
+    p = NMEA.Parser()
+    pages = nav.PAGES
+    oled = _Lines()
+    screens.draw(oled, FakeWriter(), nav.PAGE_STATS, p, STATS, 0, False, None, None, WIFI, INFO, {'pages': pages})
+    width = 128 // len(pages)
+    bottom = [l for l in oled.lines if l[1] == 63]
+    assert len(bottom) == len(pages) and [l for l in oled.lines if l[1] == 62] == [
+        (pages.index(nav.PAGE_STATS) * width, 62, width - 2)]
+    oled = _Lines()
+    screens.draw(oled, FakeWriter(), nav.PAGE_STATS, p, STATS, 0, False, None, None, WIFI, INFO, {})
+    assert not [l for l in oled.lines if l[1] >= 62]                     # no indicator without the page list
+
+
+def test_wifi_hold_box_shows_progress_and_the_target_state():
+    p = NMEA.Parser()
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, p, STATS, 0, False, None, None, WIFI, INFO, {'hold': (50, True)})
+    assert 'Hold: Wi-Fi on' in oled.texts() and oled.rects[-1] == (5, 51, 59, 6)
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, p, STATS, 0, False, None, None, WIFI, INFO, {'hold': (100, False)})
+    assert 'Release now!' in oled.texts() and oled.rects[-1] == (5, 51, 118, 6)
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, p, STATS, 0, False, None, None, WIFI, INFO, {'hold': (30, False)})
+    assert 'Hold: Wi-Fi off' in oled.texts()
+
+
+def test_system_page_shows_errors_instead_of_the_board_id_only_when_there_are_some():
+    def lines(**extra):
+        oled = Oled()
+        screens.draw(oled, FakeWriter(), nav.PAGE_SYSTEM, NMEA.Parser(), STATS, 0, False, None, None, WIFI,
+                     dict(INFO, **extra))
+        return oled.texts()
+    assert lines()[-1] == 'e66164084371b26f'
+    assert lines(rerr=0, gerr=0, stale=0)[-1] == 'e66164084371b26f'
+    assert lines(rerr=1, gerr=0, stale=12)[-1] == 'ERR r1 g0 s12'
+    assert lines(rerr=500, gerr=3, stale=0)[-1] == 'ERR r99+ g3 s0'

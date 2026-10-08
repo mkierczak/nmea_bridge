@@ -7,8 +7,9 @@ except ImportError:
         return a - b
 
 (PAGE_MAIN, PAGE_STATS, PAGE_SATS, PAGE_SIGNAL, PAGE_SPOOF, PAGE_SYSTEM, PAGE_DEBUG,
- PAGE_WIFI) = range(8)
-PAGES = (PAGE_MAIN, PAGE_STATS, PAGE_SATS, PAGE_SIGNAL, PAGE_SPOOF, PAGE_SYSTEM, PAGE_DEBUG, PAGE_WIFI)
+ PAGE_WIFI, PAGE_SPEED) = range(9)
+PAGES = (PAGE_MAIN, PAGE_SPEED, PAGE_STATS, PAGE_SATS, PAGE_SIGNAL, PAGE_SPOOF, PAGE_SYSTEM, PAGE_DEBUG,
+         PAGE_WIFI)
 
 UP_SHORT, UP_LONG, DN_SHORT, DN_LONG, WIFI = 'UP_SHORT', 'UP_LONG', 'DN_SHORT', 'DN_LONG', 'WIFI'
 
@@ -41,6 +42,11 @@ class ButtonTracker(object):
         self.debounce_ms = debounce_ms
         self._pressed_at = None
         self._last_edge = None
+
+    def held_ms(self, now_ms):
+        """How long the key has been held down, or None while it is not pressed."""
+        pressed = self._pressed_at
+        return None if pressed is None else _ticks_diff(now_ms, pressed)
 
     def edge(self, value, now_ms):
         if self._last_edge is not None and _ticks_diff(now_ms, self._last_edge) < self.debounce_ms:

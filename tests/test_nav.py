@@ -131,3 +131,12 @@ def test_long_down_elsewhere_goes_back_to_main_and_only_then_opens_the_menu():
     n.handle(DN_LONG)                                           # in the menu it is "back"
     n.close_menu()
     assert n.handle(DN_LONG) == nav.OPEN_MENU                   # and again from the Main page
+
+
+def test_button_tracker_reports_how_long_a_key_has_been_held():
+    t = nav.ButtonTracker('UP', 1000, 3000)
+    assert t.held_ms(500) is None
+    t.edge(0, 1000)
+    assert t.held_ms(1700) == 700
+    assert t.edge(1, 2000) == nav.UP_LONG
+    assert t.held_ms(2100) is None

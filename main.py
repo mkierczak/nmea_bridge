@@ -94,8 +94,8 @@ spi1 = SPI(1, baudrate=OLED_SPI_BAUDRATE, sck=Pin(PIN_OLED_SCK), mosi=Pin(PIN_OL
 oled = sh1107.SH1107_SPI(128, 64, spi1, Pin(PIN_OLED_DC), Pin(PIN_OLED_RST), Pin(PIN_OLED_CS), rotate=180)
 font_large = Writer(oled, roboto14)
 oled.init_display()
-if cfg.is_overridden('contrast'):
-    oled.contrast(cfg.get('contrast'))  # the driver starts at 0
+if cfg.is_overridden('contrast') or cfg.get('night'):
+    oled.contrast(0 if cfg.get('night') else cfg.get('contrast'))  # the driver starts at 0
 oled.fill(0)
 oled.text('Waiting for fix...', 0, 0, 1)
 oled.show()
@@ -131,8 +131,8 @@ def make_button_handler(tracker):
 key0 = Pin(PIN_KEY_UP, Pin.IN, Pin.PULL_UP)
 key1 = Pin(PIN_KEY_DN, Pin.IN, Pin.PULL_UP)
 # Register the handler functions for both rising and falling edges
-key0.irq(trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING, handler=make_button_handler(
-    nav.ButtonTracker('UP', LONG_PRESS_THRESHOLD, WIFI_TOGGLE_PRESS if WIFI_ENABLE else None)))
+up_tracker = nav.ButtonTracker('UP', LONG_PRESS_THRESHOLD, WIFI_TOGGLE_PRESS if WIFI_ENABLE else None)
+key0.irq(trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING, handler=make_button_handler(up_tracker))
 key1.irq(trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING, handler=make_button_handler(
     nav.ButtonTracker('DN', LONG_PRESS_THRESHOLD)))
 
@@ -276,8 +276,8 @@ def apply_setting(key):
         core.spoof_action = cfg.get(key)
     elif key.startswith('fwd_'):
         core.forward_types = tuple(t for t in FORWARD_TYPES_ALL if cfg.get('fwd_' + t))
-    elif key == 'contrast':
-        oled.contrast(cfg.get(key))
+    elif key == 'contrast' or key == 'night':
+        oled.contrast(0 if cfg.get('night') else cfg.get('contrast'))   # night mode: the dimmest setting
     elif key == 'log_raw':
         set_raw_log(cfg.get(key))
     elif key != 'screen_off_s':   # read every loop; everything else is an advanced threshold
@@ -339,6 +339,7 @@ _UID = binascii.hexlify(machine.unique_id()).decode()
 def system_info():
     inv_base = core.stats['rcv'] or 1
     return {'uptime_s': screen_ui.uptime_ms // 1000, 'heap': free_heap(utime.ticks_ms()),
+            'rerr': core.radio_errors, 'gerr': core.guard_errors(), 'stale': core.stale_dropped,
             'dropped': rx_queue.dropped, 'inv_pct': round(core.stats['inv'] * 100 / inv_base),
             'baud': GPS_BAUDRATE, 'found': reader.found, 'fix_ms': FIX_INTERVAL_MS, 'gnss': GNSS_MODE,
             'uid': _UID, 'now_ms': utime.ticks_ms(),
@@ -349,7 +350,8 @@ core.detector = JamDetector(nmea_parser) if cfg.get('jam_detect') else None
 core.spoof = make_spoof() if cfg.get('spoof_detect') else None
 screen_ui = ui.UiController(cfg, oled, font_large, screens.draw, navigator, events, core, make_menu,
                             wifi_info, system_info, lambda: set_wifi(not wifi_active()), utime.ticks_ms,
-                            menu_timeout_ms=60 * 1000)
+                            menu_timeout_ms=60 * 1000,
+                            up_held=up_tracker.held_ms if WIFI_ENABLE else None, wifi_ms=WIFI_TOGGLE_PRESS)
 
 utime.sleep(1)  # grace time for the UARTs to start
 gc.collect()    # boot is over: start the loop from a compact heap (the long-lived objects are all allocated)

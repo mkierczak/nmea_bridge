@@ -14,10 +14,23 @@ comes from. The drawing code is `screens.py`; the menu is `menu.py`.
 | DN long (1 s) | back to Main; **on Main: open the menu** | back / cancel / leave the menu |
 | UP held 3 s | Wi-Fi access point on/off | treated as a normal long press |
 
-Page order (UP goes down this list and wraps around): **Main, Stats, Satellites, Signal, Spoofing, System,
+Page order (UP goes down this list and wraps around): **Main, Speed, Stats, Satellites, Signal, Spoofing, System,
 Debug, Wi-Fi**. The Wi-Fi page exists only when `WIFI_ENABLE` is set. The screen can switch itself off after a
 timeout (menu Display > Screen off); the first key press only wakes it, and a jamming or spoofing alert wakes it and
 keeps it on. Pages are redrawn when a visible value changes (and at least every 500 ms when something did).
+
+**On every page**, the bottom edge carries a page indicator: one segment per page, two pixels high for the page you
+are on.
+
+**Wi-Fi gesture feedback.** While UP is held for more than about 0.4 s a box appears: `Hold: Wi-Fi on` (or `off`,
+whichever the release will switch to) with a progress bar that fills over the 3 s; at full it reads `Release now!`.
+Releasing earlier does nothing but the usual short/long press.
+
+**Alert banner and blink.** A strong alert (spoofing `ALERT`, jamming `JAM?`) replaces the top row of the Main and
+Speed pages with a white bar showing the alert (`SPF! K1 T1`, `JAM? cn0`, or `SPF! JAM?` for both), and the display
+blinks (inverted) for 3 s when the alert starts. The first key press on one of those pages dismisses the banner and
+the blink (it does not change the page); the small `SPF!`/`JAM?` labels stay. A new alert shows the banner again.
+`SUSPECT` and `LOW` only use the small labels.
 
 ## 1. Main
 
@@ -36,13 +49,32 @@ GPS 3D 9/14        BBB   <- fix, mode, satellites used/in view, DOP letters
 | Jamming label (x = 72) | Blank while the jamming detector is off or still learning (`INIT`); otherwise `OK`, `LOW` (suspected signal degradation) or `JAM?` (strong evidence). See [jamming-detection.md](jamming-detection.md). |
 | Spoofing label (right edge) | Blank when `OK` or the detector is off; `SPF?` (suspect) or `SPF!` (alert). If both labels would touch they shrink to `S?` / `S!`. See [spoofing-detection.md](spoofing-detection.md). |
 | Latitude / longitude | Hemisphere letter, whole degrees, decimal minutes (2 decimals): `N59°12.34`. Replaced by `NO FIX` when there is no usable position. |
-| `NO FIX` | Shown when the last GGA says no fix, no position sentence has arrived yet, or the last position sentence is older than 10 s. |
+| `NO FIX` | Shown when the last GGA says no fix, no position sentence has arrived yet, or the last position sentence is older than 10 s. Under it `lost m:ss` (or `lost 1h02m`) counts the time since the last valid fix; nothing is shown if there has been no fix since boot. |
+| Alert banner | While a strong alert is active and not dismissed, the time/label row is replaced by a white bar with the alert text (see Navigation). |
 | Fix | Last GGA fix quality: `NO`, `GPS`, `DGPS` (differential/SBAS) or `?`. |
 | Mode | From GSA: `2D`, `3D`, or blank when unknown. |
 | `used/view` | Satellites used in the solution (GGA) / satellites in view (sum of the GSV totals of all systems). |
 | DOP letters (right) | Three letters for PDOP, HDOP, VDOP, each classified: `A` < 1 (ideal), `B` 1-2 (excellent), `C` 2-5 (good), `D` 5-10 (moderate), `E` 10-20 (fair), `F` >= 20 (poor), `?` unknown. |
 
-## 2. Stats
+## 2. Speed
+
+```
+SOG kn
+-------------------------
+5.2                      <- speed over ground, knots (large font)
+COG deg
+-------------------------
+124°                     <- course over ground, degrees true (large font)
+```
+
+| Item | Meaning |
+|---|---|
+| SOG | Speed over ground in knots from the last RMC, one decimal. `--` without a fix. |
+| COG | Course over ground in degrees (000-359) from the last RMC. `---` without a fix, when the speed is below 0.5 kn (the course of a nearly stationary receiver is noise) or when the module reports none. |
+
+The alert banner replaces the `SOG kn` header row, as on the Main page.
+
+## 3. Stats
 
 ```
 rx58/m d0                <- sentences per minute, dropped sentences
@@ -67,7 +99,7 @@ The percentages are over a 10-second window of everything the GPS thread framed,
 | type after each percentage | Three-letter type of the most recent sentence in that category. |
 | `CN a/b nc/d` | Only while jamming detection is on. `a` mean C/N0 of the tracked satellites now, `b` the learned baseline mean, `c` satellites tracked now, `d` baseline satellite count. |
 
-## 3. Satellites
+## 4. Satellites
 
 ```
 sat  el C/N0
@@ -85,7 +117,7 @@ The five strongest tracked satellites (C/N0 > 0), strongest first. `no satellite
 | bar | Length proportional to C/N0 (full bar = 50 dB-Hz or more). |
 | number | C/N0 (signal-to-noise density) in dB-Hz. Typical open-sky values are 35-50. |
 
-## 4. Signal (jamming indicator)
+## 5. Signal (jamming indicator)
 
 ```
 JAM OK                   <- detector state
@@ -108,7 +140,7 @@ mod:ok AIC+              <- module's own jamming status, interference cancellati
 | `mod:` | The L76B's own jamming detector (`$PMTKSPF`): `?` unknown, `ok`, `warn`, `CRIT`. |
 | `AIC` | Active interference cancellation: `+` module acknowledged it as on, `-` refused, `?` no answer yet. |
 
-## 5. Spoofing
+## 6. Spoofing
 
 ```
 SPF OK                   <- detector state
@@ -130,7 +162,7 @@ latch 9:41               <- ALERT hold-off countdown
 
 Details of each indicator: [spoofing-detection.md](spoofing-detection.md).
 
-## 6. System
+## 7. System
 
 ```
 up 1h23m45s
@@ -150,9 +182,9 @@ vb48139d
 | baud line | `baud 4800 ok`: module already at the configured rate. `b4800<9600`: the module was found at 9600 and switched to 4800. `baud 4800 ?`: no module was heard (check wiring/power; the bridge keeps looking). |
 | `fix..ms <gnss>` | Configured fix interval and GNSS mode (`GPS` or `GPS+BD`). |
 | `v...` | Software version from `git describe` at deploy time (`-dirty` = uncommitted changes, `dev` = no git). |
-| last line | First 16 hex digits of the board's unique ID (the Wi-Fi name suffix is derived from it). |
+| last line | First 16 hex digits of the board's unique ID (the Wi-Fi name suffix is derived from it). It is replaced by `ERR r<n> g<n> s<n>` as soon as any of these counters is non-zero (each capped at `99+`): `r` radio write failures, `g` failures contained in the optional parts (detectors, Wi-Fi, logging, ...), `s` position sentences dropped because a stall made them too old. They are all zero in normal operation; see `errors` in `bridge.py`. |
 
-## 7. Debug
+## 8. Debug
 
 ```
 $GNGGA,123456.00  <- start of the last valid sentence
@@ -174,7 +206,7 @@ OTHER:0     why:CN
 | `S:` | Reason string of the spoofing detector (first 8 characters), only when it is on. |
 | `why:` | Reason letters of the jamming detector (`C` cn0, `N` sats, `F` fix, `M` module), only when it is on. |
 
-## 8. Wi-Fi
+## 9. Wi-Fi
 
 ```
 WiFi: ON sta0
@@ -205,9 +237,16 @@ reboot; items marked `*` after the label are applied only at the next boot. The 
 | GPS | Baudrate*, GNSS mode* |
 | Detection | Jamming, Spoofing, Spoof act. (`display` / `block`) |
 | Radio output | RMC, GGA, GSA, GSV, ZDA (which sentence types go to the radio) |
-| Display | Contrast, Screen off (`never`, `30s`, `60s`, `5m`) |
+| Display | Contrast, Screen off (`never`, `30s`, `60s`, `5m`), Night mode |
 | Wi-Fi | Wi-Fi now (on/off), New password |
 | Advanced | Detector thresholds: CN0 drop, Sats drop%, Jam enter, Jam exit, Max speed, Time jump, Flat C/N0, Alt step, Latch min, Warm-up, S2 corr, S2 cycles |
 | System | Log raw, Reset defaults, Reboot now |
+
+**Night mode** forces the dimmest contrast (0) whatever the Contrast setting says, and switches the screen off after 30 s
+without a key press (or sooner if Screen off is set shorter). A jamming/spoofing alert still wakes the screen and keeps
+it on. Turning it off restores the Contrast setting.
+
+In Advanced the bottom line shows the default of the highlighted threshold with its unit (`def 6 dB`), followed by
+`*chg` when you have changed it; other submenus and the edit mode show the key hints.
 
 The advanced thresholds are explained in the two detection documents.

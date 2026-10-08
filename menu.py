@@ -21,6 +21,14 @@ def _fmt(key, value):
     return str(value)
 
 
+def default_hint(cfg, key):
+    """'def 30 kn' (and ' *chg' when the setting differs from it): fits the 16-character bottom line."""
+    text = 'def {}{}'.format(_fmt(key, cfg.defaults[key]), S.unit(key))
+    if cfg.is_overridden(key):
+        text += ' *chg'
+    return text[:16]
+
+
 class Menu(object):
     """hooks: 'apply'(key) after a live setting changed, 'reset', 'reboot', and optionally
     'wifi_toggle', 'wifi_active' (a bool-returning callable) and 'regen_password'."""
@@ -182,4 +190,10 @@ class Menu(object):
             text = label[:width]
             line = text + ' ' * (width - len(text)) + value   # (MicroPython's str has no ljust)
             oled.text(('>' if idx == self.cursor else ' ') + line, 0, 11 + 10 * i, 1)
-        oled.text(self.message or (EDIT_HINT if self.edit else BROWSE_HINT), 0, 56, 1)
+        oled.text(self.message or (EDIT_HINT if self.edit else self._browse_hint(items)), 0, 56, 1)
+
+    def _browse_hint(self, items):
+        """In Advanced the cryptic labels get their default value (and a change marker) instead of the key hint."""
+        if self.name == 'Advanced' and items[self.cursor][0] == 'set':
+            return default_hint(self.cfg, items[self.cursor][1])
+        return BROWSE_HINT

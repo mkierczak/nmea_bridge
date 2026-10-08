@@ -639,3 +639,18 @@ def test_forward_cache_matches_forward_decision_for_all_combinations():
                                           block, b.block_types, True)
                 code = b._forward_code(t, tk, block)
                 assert (bool(code & 1), bool(code & 2)) == want
+
+
+def test_fix_age_counts_from_the_last_valid_fix_and_error_summary():
+    b, clock = make_bridge()
+    assert b.fix_age_ms(clock()) is None
+    push(b, GGA)                                           # a GGA is not a fix of its own
+    b.step(clock())
+    assert b.fix_age_ms(clock()) is None
+    clock.now = 2000
+    push(b, RMC)
+    b.step(clock())
+    clock.now = 5500
+    assert b.fix_age_ms(clock()) == 3500
+    b.errors.update({'radio': 2, 'spoof': 1, 'wifi_send': 3})
+    assert b.guard_errors() == 4
