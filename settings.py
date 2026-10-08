@@ -26,6 +26,7 @@ SCHEMA = (
     ('fwd_GSA', 'GSA', BOOL, 'Radio output', LIVE, None),
     ('fwd_GSV', 'GSV', BOOL, 'Radio output', LIVE, None),
     ('fwd_ZDA', 'ZDA', BOOL, 'Radio output', LIVE, None),
+    ('anchor_radius_m', 'Radius', INT, 'Anchor', LIVE, (10, 500, 10)),
     ('contrast', 'Contrast', INT, 'Display', LIVE, (0, 255, 15)),
     ('screen_off_s', 'Screen off', CHOICE, 'Display', LIVE, (0, 30, 60, 300)),
     ('night', 'Night mode', BOOL, 'Display', LIVE, None),

@@ -53,18 +53,25 @@ Two keys, classified when released: short (< 1 s) and long (>= 1 s).
 
 | | UP | DOWN |
 |---|---|---|
-| **Pages** | short: next page; **hold 3 s: Wi-Fi on/off** (a shorter long press does nothing) | short: previous page; long: back to Main, and **on the Main page: open the menu** |
+| **Pages** | short: next page; **hold 3 s: Wi-Fi on/off** (a shorter long press does nothing); long on the Anchor / MOB page: drop or raise the anchor / clear the mark | short: previous page; long: back to Main, and **on the Main page: open the menu**; **hold 3 s: man overboard** (marks the position) |
 | **Menu** | short: cursor up; long: select / toggle / start editing | short: cursor down; long: back (leaves the menu at the top level) |
 | **Editing a value** | short: increase / next; long: confirm | short: decrease / previous; long: cancel (value reverts) |
 
 **Hold both keys for 2 s** to switch between the two page loops. The **main loop** (short presses cycle through it):
 **Main**, **Speed** (COG and SOG gauges), **GPS** (satellites used, mean C/N0, the interference-cancellation tag and
-the jamming and spoofing probability gauges) and, while the access point is on, **Wi-Fi**. The **debug loop**
-has the details: **Alerts** (the last alerts with time and reason), **Stats** (link statistics), **Satellites** (per-satellite C/N0 gauges for GPS and BeiDou),
-**Signal** (jamming detector detail: mean vs baseline C/N0, reasons in words, module jamming status, AIC),
-**Spoofing** (the eight indicators as lit tiles, warm-up progress, alert latch time left), **System** (uptime,
-free heap, drops, GPS baud found at boot, fix interval, software version, board ID) and **Debug**. A long DOWN
-leaves the debug loop, and so does a new `MEDIUM`/`HIGH` alert.
+the jamming and spoofing probability gauges), **Anchor** (anchor watch with a drag alarm), **MOB** (while a
+man-overboard mark exists: distance and bearing back to it) and, while the access point is on, **Wi-Fi**. The **debug
+loop** has the details: **Alerts** (the last alerts with time and reason), **Stats** (link statistics),
+**Satellites** (per-satellite C/N0 gauges for GPS and BeiDou), **Signal** (jamming detector detail: mean vs baseline
+C/N0, reasons in words, module jamming status, AIC), **Spoofing** (the eight indicators as lit tiles, warm-up
+progress, alert latch time left), **System** (uptime, free heap, drops, GPS baud found at boot, fix interval,
+software version, board ID) and **Debug**. A long DOWN leaves the debug loop, and so does a new `MEDIUM`/`HIGH`
+alert or two minutes without a key.
+
+**Man overboard:** hold DOWN for 3 s on any page to mark the position (banner, blink, buzzer, and the MOB page with
+distance and bearing back to it). **Anchor:** a long UP on the Anchor page drops the anchor at the current position;
+the alarm radius is in the menu (Anchor > Radius). Both alarms use the buzzer if you wire one and set `PIN_BUZZER` in
+`main.py`.
 
 Menu: **GPS** (baudrate, GNSS mode), **Detection** (jamming and spoofing on/off, spoof action
 display/block), **Radio output** (RMC/GGA/GSA/GSV/ZDA on/off), **Display** (contrast, screen-off timer),

@@ -92,6 +92,7 @@ _writer.Writer = SimWriter
 sys.modules['writer'] = _writer
 
 import NMEA                                       # noqa: E402
+import anchor                                     # noqa: E402
 import jamming                                    # noqa: E402
 import menu                                       # noqa: E402
 import nav                                        # noqa: E402
@@ -191,8 +192,23 @@ def menu_scene(group, cursor, change=None):
     return render
 
 
+def anchor_watch(state='ok', distance=42.4, bearing=245, maximum=63.0, set_=True):
+    watch = anchor.AnchorWatch(radius_m=50)
+    if set_:
+        watch.anchor, watch.state = (0, 0), state
+        watch.distance, watch.bearing, watch.max_distance = distance, bearing, maximum
+    return watch
+
+
+def mob_mark():
+    mark = anchor.MobMark()
+    mark.position = (59 * 600000 + 1080, 18 * 600000)
+    return mark
+
+
 def scenes():
     p = make_parser()
+    p.lat_u, p.lon_u, p.fix_type, p.cog_deg, p.sog_kn = 59 * 600000, 18 * 600000, 'GPS', 90.0, 5.2
     alert_spoof = make_spoof(p, 'HIGH', ('K1', 'T1', 'S1', 'K3'), 'K1T1S1K3')
     suspect_spoof = make_spoof(p, 'MEDIUM', ('S1',), 'S1')
     nofix = make_parser()
@@ -221,6 +237,17 @@ def scenes():
          page_scene(nav.PAGE_SPEED, p, jam=Jam('MEDIUM', 'CN'), banner=True)),
         ('alerts', 'Alerts', page_scene(nav.PAGE_LOG, p, alerts=[('12:41', 'SPF!', 'K1T1S'), ('12:36', 'JAM?', 'CN'),
                                                                  ('12:12', 'SPF?', 'S1')], alert_total=3)),
+        ('anchor', 'Anchor watch', page_scene(nav.PAGE_ANCHOR, p, anchor=anchor_watch())),
+        ('anchor-unset', 'Anchor not set', page_scene(nav.PAGE_ANCHOR, p, anchor=anchor_watch(set_=False))),
+        ('anchor-drag', 'Anchor dragging', page_scene(nav.PAGE_ANCHOR, p, anchor=anchor_watch('drag', 85.0, 20, 85.0))),
+        ('anchor-confirm', 'Raise the anchor?',
+         page_scene(nav.PAGE_ANCHOR, p, anchor=anchor_watch(), confirm=('Raise anchor?', 'UP long = yes',
+                                                                         'other key = no'))),
+        ('main-anchor-alarm', 'Main, anchor alarm',
+         page_scene(nav.PAGE_MAIN, p, jam=Jam('OK'), banner=True, banner_text='ANCHOR DRAG', heartbeat='on')),
+        ('mob', 'Man overboard', page_scene(nav.PAGE_MOB, p, mob=mob_mark(), mob_s=75)),
+        ('main-mob-hold', 'Holding DN for man overboard', page_scene(nav.PAGE_MAIN, p, jam=Jam('OK'),
+                                                                     hold=(60, 'Hold: MOB'))),
         ('stats', 'Stats', page_scene(nav.PAGE_STATS, p, jam=Jam('OK'))),
         ('satellites', 'Satellites', page_scene(nav.PAGE_SATS, p)),
         ('signal', 'Signal', page_scene(nav.PAGE_SIGNAL, p, jam=Jam('MEDIUM', 'CN'))),

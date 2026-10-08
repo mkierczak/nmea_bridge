@@ -1,9 +1,10 @@
 import math
 
 from writer import Writer
+import anchor as anchor_mod
 import units
 from nav import (PAGE_MAIN, PAGE_STATS, PAGE_SATS, PAGE_SIGNAL, PAGE_SPOOF, PAGE_SYSTEM,
-                 PAGE_DEBUG, PAGE_WIFI, PAGE_SPEED, PAGE_GPS, PAGE_LOG)
+                 PAGE_DEBUG, PAGE_WIFI, PAGE_SPEED, PAGE_GPS, PAGE_LOG, PAGE_ANCHOR, PAGE_MOB)
 
 JAM_WORDS = {'C': 'cn0', 'N': 'sat', 'F': 'fix', 'M': 'mod'}   # short enough for all four on one line
 # the annunciator tiles of the Spoofing page: indicator code and a three-letter name
@@ -246,15 +247,79 @@ def _readout(oled, font, x, label, value, base):
     oled.text(base, left + _width(font, value), 29, 1)
 
 
+def _box(oled, lines):
+    """A message box over the lower part of the page (a confirmation question or a short notice)."""
+    oled.fill_rect(0, 30, 128, 32, 0)
+    oled.hline(0, 30, 128, 1)
+    oled.hline(0, 61, 128, 1)
+    top = 34 if len(lines) > 2 else 38
+    for i, line in enumerate(lines[:3]):
+        oled.text(line, (128 - 8 * len(line)) // 2, top + 9 * i, 1)
+
+
+def _panel(oled, font, x, label, value, unit, bearing=None):
+    """A framed 62 x 38 readout: label, the value in the large font, the unit; optionally a compass needle."""
+    _frame(oled, x, 12, 62, 38)
+    oled.text(label, x + 5, 15, 1)
+    Writer.set_textpos(oled, 25, x + (62 - _width(font, value)) // 2)
+    font.printstring(value)
+    oled.text(unit, x + (62 - 8 * len(unit)) // 2, 40, 1)
+    if bearing is not None:
+        _compass(oled, x + 52, 20, bearing)
+
+
+def _draw_anchor(oled, font, watch):
+    """Anchor watch: how far the boat is from where the anchor was dropped, and in which direction."""
+    state = watch.state if watch is not None else anchor_mod.OFF
+    _title(oled, 'ANCHOR', badge={'ok': 'OK', 'drag': 'DRAG', 'nofix': 'NO FIX'}.get(state, 'OFF'))
+    if watch is None or not watch.is_set:
+        oled.text('Anchor not set', 8, 18, 1)
+        oled.text('hold UP 1 s to', 8, 30, 1)
+        oled.text('drop it here', 8, 39, 1)
+        if watch is not None:
+            oled.text('radius ' + units.distance_text(watch.radius_m), 0, 52, 1)
+        return
+    value, unit = units.distance_parts(watch.distance)
+    _panel(oled, font, 0, 'DIST', value, unit)
+    _panel(oled, font, 66, 'BRG', '{:03d}'.format(watch.bearing), 'deg', watch.bearing)
+    oled.text('rad {} max {}'.format(units.distance_text(watch.radius_m),
+                                     units.distance_text(watch.max_distance))[:16], 0, 52, 1)
+
+
+def _draw_mob(oled, font, parser, mob, seconds):
+    """Man overboard: distance and bearing from the boat to the marked position, and the bearing relative to the
+    course (positive = to starboard)."""
+    _title(oled, 'MOB', badge='{}:{:02d}'.format(seconds // 60, seconds % 60))
+    if mob is None or not mob.active:
+        oled.text('no mark', 32, 30, 1)
+        return
+    here = (parser.lat_u, parser.lon_u)
+    if parser.fix_type == 'NO' or (parser.lat_u == 0 and parser.lon_u == 0):
+        _panel(oled, font, 0, 'DIST', '--', '')
+        _panel(oled, font, 66, 'BRG', '---', 'deg')
+        oled.text('no position', 0, 52, 1)
+        return
+    value, unit = units.distance_parts(anchor_mod.distance_m(here, mob.position))
+    bearing = anchor_mod.bearing_deg(here, mob.position)
+    _panel(oled, font, 0, 'DIST', value, unit)
+    _panel(oled, font, 66, 'BRG', '{:03d}'.format(bearing), 'deg', bearing)
+    cog = parser.cog_deg
+    if cog is not None and (parser.sog_kn or 0) >= 0.5:
+        relative = (bearing - round(cog) + 180) % 360 - 180
+        oled.text('rel {:+04d}'.format(relative), 0, 52, 1)
+    else:
+        oled.text('rel ---', 0, 52, 1)
+
+
 def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None, spoof=None, wifi=None, info=None,
          ctx=None):
     """Render one screen into the frame buffer (caller calls oled.show()). ctx (optional dict) carries what
     only the controller knows: 'pages' (page indicator), 'fix_age_s' (seconds since the last fix, None if
-    never), 'banner' (True to show the alert banner), 'heartbeat' (key of HEARTBEAT, Main page), 'alerts' and 'alert_total' (Alerts page), 'sog_trend' (-1, 0, 1: Speed page), 'debug'
+    never), 'banner' (True to show the alert banner), 'heartbeat' (key of HEARTBEAT, Main page), 'banner_text' (replaces the detectors' banner text: anchor, man overboard), 'anchor' / 'mob' / 'mob_s' (their pages), 'confirm' (lines of a question box) and 'toast' (a one-line notice), 'alerts' and 'alert_total' (Alerts page), 'sog_trend' (-1, 0, 1: Speed page), 'debug'
     (True in the debug loop) and 'hold' (key gesture progress, see _draw_hold). 'wifi' is used by the Wi-Fi page and, as a small icon, by the
     Main page."""
     ctx = ctx or {}
-    banner = banner_text(jam, spoof) if ctx.get('banner') else ''
+    banner = (ctx.get('banner_text') or banner_text(jam, spoof)) if ctx.get('banner') else ''
     oled.fill(0)
     if screen == PAGE_SPEED:
         _draw_speed(oled, font_large, parser, no_fix, banner, ctx.get('sog_trend'))
@@ -262,6 +327,10 @@ def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None, spo
         _draw_main(oled, font_large, parser, no_fix, jam, spoof, wifi, banner, ctx)
     elif screen == PAGE_GPS:
         _draw_gps(oled, parser, jam, spoof)
+    elif screen == PAGE_ANCHOR:
+        _draw_anchor(oled, font_large, ctx.get('anchor'))
+    elif screen == PAGE_MOB:
+        _draw_mob(oled, font_large, parser, ctx.get('mob'), ctx.get('mob_s', 0))
     elif screen == PAGE_LOG:
         _draw_log(oled, ctx.get('alerts') or (), ctx.get('alert_total', 0))
     elif screen == PAGE_STATS:
@@ -281,6 +350,10 @@ def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None, spo
     _page_indicator(oled, screen, ctx.get('pages'), ctx.get('debug'))
     if ctx.get('hold'):
         _draw_hold(oled, ctx['hold'])
+    if ctx.get('confirm'):
+        _box(oled, ctx['confirm'])
+    elif ctx.get('toast'):
+        _box(oled, [ctx['toast']])
 
 
 LEVELS = {'OK': 0, 'LOW': 1, 'MEDIUM': 2, 'HIGH': 3}

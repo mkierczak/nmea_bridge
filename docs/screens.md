@@ -10,8 +10,8 @@ beside them show what each line is.
 
 ## Navigation
 
-The pages are in two loops. The **main loop** is what you look at under way: **Main, Speed, GPS** and, while
-the Wi-Fi access point is on, **Wi-Fi**. The **debug loop** holds the pages with the details: **Alerts,
+The pages are in two loops. The **main loop** is what you look at under way: **Main, Speed, GPS, Anchor**, the
+**MOB** page while a man-overboard mark exists and, while the Wi-Fi access point is on, **Wi-Fi**. The **debug loop** holds the pages with the details: **Alerts,
 Stats, Satellites, Signal, Spoofing, System, Debug**.
 
 | Key | On a page | In the menu |
@@ -20,7 +20,9 @@ Stats, Satellites, Signal, Spoofing, System, Debug**.
 | DN short | previous page of the loop | next item / decrease value |
 | UP long (1 s) | nothing | select / confirm |
 | DN long (1 s) | back to Main; **on Main: open the menu**; in the debug loop: leave it | back / cancel / leave the menu |
+| UP long (1 s) on **Anchor** / **MOB** | drop or raise the anchor / clear the mark (the latter after a question) | select / confirm |
 | UP held 3 s | Wi-Fi access point on/off | treated as a normal long press |
+| **DN held 3 s** | **man overboard**: mark the position | man overboard too (the menu closes) |
 | **UP and DN together, 2 s** | switch between the main loop and the debug loop | nothing |
 
 ![Holding both keys for the debug loop](img/main-debug-hold.png)
@@ -33,7 +35,7 @@ alert (or one that gets worse) sends you back to the Main page so that the banne
 key press only wakes it, and a jamming or spoofing alert wakes it and keeps it on. Pages are redrawn when a visible
 value changes (and at least every 500 ms when something did).
 
-**Sound.** With a buzzer on the pin `PIN_BUZZER` (set in `main.py`; none by default) an alert beeps: a short beep every 3 s for `MEDIUM`, two beeps a second for `HIGH`. Any key press silences it until the alert gets worse. Menu Detection > Buzzer switches it off.
+**Sound.** With a buzzer on the pin `PIN_BUZZER` (set in `main.py`; none by default) an alert beeps: a short beep every 3 s for `MEDIUM`, two beeps a second for `HIGH`, rapid beeping for an anchor alarm or man overboard. Any key press silences it until the alert gets worse (an anchor alarm that goes on sounds again after 30 s). Menu Detection > Buzzer switches it off.
 
 **On every page**, the bottom edge carries a page indicator: one segment per page of the loop you are in, two
 pixels high for the page you are on. In the debug loop the segments are dashed.
@@ -141,7 +143,77 @@ The overview you want under way: how healthy the sky is, and how likely jamming 
 
 ![GPS page with a spoofing alert](img/gps-alert.png)
 
-## 4. Wi-Fi
+## 4. Anchor
+
+![Anchor watch](img/anchor.png)
+
+```
+ANCHOR                [OK]  <- title and state badge (OFF, OK, DRAG, NO FIX)
+.----------.  .----------.
+| DIST     |  | BRG   (o)|    <- distance from the anchor, bearing of the boat seen from it
+|   42     |  |   245    |
+|    m     |  |   deg    |
+'----------'  '----------'
+rad 50m max 63m              <- alarm radius, the furthest it has been since the anchor was dropped
+```
+
+The anchor watch is for the boat at anchor: a long UP (1 s) on this page **drops the anchor at the current
+position**, and from then on the boat's distance and bearing from that point are shown. The position is stored
+in a file (`anchor.json`), so a reboot or a power cut does not end the watch.
+
+| Item | Meaning |
+|---|---|
+| badge | `OFF` (no anchor), `OK`, `DRAG` (alarm: the boat has been outside the radius for three fixes in a row; a single stray fix is ignored), `NO FIX` (alarm: no valid fix for 2 minutes, so the watch cannot see anything). |
+| `DIST` | Distance from the anchor position, in metres up to 999 m, then nautical miles (speed unit knots) or kilometres. |
+| `BRG` | True bearing of the boat seen from the anchor, with a small compass needle: where it has dragged to. |
+| bottom line | The alarm radius (menu Anchor > Radius, 10-500 m, default 50 m) and the largest distance so far. |
+
+A long UP on this page again **raises the anchor** after a confirmation (`UP long = yes`, any other key or ten
+seconds without an answer means no). An alarm raises the banner `ANCHOR DRAG` or `ANCHOR NO FIX` on the Main and
+Speed pages, blinks the display, keeps the screen on, adds an `ANC!` entry to the Alerts page and sounds the buzzer
+(rapid beeping). A key press silences the buzzer and the banner for 30 s; if the boat is still dragging they come
+back. The alarm ends by itself when the boat is back inside the radius for three fixes.
+
+![Anchor dragging](img/anchor-drag.png)
+
+![Main page with the anchor alarm](img/main-anchor-alarm.png)
+
+![Raise the anchor?](img/anchor-confirm.png)
+
+![Anchor not set](img/anchor-unset.png)
+
+## 5. Man overboard
+
+![Man overboard](img/mob.png)
+
+```
+MOB                  [1:15]  <- title, time since the mark
+.----------.  .----------.
+| DIST     |  | BRG   (o)|    <- distance and bearing from the boat to the mark
+|   200    |  |   000    |
+|    m     |  |   deg    |
+'----------'  '----------'
+rel -090                     <- bearing relative to the course
+```
+
+Hold **DN for 3 s** on any page (a box `Hold: MOB` with a progress bar appears after 1.2 s) and the current position is
+marked, the display jumps to this page, the banner `MAN OVERBOARD` shows with the blink, the buzzer sounds (rapid) and
+an `MOB!` entry goes to the Alerts page. The gesture works with the screen off, in the menu and in the debug loop,
+and does nothing without a position (`No position yet`). The first key press acknowledges the banner and the buzzer;
+the mark stays and the page stays in the main loop until you clear it.
+
+![Holding DN for man overboard](img/main-mob-hold.png)
+
+| Item | Meaning |
+|---|---|
+| badge | Minutes and seconds since the mark. |
+| `DIST` / `BRG` | Distance from the boat to the marked position and the true bearing to steer, with a compass needle. |
+| `rel` | The bearing relative to the course over ground: `-090` means 90 degrees to port, `+045` 45 degrees to starboard; `---` while the boat is not moving (no course). |
+
+A long UP on this page **clears the mark** after a confirmation. Marking again while a mark exists only shows it
+(`MOB already marked`).
+
+## 6. Wi-Fi
 
 ![Wi-Fi page](img/wifi.png)
 
@@ -161,7 +233,7 @@ TCP 1/4 [#][ ][ ][ ]     <- clients / maximum, one square per slot (filled = con
 | `IP` | The access point's address (`-` while off). Connect clients to this address, TCP port 10110 (or receive UDP broadcasts on that port). |
 | `TCP n/m` | Connected TCP clients / maximum, with one square per slot. The Main page only shows that the access point is on, not the number of clients. |
 
-## 5. Alerts
+## 7. Alerts
 
 ![Alerts page](img/alerts.png)
 
@@ -184,7 +256,7 @@ boot` when there has been none.
 | reason | The indicator codes: `K1 T1 K2 S1 C1 K3 S2 S3` for spoofing (see the Spoofing page), `C N F M` for jamming (cn0, sat, fix, mod), cut to what fits. |
 | badge | The number of alerts since boot, also those that have scrolled out of the list. |
 
-## 6. Stats
+## 8. Stats
 
 ![Stats page](img/stats.png)
 
@@ -210,7 +282,7 @@ The bars and percentages are over a 10-second window of everything the GPS threa
 | type at the right | Three-letter type of the most recent sentence in that category. |
 | `CN a/b nc/d` | Only while jamming detection is on. `a` mean C/N0 of the tracked satellites now, `b` the learned baseline mean, `c` satellites tracked now, `d` baseline satellite count. |
 
-## 7. Satellites
+## 9. Satellites
 
 ![Satellites page](img/satellites.png)
 
@@ -230,7 +302,7 @@ The five strongest tracked satellites (C/N0 > 0), strongest first. `no satellite
 | gauge | Outlined bar proportional to C/N0 (full = 50 dB-Hz or more); the small tick on its lower edge marks 35 dB-Hz, a typical healthy level. |
 | number | C/N0 (signal-to-noise density) in dB-Hz. Typical open-sky values are 35-50. |
 
-## 8. Signal (jamming indicator)
+## 10. Signal (jamming indicator)
 
 ![Signal page](img/signal.png)
 
@@ -256,7 +328,7 @@ The page shows `off` in the badge (and nothing else) when the detector is disabl
 | `GP.. BD..` | Mean C/N0 of the GPS and BeiDou satellites separately; `-` if that system is not tracked. |
 | `m:` | The L76B's own jamming detector (`$PMTKSPF`): `?` unknown, `ok`, `warn`, `CRIT`. |
 
-## 9. Spoofing
+## 11. Spoofing
 
 ![Spoofing page](img/spoofing.png)
 
@@ -280,7 +352,7 @@ The badge shows `off` (and nothing else) when the detector is disabled.
 
 Details of each indicator: [spoofing-detection.md](spoofing-detection.md).
 
-## 10. System
+## 12. System
 
 ![System page](img/system.png)
 
@@ -305,7 +377,7 @@ fix1000ms GPS+BD
 | `fix..ms <gnss>` | Configured fix interval and GNSS mode (`GPS` or `GPS+BD`). |
 | last line | First 16 hex digits of the board's unique ID (the Wi-Fi name suffix is derived from it). It is replaced by `ERR r<n> g<n> s<n>` as soon as any of these counters is non-zero (each capped at `99+`): `r` radio write failures, `g` failures contained in the optional parts (detectors, Wi-Fi, logging, ...), `s` position sentences dropped because a stall made them too old. They are all zero in normal operation; see `errors` in `bridge.py`. |
 
-## 11. Debug
+## 13. Debug
 
 ![Debug page](img/debug.png)
 
@@ -344,6 +416,7 @@ reboot; items marked `*` after the label are applied only at the next boot. The 
 | GPS | Baudrate*, GNSS mode* |
 | Detection | Jamming, Spoofing, Spoof act. (`display` / `block`), Buzzer (on/off; only has an effect when a buzzer is wired and `PIN_BUZZER` is set in `main.py`) |
 | Radio output | RMC, GGA, GSA, GSV, ZDA (which sentence types go to the radio) |
+| Anchor | Radius (10-500 m, step 10) |
 | Display | Contrast, Screen off (`never`, `30s`, `60s`, `5m`), Night mode, Speed unit (`kn`, `km/h`, `m/s`), Coords (`ddmm.mm`, `dd.dddd`), UTC offset (-12 to +14 h) |
 | Wi-Fi | Wi-Fi now (on/off), New password |
 | Advanced | Detector thresholds: CN0 drop, Sats drop%, Jam enter, Jam exit, Max speed, Time jump, Flat C/N0, Alt step, Latch min, Warm-up, S2 corr, S2 cycles |

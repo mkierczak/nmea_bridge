@@ -9,6 +9,7 @@ part off for a while instead of letting an exception take the loop down.
 """
 
 import alerts
+import anchor
 import units
 
 try:
@@ -270,6 +271,9 @@ class Bridge(object):
         self._critical = 0
         self._wifi_lines = []
         self.alert_log = alerts.AlertLog()
+        self.anchor = None                 # anchor.AnchorWatch, or None (set by main)
+        self.mob = anchor.MobMark()
+        self._anchor_logged = False
         self._logged = {}                  # detector tag -> the level (0 none, 1 MEDIUM, 2 HIGH) already logged
         self._fwd_cfg = [None, None, None, None]   # the lists the cache below was computed for
         self._fwd_cache = {}                       # sentence type -> {talker -> forward bits}
@@ -308,7 +312,11 @@ class Bridge(object):
     def alert(self):
         """True while a jamming or spoofing alert (MEDIUM or HIGH probability) should keep the display on."""
         return bool((self.spoof and self.spoof.state in ALERT_STATES) or
-                    (self.detector and self.detector.state in ALERT_STATES))
+                    (self.detector and self.detector.state in ALERT_STATES) or self.anchor_alarming()
+                    or self.mob.alerting)
+
+    def anchor_alarming(self):
+        return bool(self.anchor is not None and self.anchor.alarming)
 
     # --- the loop body ---------------------------------------------------------------------
     def step(self, now):
@@ -415,8 +423,22 @@ class Bridge(object):
                 self.log_alert(tag + ('!' if rank == 2 else '?'), getattr(detector, 'reason', ''))
             self._logged[tag] = rank
 
+    def _watch_anchor(self, now):
+        """Judge the anchor watch and note a new alarm in the alert history."""
+        watch = self.anchor
+        if watch is None:
+            return
+        watch.update(self.parser, self.fix_age_ms(now))
+        if watch.alarming and not self._anchor_logged:
+            if watch.state == anchor.NOFIX:
+                self.log_alert('ANC!', 'no fix')
+            else:
+                self.log_alert('ANC!', 'drag ' + units.distance_text(watch.distance))
+        self._anchor_logged = watch.alarming
+
     def _periodic(self, now):
         self._log_alerts()
+        self._watch_anchor(now)
         if ticks_diff(now, self._last_stats) > STATS_PERIOD_MS:
             self._last_stats = now
             snap = self._guard('stats', self.parser.snapshot_and_reset)

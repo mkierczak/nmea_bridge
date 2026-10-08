@@ -97,7 +97,7 @@ def test_a_key_press_redraws_at_once_and_pages_cycle():
     r.press(UP_SHORT)
     assert r.navigator.page == nav.PAGE_SPEED and r.draws[-1][0] == nav.PAGE_SPEED
     r.press(DN_SHORT, DN_SHORT)
-    assert r.navigator.page == nav.PAGE_GPS                  # the last page of the main loop (no Wi-Fi page)
+    assert r.navigator.page == nav.PAGE_ANCHOR               # the last page of the main loop (no Wi-Fi, no MOB)
     r.press(DN_LONG)
     assert r.navigator.page == nav.PAGE_MAIN
 
@@ -125,8 +125,8 @@ def test_menu_opens_with_a_long_down_press_on_the_main_page_and_closes_the_same_
 def test_menu_timeout_reverts_an_unconfirmed_edit_and_closes():
     r = Rig(menu_timeout_ms=60000)
     r.press(DN_LONG)
-    for _ in range(3):
-        r.press(DN_SHORT)                                  # root: GPS, Detection, Radio output, Display
+    for _ in range(4):
+        r.press(DN_SHORT)                                  # root: GPS, Detection, Radio output, Anchor, Display
     r.press(UP_LONG)                                       # into Display
     r.press(UP_LONG)                                       # edit Contrast
     r.press(UP_SHORT, UP_SHORT)
@@ -536,3 +536,124 @@ def test_alarm_level_follows_the_alert_and_any_key_press_silences_it_until_it_ge
     r.bridge.spoof.state = 'MEDIUM'                        # a new alert after it ended
     r.step(advance=10)
     assert r.ui.alarm_level() == alerts.MEDIUM
+
+
+HOME = (59 * 600000 + 183420, 18 * 600000 + 32190)
+
+
+def with_fix(r, position=HOME):
+    """Give the rig's bridge a fresh fix at a position."""
+    p = r.bridge.parser
+    p.fix_type, p.lat_u, p.lon_u = 'GPS', position[0], position[1]
+    p.fix_count += 1
+    r.bridge.last_pos = r.bridge.last_fix = r.clock.now
+
+
+def test_anchor_page_drops_and_raises_the_anchor_with_a_confirmation():
+    import anchor
+    r = Rig()
+    r.bridge.anchor = anchor.AnchorWatch(radius_m=50)
+    r.step()
+    r.press(UP_SHORT, UP_SHORT, UP_SHORT)                  # Main -> Speed -> GPS -> Anchor
+    assert r.navigator.page == nav.PAGE_ANCHOR and r.ctxs[-1]['anchor'] is r.bridge.anchor
+    r.press(UP_LONG)                                       # no fix yet
+    assert not r.bridge.anchor.is_set and r.ctxs[-1]['toast'] == 'No fix yet'
+    with_fix(r)
+    r.press(UP_LONG)
+    assert r.bridge.anchor.anchor == HOME and r.ctxs[-1]['toast'] == 'Anchor dropped'
+    r.step(advance=ui.TOAST_MS + 100)
+    assert 'toast' not in r.ctxs[-1]
+    r.press(UP_LONG)                                       # raising asks first
+    assert r.ctxs[-1]['confirm'] == ui._CONFIRM_TEXT['anchor'] and r.bridge.anchor.is_set
+    r.press(UP_SHORT)                                      # any other key: no
+    assert r.bridge.anchor.is_set and 'confirm' not in r.ctxs[-1] and r.navigator.page == nav.PAGE_ANCHOR
+    r.press(UP_LONG, UP_LONG)
+    assert not r.bridge.anchor.is_set and r.ctxs[-1]['toast'] == 'Anchor raised'
+    r.press(UP_LONG)
+    r.step(advance=ui.CONFIRM_MS + 100)                    # an unanswered question is dropped
+    assert 'confirm' not in r.ctxs[-1]
+
+
+def test_anchor_alarm_banner_urgent_buzzer_snooze_and_repeat():
+    import alerts
+    import anchor
+    r = Rig()
+    r.bridge.anchor = anchor.AnchorWatch(radius_m=50)
+    r.bridge.anchor.set(HOME)
+    with_fix(r)
+    r.step()
+    for _ in range(3):
+        with_fix(r, (HOME[0] + 1080, HOME[1]))             # 200 m north
+        r.bridge.step(r.clock.now)                         # (the rig steps the controller only)
+        r.step(advance=1000)
+    assert r.bridge.anchor.alarming
+    assert r.ctxs[-1]['banner'] is True and r.ctxs[-1]['banner_text'] == 'ANCHOR DRAG'
+    assert r.ui.alarm_level() == alerts.URGENT
+    r.press(UP_SHORT)                                      # dismisses the banner and silences the buzzer
+    assert r.ui.alarm_level() == alerts.NONE and r.ctxs[-1]['banner'] is False
+    r.step(advance=ui.SNOOZE_MS - 5000)
+    with_fix(r, (HOME[0] + 1080, HOME[1]))
+    r.bridge.step(r.clock.now)
+    assert r.ui.alarm_level() == alerts.NONE
+    r.step(advance=6000)
+    assert r.ui.alarm_level() == alerts.URGENT and r.ctxs[-1]['banner'] is True      # still dragging: again
+    r.bridge.anchor.state = 'nofix'
+    r.step(advance=ui.REFRESH_MS + 1)
+    assert r.ctxs[-1]['banner_text'] == 'ANCHOR NO FIX'
+
+
+def test_man_overboard_gesture_marks_the_position_and_raises_the_alarm_from_any_page():
+    import alerts
+    r = Rig()
+    r.step()
+    r.press(nav.CHORD)                                     # in the debug loop
+    r.press(nav.MOB)
+    assert not r.bridge.mob.active and r.ctxs[-1]['toast'] == 'No position yet' and r.navigator.debug is False
+    with_fix(r)
+    r.press(nav.MOB)
+    mob = r.bridge.mob
+    assert mob.active and mob.position == HOME and r.navigator.page == nav.PAGE_MOB
+    assert r.navigator.mob_active and nav.PAGE_MOB in r.navigator.pages
+    assert r.ctxs[-1]['banner_text'] == 'MAN OVERBOARD' and r.ctxs[-1]['mob'] is mob
+    assert r.ui.alarm_level() == alerts.URGENT and r.bridge.alert_log.entries[-1][1:] == ('MOB!', 'marked')
+    r.press(DN_SHORT)                                      # the first key press acknowledges (banner, buzzer)
+    assert not mob.alerting and r.ui.alarm_level() == alerts.NONE and mob.active
+    r.press(nav.MOB)                                       # again: no second mark, just the page
+    assert r.ctxs[-1]['toast'] == 'MOB already marked' and r.bridge.alert_log.total == 1
+    r.press(UP_LONG)                                       # clearing asks first
+    assert r.ctxs[-1]['confirm'] == ui._CONFIRM_TEXT['mob']
+    r.press(UP_LONG)
+    assert not mob.active and r.navigator.page == nav.PAGE_MAIN and nav.PAGE_MOB not in r.navigator.pages
+
+
+def test_man_overboard_works_with_the_screen_off_and_with_the_menu_open():
+    r = Rig(screen_off_s=30)
+    with_fix(r)
+    r.step()
+    r.step(advance=31000)
+    assert r.ui.screen_off
+    with_fix(r)
+    r.press(nav.MOB)                                       # no key press is needed to wake it first
+    assert not r.ui.screen_off and r.bridge.mob.active
+    r2 = Rig()
+    with_fix(r2)
+    r2.press(DN_LONG)
+    assert r2.ui.menu is not None
+    r2.press(nav.MOB)
+    assert r2.ui.menu is None and r2.bridge.mob.active and r2.navigator.page == nav.PAGE_MOB
+
+
+def test_hold_box_for_man_overboard_appears_after_a_normal_long_press():
+    r = Rig()
+    held = [None]
+    r.ui.dn_held = lambda now: held[0]
+    r.step()
+    held[0] = 1000
+    r.step(advance=200)
+    assert r.ctxs[-1]['hold'] is None                      # a normal long press (menu / back) shows nothing
+    held[0] = 1800
+    r.step(advance=200)
+    assert r.ctxs[-1]['hold'] == (60, 'Hold: MOB')
+    held[0] = 3200
+    r.step(advance=ui.HOLD_REFRESH_MS + 1)
+    assert r.ctxs[-1]['hold'] == (100, 'Release now!')

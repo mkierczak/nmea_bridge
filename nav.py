@@ -7,29 +7,34 @@ except ImportError:
         return a - b
 
 (PAGE_MAIN, PAGE_STATS, PAGE_SATS, PAGE_SIGNAL, PAGE_SPOOF, PAGE_SYSTEM, PAGE_DEBUG,
- PAGE_WIFI, PAGE_SPEED, PAGE_GPS, PAGE_LOG) = range(11)
+ PAGE_WIFI, PAGE_SPEED, PAGE_GPS, PAGE_LOG, PAGE_ANCHOR, PAGE_MOB) = range(13)
 # The main loop is what you look at under way; the debug loop (both keys held for 2 s) has the details.
-MAIN_PAGES = (PAGE_MAIN, PAGE_SPEED, PAGE_GPS, PAGE_WIFI)       # the Wi-Fi page only while the access point is up
+MAIN_PAGES = (PAGE_MAIN, PAGE_SPEED, PAGE_GPS, PAGE_ANCHOR, PAGE_MOB, PAGE_WIFI)   # MOB and Wi-Fi only while they apply
 DEBUG_PAGES = (PAGE_LOG, PAGE_STATS, PAGE_SATS, PAGE_SIGNAL, PAGE_SPOOF, PAGE_SYSTEM, PAGE_DEBUG)
 PAGES = MAIN_PAGES + DEBUG_PAGES
 
-UP_SHORT, UP_LONG, DN_SHORT, DN_LONG, WIFI, CHORD = 'UP_SHORT', 'UP_LONG', 'DN_SHORT', 'DN_LONG', 'WIFI', 'CHORD'
+UP_SHORT, UP_LONG, DN_SHORT, DN_LONG, WIFI, CHORD, MOB = ('UP_SHORT', 'UP_LONG', 'DN_SHORT', 'DN_LONG', 'WIFI', 'CHORD',
+                                                         'MOB')
 
 LONG_MS = 1000
 WIFI_MS = 3000
+MOB_MS = 3000                 # DN held this long: man overboard (the position is marked)
 CHORD_MS = 2000               # both keys held this long: switch between the main loop and the debug loop
 DEBOUNCE_MS = 30
 
 # What Navigator.handle() asks the main loop to do
-OPEN_MENU, TOGGLE_WIFI, TO_MENU = 'open_menu', 'toggle_wifi', 'menu'
+OPEN_MENU, TOGGLE_WIFI, TO_MENU, PAGE_ACTION = 'open_menu', 'toggle_wifi', 'menu', 'page_action'
 
 
-def classify(key, held_ms, long_ms=LONG_MS, wifi_ms=WIFI_MS):
-    """Event for a key released after 'held_ms' ('UP' or 'DN'); wifi_ms=None disables the Wi-Fi gesture."""
+def classify(key, held_ms, long_ms=LONG_MS, wifi_ms=WIFI_MS, mob_ms=None):
+    """Event for a key released after 'held_ms' ('UP' or 'DN'); wifi_ms=None disables the Wi-Fi gesture (UP held
+    long), mob_ms=None the man-overboard gesture (DN held long)."""
     if key == 'UP':
         if wifi_ms is not None and held_ms >= wifi_ms:
             return WIFI
         return UP_LONG if held_ms >= long_ms else UP_SHORT
+    if mob_ms is not None and held_ms >= mob_ms:
+        return MOB
     return DN_LONG if held_ms >= long_ms else DN_SHORT
 
 
@@ -38,10 +43,11 @@ class ButtonTracker(object):
 
     Call edge(value, now_ms) from the pin IRQ (value = pin.value()); it returns an event or None."""
 
-    def __init__(self, name, long_ms=LONG_MS, wifi_ms=WIFI_MS, debounce_ms=DEBOUNCE_MS):
+    def __init__(self, name, long_ms=LONG_MS, wifi_ms=WIFI_MS, debounce_ms=DEBOUNCE_MS, mob_ms=None):
         self.name = name
         self.long_ms = long_ms
         self.wifi_ms = wifi_ms
+        self.mob_ms = mob_ms
         self.debounce_ms = debounce_ms
         self.partner = None          # the other key; while both are down neither produces a single-key event
         self.chord = False           # this press overlapped the other key
@@ -78,7 +84,7 @@ class ButtonTracker(object):
                 if other is not None:
                     other.chord = other.fired = False
             return None                      # a key that was part of a chord never acts alone
-        return classify(self.name, held, self.long_ms, self.wifi_ms)
+        return classify(self.name, held, self.long_ms, self.wifi_ms, self.mob_ms)
 
 
 def pair(up, dn):
@@ -146,6 +152,7 @@ class Navigator(object):
     def __init__(self, wifi=True):
         self.wifi = wifi                 # the build has the Wi-Fi page at all
         self.wifi_up = False             # the access point is on (or failed): the page is worth showing
+        self.mob_active = False          # a man-overboard position is marked: its page is in the loop
         self.debug = False
         self.page = PAGE_MAIN
         self.in_menu = False
@@ -154,9 +161,8 @@ class Navigator(object):
     def pages(self):
         if self.debug:
             return DEBUG_PAGES
-        if self.wifi and self.wifi_up:
-            return MAIN_PAGES
-        return MAIN_PAGES[:-1]
+        return tuple(p for p in MAIN_PAGES
+                     if (p != PAGE_MOB or self.mob_active) and (p != PAGE_WIFI or (self.wifi and self.wifi_up)))
 
     def check(self):
         """Back to the first page of the loop when the current page no longer exists (Wi-Fi switched off)."""
@@ -191,6 +197,8 @@ class Navigator(object):
             self._step(1)
         elif event == DN_SHORT:
             self._step(-1)
+        elif event == UP_LONG and self.page in (PAGE_ANCHOR, PAGE_MOB) and not self.debug:
+            return PAGE_ACTION                       # set / clear the anchor, clear the mark: the controller does it
         elif event == DN_LONG:
             if self.debug:                           # a long DOWN leaves the debug loop
                 self.leave_debug()

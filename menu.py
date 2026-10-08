@@ -7,7 +7,7 @@ import settings as S
 from nav import UP_SHORT, UP_LONG, DN_SHORT, DN_LONG
 
 ROWS = 4                         # visible item rows
-GROUPS = ('GPS', 'Detection', 'Radio output', 'Display')
+GROUPS = ('GPS', 'Detection', 'Radio output', 'Anchor', 'Display')
 BROWSE_HINT = 'hold UP:ok DN:bk'
 EDIT_HINT = 'UP/DN chg hld:ok'
 CONFIRM_HINT = 'hold UP=y DN=n'

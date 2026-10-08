@@ -74,7 +74,7 @@ class Rig:
 def test_root_structure_with_and_without_wifi():
     r = Rig()
     assert [i[1] for i in r.menu.items() if i[0] == 'sub'] == [
-        'GPS', 'Detection', 'Radio output', 'Display', 'Wi-Fi', 'Advanced', 'System']
+        'GPS', 'Detection', 'Radio output', 'Anchor', 'Display', 'Wi-Fi', 'Advanced', 'System']
     r2 = Rig(wifi=False)
     assert 'Wi-Fi' not in [i[1] for i in r2.menu.items()]
 

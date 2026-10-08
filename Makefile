@@ -1,9 +1,9 @@
 # Deploy to a Raspberry Pi Pico W running MicroPython (needs `pip install mpremote`)
 FILES = main.py NMEA.py l76x.py screens.py jamming.py spoofing.py wifi.py wificreds.py settings.py nav.py menu.py bridge.py ui.py linkcalc.py sh1107.py writer.py \
-        units.py alerts.py roboto14.py version.py
+        units.py alerts.py anchor.py roboto14.py version.py
 
 # Modules that can be precompiled (everything except main.py); roboto14 is the font main.py imports
-MPY_MODULES = NMEA l76x screens jamming spoofing wifi wificreds settings nav menu bridge ui linkcalc sh1107 writer units alerts roboto14
+MPY_MODULES = NMEA l76x screens jamming spoofing wifi wificreds settings nav menu bridge ui linkcalc sh1107 writer units alerts anchor roboto14
 
 .PHONY: deploy deploy-py deploy-mpy check-mpy maintenance start-app mpy test lint docs-check check check-clean version
 

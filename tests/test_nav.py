@@ -18,13 +18,16 @@ def test_classify_presses():
 
 def test_main_loop_cycle_both_directions_and_wrap_with_and_without_the_wifi_page():
     n = Navigator()
-    assert n.page == nav.PAGE_MAIN and n.pages == (nav.PAGE_MAIN, nav.PAGE_SPEED, nav.PAGE_GPS)
-    for expected in (nav.PAGE_SPEED, nav.PAGE_GPS):
+    assert n.page == nav.PAGE_MAIN and n.pages == (nav.PAGE_MAIN, nav.PAGE_SPEED, nav.PAGE_GPS, nav.PAGE_ANCHOR)
+    for expected in (nav.PAGE_SPEED, nav.PAGE_GPS, nav.PAGE_ANCHOR):
         assert n.handle(UP_SHORT) is None and n.page == expected
     n.handle(UP_SHORT)
     assert n.page == nav.PAGE_MAIN                    # wrapped
     n.handle(DN_SHORT)
-    assert n.page == nav.PAGE_GPS
+    assert n.page == nav.PAGE_ANCHOR
+    n.mob_active = True                               # a man-overboard mark adds its page before Wi-Fi
+    assert n.pages[-1] == nav.PAGE_MOB
+    n.mob_active = False
     n.wifi_up = True
     assert n.pages[-1] == nav.PAGE_WIFI
     n.handle(UP_SHORT)
@@ -199,3 +202,36 @@ def test_one_key_alone_is_unaffected_by_pairing_and_never_a_chord():
     assert up.held_ms(1700) == 700 and nav.chord_held_ms(up, dn, 5000) is None
     assert not nav.chord_due(up, dn, 9000)
     assert up.edge(1, 4100) == WIFI
+
+
+def test_dn_held_three_seconds_is_man_overboard_only_when_the_gesture_is_enabled():
+    assert classify('DN', 2999, mob_ms=3000) == DN_LONG and classify('DN', 3000, mob_ms=3000) == nav.MOB
+    assert classify('DN', 9000) == DN_LONG                      # not enabled: as before
+    d = nav.ButtonTracker('DN', 1000, mob_ms=3000)
+    d.edge(0, 0)
+    assert d.edge(1, 3200) == nav.MOB
+    d.edge(0, 5000)
+    assert d.edge(1, 6500) == DN_LONG
+    u = nav.ButtonTracker('UP', 1000, 3000, mob_ms=3000)
+    u.edge(0, 0)
+    assert u.edge(1, 3500) == WIFI                              # the gesture belongs to DN only
+
+
+def test_long_up_on_the_anchor_and_mob_pages_is_a_page_action_elsewhere_nothing():
+    n = Navigator()
+    n.page = nav.PAGE_ANCHOR
+    assert n.handle(UP_LONG) == nav.PAGE_ACTION
+    n.mob_active = True
+    n.page = nav.PAGE_MOB
+    assert n.handle(UP_LONG) == nav.PAGE_ACTION
+    n.page = nav.PAGE_GPS
+    assert n.handle(UP_LONG) is None
+    n.debug = True
+    n.page = nav.PAGE_ANCHOR                                    # (never shown in the debug loop)
+    assert n.handle(UP_LONG) is None
+    n = Navigator()
+    n.mob_active = True
+    n.page = nav.PAGE_MOB
+    n.mob_active = False
+    n.check()
+    assert n.page == nav.PAGE_MAIN                              # the mark was cleared while you looked at it

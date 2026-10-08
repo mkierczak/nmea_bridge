@@ -35,6 +35,15 @@ def distance_text(metres):
     return _long(metres / 1000.0, 'km')
 
 
+def distance_parts(metres):
+    """(number, unit) for a large-font readout: ('42', 'm'), ('1.25', 'nm'), ('13.5', 'km')."""
+    text = distance_text(metres)
+    for i in range(len(text)):
+        if not (text[i].isdigit() or text[i] == '.'):
+            return text[:i], text[i:]
+    return text, ''
+
+
 def _long(value, unit):
     """'1.25nm', '12.3nm', '123nm': three significant digits, at most 6 characters."""
     return '{:.2f}{}'.format(value, unit) if value < 10 else '{:.1f}{}'.format(value, unit) if value < 100 else '{:.0f}{}'.format(value, unit)

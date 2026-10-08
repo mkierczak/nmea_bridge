@@ -24,6 +24,7 @@ import settings
 import sh1107
 import spoofing
 import alerts
+import anchor
 import ui
 import units
 import wificreds
@@ -82,7 +83,7 @@ RS485_TXBUF = 512                 # TX buffer so uart.write doesn't block the ma
 # User settings (menu): the constants above are the defaults, settings.json holds the user's overrides
 DEFAULTS = {'gps_baud': GPS_BAUDRATE, 'gnss_mode': GNSS_MODE, 'jam_detect': JAM_DETECT,
             'spoof_detect': SPOOF_DETECT, 'spoof_action': SPOOF_ACTION, 'contrast': 0, 'screen_off_s': 0,
-            'buzzer': True, 'night': False, 'speed_unit': units.SPEED_UNIT, 'coord_fmt': units.COORD_FORMAT,
+            'buzzer': True, 'anchor_radius_m': anchor.DEFAULT_RADIUS_M, 'night': False, 'speed_unit': units.SPEED_UNIT, 'coord_fmt': units.COORD_FORMAT,
             'utc_offset_h': units.UTC_OFFSET_H, 'log_raw': False}
 for _t in FORWARD_TYPES_ALL:
     DEFAULTS['fwd_' + _t] = _t in FORWARD_TYPES
@@ -142,7 +143,7 @@ key1 = Pin(PIN_KEY_DN, Pin.IN, Pin.PULL_UP)
 # Register the handler functions for both rising and falling edges
 up_tracker = nav.ButtonTracker('UP', LONG_PRESS_THRESHOLD, WIFI_TOGGLE_PRESS if WIFI_ENABLE else None)
 key0.irq(trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING, handler=make_button_handler(up_tracker))
-dn_tracker = nav.ButtonTracker('DN', LONG_PRESS_THRESHOLD)
+dn_tracker = nav.ButtonTracker('DN', LONG_PRESS_THRESHOLD, mob_ms=nav.MOB_MS)    # DN held 3 s: man overboard
 nav.pair(up_tracker, dn_tracker)      # both keys held together is a chord (debug loop), never two single presses
 key1.irq(trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING, handler=make_button_handler(dn_tracker))
 
@@ -154,6 +155,8 @@ radio.init(RS485_BAUDRATE, bits=8, parity=None, stop=1)
 core = Bridge(nmea_parser, rx_queue, radio, utime.ticks_ms, on_fatal=fatal,
               log=print if DEBUG else None)
 core.report = report
+core.anchor = anchor.AnchorWatch('anchor.json', cfg.get('anchor_radius_m'))
+core.anchor.load()                # an anchor dropped before a reboot is still there
 core.forward_talkers = FORWARD_TALKERS
 core.wifi_talkers = WIFI_FORWARD_TALKERS
 core.block_types = SPOOF_BLOCK_TYPES
@@ -296,6 +299,8 @@ def apply_setting(key):
         oled.contrast(0 if cfg.get('night') else cfg.get('contrast'))   # night mode: the dimmest setting
     elif key == 'log_raw':
         set_raw_log(cfg.get(key))
+    elif key == 'anchor_radius_m':
+        core.anchor.radius_m = cfg.get(key)
     elif key in settings.UNIT_KEYS:
         settings.apply_units(cfg, units)
     elif key != 'screen_off_s':   # read every loop; everything else is an advanced threshold
@@ -371,7 +376,7 @@ screen_ui = ui.UiController(cfg, oled, font_large, screens.draw, navigator, even
                             menu_timeout_ms=60 * 1000,
                             up_held=up_tracker.held_ms if WIFI_ENABLE else None, wifi_ms=WIFI_TOGGLE_PRESS,
                             chord_held=lambda now: nav.chord_held_ms(up_tracker, dn_tracker, now),
-                            wifi_up=wifi_shown)
+                            wifi_up=wifi_shown, dn_held=dn_tracker.held_ms)
 
 buzzer_pwm = None
 if PIN_BUZZER is not None:

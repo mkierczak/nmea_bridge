@@ -75,3 +75,10 @@ def test_settings_push_into_units():
     with Config():
         settings.apply_units(cfg, units)
         assert (units.SPEED_UNIT, units.COORD_FORMAT, units.UTC_OFFSET_H) == ('km/h', 'dd.dddd', 2)
+
+
+def test_distance_parts_split_the_number_from_the_unit():
+    with Config('kn'):
+        assert units.distance_parts(42.4) == ('42', 'm') and units.distance_parts(1852) == ('1.00', 'nm')
+    with Config('m/s'):
+        assert units.distance_parts(12345) == ('12.3', 'km')

@@ -754,3 +754,35 @@ def test_alert_log_time_follows_the_utc_offset():
     b2, _ = make_bridge()
     b2.log_alert('ANC!', 'x')
     assert b2.alert_log.entries[0][0] == '--:--'            # no time yet
+
+
+def test_anchor_alarm_is_an_alert_and_is_logged_once_and_the_mob_mark_keeps_the_screen_on():
+    import anchor
+    b, clock = make_bridge()
+    b.parser.time = '123456.00'
+    assert not b.alert() and not b.anchor_alarming()                # no anchor: nothing to watch
+    b.anchor = anchor.AnchorWatch(radius_m=50)
+    b.anchor.set((59 * 600000, 18 * 600000))
+    b.parser.fix_count, b.parser.lat_u, b.parser.lon_u = 1, 59 * 600000, 18 * 600000
+    b.last_fix = clock.now
+    b.step(clock.now)
+    assert b.anchor.state == anchor.OK and not b.alert()
+    for i in range(3):                                              # three fixes 200 m away
+        b.parser.fix_count += 1
+        b.parser.lat_u = 59 * 600000 + 1080
+        b.last_fix = clock.now
+        b.step(clock.now)
+    assert b.anchor.alarming and b.alert() and b.anchor_alarming()
+    b.step(clock.now)
+    assert b.alert_log.entries == [('12:34', 'ANC!', 'drag 200m')]  # logged once, with the distance
+    b.mob.set((1, 1), 0)
+    assert b.alert()
+    b.mob.acknowledge()
+    b.anchor.clear()
+    b.step(clock.now)
+    assert not b.alert()
+    b.anchor.set((59 * 600000, 18 * 600000))
+    b.last_fix = None                                               # a fix that never came
+    b.step(clock.now + anchor.NOFIX_ALARM_MS + 1000)
+    assert b.anchor.state == anchor.NOFIX
+    assert b.alert_log.entries[-1] == ('12:34', 'ANC!', 'no fix')

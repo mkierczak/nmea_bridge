@@ -671,3 +671,80 @@ def test_alerts_page_lists_the_newest_first_and_says_when_there_are_none():
     assert texts[0] == 'ALERTS' and '12' in texts                     # the badge: alerts since boot
     assert texts[2:7] == ['12:40 SPF! K1T1S', '12:35 JAM? CN', '12:30 ANC! 85m', '12:20 MOB! set', '12:10 SPF? S1']
     check_fits([(nav.PAGE_LOG, oled)])
+
+
+def _anchor_oled(watch, **ctx):
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_ANCHOR, NMEA.Parser(), STATS, 0, False, None, None, WIFI, INFO,
+                 dict({'anchor': watch}, **ctx))
+    return oled
+
+
+def test_anchor_page_not_set_set_and_dragging():
+    import anchor
+    oled = _anchor_oled(None)
+    assert oled.texts() == ['ANCHOR', 'OFF', 'Anchor not set', 'hold UP 1 s to', 'drop it here']
+    w = anchor.AnchorWatch(radius_m=50)
+    oled = _anchor_oled(w)
+    assert 'radius 50m' in oled.texts() and 'OFF' in oled.texts()
+    w.set((0, 0))
+    w.distance, w.bearing, w.max_distance = 42.4, 245, 63.0
+    FakeWriter.printed.clear()
+    oled = _anchor_oled(w)
+    assert FakeWriter.printed == ['42', '245'] and 'OK' in oled.texts()
+    assert 'rad 50m max 63m' in oled.texts() and 'DIST' in oled.texts() and 'BRG' in oled.texts()
+    assert (9 + 3, 20) in oled.pixels or any(p[0] > 66 for p in oled.pixels)          # a needle on the bearing
+    w.state, w.distance = anchor.DRAG, 1500.0
+    FakeWriter.printed.clear()
+    oled = _anchor_oled(w)
+    assert 'DRAG' in oled.texts() and FakeWriter.printed[0] == '0.81' and 'nm' in oled.texts()
+    w.state = anchor.NOFIX
+    assert 'NO FIX' in _anchor_oled(w).texts()
+    check_fits([(nav.PAGE_ANCHOR, oled)])
+
+
+def test_mob_page_distance_bearing_and_bearing_relative_to_the_course():
+    import anchor
+    p = NMEA.Parser()
+    p.fix_type, p.lat_u, p.lon_u = 'GPS', 59 * 600000, 18 * 600000
+    p.sog_kn, p.cog_deg = 5.0, 90.0
+    mob = anchor.MobMark()
+    mob.set((59 * 600000 + 1080, 18 * 600000), 1000)                    # 200 m north of the boat
+    FakeWriter.printed.clear()
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_MOB, p, STATS, 0, False, None, None, WIFI, INFO,
+                 {'mob': mob, 'mob_s': 75})
+    assert FakeWriter.printed == ['200', '000'] and '1:15' in oled.texts() and 'MOB' in oled.texts()
+    assert 'rel -090' in oled.texts()                                   # the mark is 90 degrees to port
+    p.sog_kn = 0.1
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_MOB, p, STATS, 0, False, None, None, WIFI, INFO,
+                 {'mob': mob, 'mob_s': 0})
+    assert 'rel ---' in oled.texts()
+    p.fix_type = 'NO'
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_MOB, p, STATS, 0, False, None, None, WIFI, INFO,
+                 {'mob': mob, 'mob_s': 0})
+    assert 'no position' in oled.texts()
+    check_fits([(nav.PAGE_MOB, oled)])
+
+
+def test_confirm_and_toast_boxes_and_the_banner_text_override():
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_ANCHOR, NMEA.Parser(), STATS, 0, False, None, None, WIFI, INFO,
+                 {'confirm': ('Raise anchor?', 'UP long = yes', 'other key = no')})
+    assert 'Raise anchor?' in oled.texts() and 'UP long = yes' in oled.texts()
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_GPS, NMEA.Parser(), STATS, 0, False, None, None, WIFI, INFO,
+                 {'toast': 'Anchor dropped'})
+    assert 'Anchor dropped' in oled.texts()
+    for page in (nav.PAGE_MAIN, nav.PAGE_SPEED):
+        oled = Oled()
+        screens.draw(oled, FakeWriter(), page, NMEA.Parser(), STATS, 0, False, None, None, WIFI, INFO,
+                     {'banner': True, 'banner_text': 'MAN OVERBOARD'})
+        assert 'MAN OVERBOARD' in oled.texts() and oled.rects[0][2] == 128
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, NMEA.Parser(), STATS, 0, False, None, None, WIFI, INFO,
+                 {'banner_text': 'ANCHOR DRAG'})                         # not asked for: no banner
+    assert 'ANCHOR DRAG' not in oled.texts()
+    check_fits([(nav.PAGE_ANCHOR, Oled())])
