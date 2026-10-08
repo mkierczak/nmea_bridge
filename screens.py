@@ -59,22 +59,45 @@ def _draw_hold(oled, hold):
     oled.fill_rect(5, 51, 118 * min(percent, 100) // 100, 6, 1)
 
 
+def _frame(oled, x, y, w, h):
+    """Outline with the corners cut by a pixel, like an instrument bezel."""
+    oled.hline(x + 2, y, w - 4, 1)
+    oled.hline(x + 2, y + h - 1, w - 4, 1)
+    oled.vline(x, y + 2, h - 4, 1)
+    oled.vline(x + w - 1, y + 2, h - 4, 1)
+    for cx, cy in ((x + 1, y + 1), (x + w - 2, y + 1), (x + 1, y + h - 2), (x + w - 2, y + h - 2)):
+        oled.hline(cx, cy, 1, 1)
+
+
+def _width(font, text):
+    """Pixel width of text in the large font (a fixed 12 px per character if the font cannot say)."""
+    measure = getattr(font, 'stringlen', None)
+    return measure(text) if measure else 12 * len(text)
+
+
+def _gauge(oled, font, x, title, value, unit):
+    """One framed instrument 62 pixels wide: title above, value in the large font, unit below."""
+    if title:
+        oled.text(title, x + (62 - 8 * len(title)) // 2, 2, 1)
+    _frame(oled, x, 12, 62, 48)
+    Writer.set_textpos(oled, 23, x + (62 - _width(font, value)) // 2)
+    font.printstring(value)
+    oled.text(unit, x + (62 - 8 * len(unit)) // 2, 43, 1)
+
+
 def _draw_speed(oled, font_large, parser, no_fix, banner):
-    if banner:
-        _banner(oled, banner, 10)
-    else:
-        oled.text('SOG kn', 0, 1, 1)
-        oled.hline(0, 9, 128, 1)
+    """Cockpit panel: COG on the left, SOG on the right, each in its own frame. The title row is where the
+    alert banner goes."""
     sog = parser.sog_kn
     moving = not no_fix and sog is not None
-    Writer.set_textpos(oled, 13, 0)
-    font_large.printstring('{:.1f}'.format(sog) if moving else '--')
-    oled.text('COG deg', 0, 31, 1)
-    oled.hline(0, 40, 128, 1)
+    if banner:
+        _banner(oled, banner, 10)
+    speed = '--' if not moving else '{:.1f}'.format(sog) if sog < 100 else '{:.0f}'.format(sog)
+    # a course over ground is meaningless while (nearly) stationary
     cog = parser.cog_deg
-    Writer.set_textpos(oled, 44, 0)    # a course over ground is meaningless while (nearly) stationary
-    font_large.printstring('{:03d}{}'.format(round(cog) % 360, chr(176)) if moving and sog >= 0.5 and cog is not None
-                           else '---')
+    course = '{:03d}'.format(round(cog) % 360) if moving and sog >= 0.5 and cog is not None else '---'
+    _gauge(oled, font_large, 0, '' if banner else 'COG', course, 'deg')      # the banner covers the titles
+    _gauge(oled, font_large, 66, '' if banner else 'SOG', speed, 'kn')
 
 
 def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None, spoof=None, wifi=None, info=None,

@@ -338,15 +338,16 @@ def _speed_page(sog, cog, no_fix=False, **ctx):
 
 def test_speed_page_shows_sog_and_cog():
     oled, printed = _speed_page(5.24, 123.6)
-    assert printed == ['5.2', '124' + chr(176)]
+    assert printed == ['124', '5.2']                 # course on the left, speed on the right
     check_fits([(nav.PAGE_SPEED, oled)])
 
 
 def test_speed_page_hides_course_when_nearly_stationary_and_values_without_fix():
-    assert _speed_page(0.2, 123.0)[1] == ['0.2', '---']
-    assert _speed_page(None, None)[1] == ['--', '---']
-    assert _speed_page(8.0, 90.0, no_fix=True)[1] == ['--', '---']
-    assert _speed_page(8.0, 359.6)[1][1] == '000' + chr(176)          # rounds up past north
+    assert _speed_page(0.2, 123.0)[1] == ['---', '0.2']
+    assert _speed_page(None, None)[1] == ['---', '--']
+    assert _speed_page(8.0, 90.0, no_fix=True)[1] == ['---', '--']
+    assert _speed_page(8.0, 359.6)[1][0] == '000'                      # rounds up past north
+    assert _speed_page(123.4, 10.0)[1] == ['010', '123']               # no decimal once it would not fit
 
 
 def test_no_fix_shows_how_long_ago_the_last_fix_was():

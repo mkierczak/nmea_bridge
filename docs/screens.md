@@ -75,20 +75,23 @@ GPS 3D 9/14        BBB   <- fix, mode, satellites used/in view, DOP letters
 ![Speed page](img/speed.png)
 
 ```
-SOG kn
--------------------------
-5.2                      <- speed over ground, knots (large font)
-COG deg
--------------------------
-124°                     <- course over ground, degrees true (large font)
+   COG         SOG       <- titles
+.-------.   .-------.
+|       |   |       |
+|  124  |   |  5.2  |    <- values (large font)
+|       |   |       |
+|  deg  |   |   kn  |    <- units
+'-------'   '-------'
 ```
 
 | Item | Meaning |
 |---|---|
-| SOG | Speed over ground in knots from the last RMC, one decimal. `--` without a fix. |
-| COG | Course over ground in degrees (000-359) from the last RMC. `---` without a fix, when the speed is below 0.5 kn (the course of a nearly stationary receiver is noise) or when the module reports none. |
+| COG (left) | Course over ground in degrees (000-359) from the last RMC. `---` without a fix, when the speed is below 0.5 kn (the course of a nearly stationary receiver is noise) or when the module reports none. |
+| SOG (right) | Speed over ground in knots from the last RMC, one decimal (none from 100 kn up). `--` without a fix. |
 
-The alert banner replaces the `SOG kn` header row, as on the Main page.
+The alert banner replaces the title row, as on the Main page:
+
+![Speed page with an alert banner](img/speed-alert.png)
 
 ## 3. Stats
 

@@ -71,6 +71,10 @@ class SimWriter(object):
     def set_textpos(oled, row, col):
         SimWriter.row, SimWriter.col = row, col
 
+    @staticmethod
+    def stringlen(string):
+        return sum(roboto14.get_ch(ch)[2] for ch in string)
+
     def printstring(self, string):
         for ch in string:
             glyph, height, width = roboto14.get_ch(ch)
@@ -199,6 +203,8 @@ def scenes():
         ('main-wifi-hold', 'Holding UP for the Wi-Fi gesture',
          page_scene(nav.PAGE_MAIN, p, jam=Jam('OK'), hold=(55, True))),
         ('speed', 'Speed', page_scene(nav.PAGE_SPEED, p)),
+        ('speed-alert', 'Speed, jamming alert banner',
+         page_scene(nav.PAGE_SPEED, p, jam=Jam('JAM?', 'CN'), banner=True)),
         ('stats', 'Stats', page_scene(nav.PAGE_STATS, p, jam=Jam('OK'))),
         ('satellites', 'Satellites', page_scene(nav.PAGE_SATS, p)),
         ('signal', 'Signal', page_scene(nav.PAGE_SIGNAL, p, jam=Jam('LOW', 'CN'))),
