@@ -580,3 +580,18 @@ def test_page_indicator_is_dashed_in_the_debug_loop():
     assert len([l for l in solid.lines if l[1] == 63]) == len(nav.DEBUG_PAGES)
     assert all(l[2] == width - 2 for l in solid.lines if l[1] == 63)
     assert all(l[2] == 2 for l in dashed.lines if l[1] == 63) and len([l for l in dashed.lines if l[1] == 63]) > 6
+
+
+def test_main_page_before_the_first_fix_shows_the_wait_and_what_is_tracked():
+    p = populated_parser()
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, p, STATS, 0, True, None, None, None, None,
+                 {'fix_age_s': None, 'uptime_s': 75})
+    texts = oled.texts()
+    assert 'Waiting for fix' in texts and 'tracked 12/12' in texts and 'waited 1:15' in texts
+    assert 'NO FIX' not in texts
+    check_fits([(nav.PAGE_MAIN, oled)])
+    oled = Oled()                                           # a fix was lost: the old message with the time
+    screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, p, STATS, 0, True, None, None, None, None,
+                 {'fix_age_s': 5, 'uptime_s': 75})
+    assert 'NO FIX' in oled.texts() and 'Waiting for fix' not in oled.texts()

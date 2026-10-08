@@ -204,6 +204,8 @@ def scenes():
         ('main-alert', 'Main, spoofing alert banner',
          page_scene(nav.PAGE_MAIN, p, jam=Jam('OK'), spoof=alert_spoof, banner=True)),
         ('main-nofix', 'Main, no fix', page_scene(nav.PAGE_MAIN, nofix, no_fix=True, jam=Jam('OK'), fix_age_s=42, heartbeat='idle')),
+        ('main-waiting', 'Main, waiting for the first fix',
+         page_scene(nav.PAGE_MAIN, nofix, no_fix=True, jam=Jam('OK'), uptime_s=75, heartbeat='idle')),
         ('main-wifi-hold', 'Holding UP for the Wi-Fi gesture',
          page_scene(nav.PAGE_MAIN, p, jam=Jam('OK'), hold=(55, 'Hold: Wi-Fi on'))),
         ('main-debug-hold', 'Holding both keys for the debug loop',

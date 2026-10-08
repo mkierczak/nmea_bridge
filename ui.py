@@ -7,7 +7,6 @@ stay correct after MicroPython's millisecond counter wraps, which `ticks_diff` o
 import gc
 
 import nav
-from bridge import ALERT_STATES
 
 try:
     from utime import ticks_diff
@@ -23,6 +22,7 @@ BLINK_HALF_MS = 400           # ... in phases of this length
 HOLD_SHOW_MS = 400            # the Wi-Fi gesture box appears once UP has been held this long
 HOLD_STALE_MS = 10 * 1000     # a key 'held' longer than this is a lost release edge: ignore it
 HOLD_REFRESH_MS = 150
+DEBUG_TIMEOUT_MS = 2 * 60 * 1000   # no key for this long in the debug loop: back to the Main page
 
 
 class UiController(object):
@@ -50,7 +50,7 @@ class UiController(object):
         self.chord_ms = chord_ms
         self.wifi_up = wifi_up                # () -> True while the access point is on (or failed): its page is shown
         self.alert_acked = False              # a key press dismissed the banner of the current strong alert
-        self._strong = False                  # an alert (spoofing or jamming at MEDIUM or HIGH) is active
+        self._rank = 0                        # 0 none, 1 MEDIUM, 2 HIGH: the worst alert of the detectors
         self._alert_ms = 0                    # uptime when it began
         self._inverted = False
         self.menu = None
@@ -70,6 +70,9 @@ class UiController(object):
         if self.wifi_up is not None:
             self.navigator.wifi_up = self.wifi_up()
         self.navigator.check()
+        if self.navigator.debug and self.idle_ms > DEBUG_TIMEOUT_MS:
+            self.navigator.leave_debug()      # nobody is diagnosing: do not leave the details on the screen
+            self.force_draw = True
         for ev in self.events.drain():
             self._handle(ev)
         if self.menu is not None and self.idle_ms > self.menu_timeout_ms:
@@ -91,20 +94,34 @@ class UiController(object):
         self._draw(now)
 
     # --- internals ------------------------------------------------------------------------
-    def _strong_alert(self):
+    @property
+    def _strong(self):
+        return self._rank > 0
+
+    def _alert_rank(self):
         b = self.bridge
-        return bool((b.spoof and b.spoof.state in ALERT_STATES) or (b.detector and b.detector.state in ALERT_STATES))
+        rank = 0
+        for detector in (b.spoof, b.detector):
+            if detector is not None:
+                state = detector.state
+                rank = max(rank, 2 if state == 'HIGH' else 1 if state == 'MEDIUM' else 0)
+        return rank
 
     def _track_alert(self):
-        """Banner and blink bookkeeping: a new strong alert un-dismisses the banner and starts the blink."""
-        strong = self._strong_alert()
-        if strong != self._strong:
-            self._strong = strong
+        """Banner and blink bookkeeping: a new alert, or one that gets worse (MEDIUM to HIGH), shows the banner
+        again, starts the blink and pulls the display back from the debug loop."""
+        rank = self._alert_rank()
+        if rank > self._rank:
             self.alert_acked = False
             self._alert_ms = self.uptime_ms
-            if strong and self.navigator.debug and self.menu is None:
-                self.navigator.leave_debug()          # a new alert must be seen: back to the Main page
+            if self.navigator.debug and self.menu is None:
+                self.navigator.leave_debug()          # an alert must be seen: back to the Main page
             self.force_draw = True
+        elif rank == 0 and self._rank:
+            self.alert_acked = False
+            self.force_draw = True
+        self._rank = rank
+        strong = rank > 0
         blink = (strong and not self.alert_acked and not self.screen_off
                  and self.uptime_ms - self._alert_ms < BLINK_MS
                  and (self.uptime_ms - self._alert_ms) // BLINK_HALF_MS % 2 == 0)
@@ -208,7 +225,8 @@ class UiController(object):
         age_ms = bridge.fix_age_ms(now) if no_fix else None
         ctx = {'pages': self.navigator.pages, 'banner': self._banner_visible(), 'hold': hold,
                'debug': self.navigator.debug,
-               'heartbeat': heartbeat, 'fix_age_s': None if age_ms is None else age_ms // 1000}
+               'heartbeat': heartbeat, 'fix_age_s': None if age_ms is None else age_ms // 1000,
+               'uptime_s': self.uptime_ms // 1000 if page == nav.PAGE_MAIN and no_fix else None}
         sig = (page, no_fix, bridge.queue.dropped, tuple(bridge.stats.values()),
                parser.display_signature(),
                bridge.detector.signature() if bridge.detector else None,
@@ -216,7 +234,7 @@ class UiController(object):
                wifi,
                tuple(v for k, v in info.items() if k != 'now_ms') if info else None,
                parser.type_signature() if page in (nav.PAGE_STATS, nav.PAGE_DEBUG) else None,
-               ctx['banner'], ctx['fix_age_s'], bool(hold), heartbeat,
+               ctx['banner'], ctx['fix_age_s'], ctx['uptime_s'], bool(hold), heartbeat,
                (parser.sog_kn, parser.cog_deg) if page == nav.PAGE_SPEED else None)
         if redraw_all or sig != self._last_sig:
             self.draw(self.oled, self.font, page, parser, bridge.stats, bridge.queue.dropped, no_fix,

@@ -304,11 +304,14 @@ def _draw_main(oled, font_large, parser, no_fix, jam, spoof, wifi, banner, ctx):
         _status_row(oled, parser, jam, spoof, wifi, ctx.get('heartbeat'))
     oled.hline(0, 14, 128, 1)
     if no_fix:
-        oled.text('NO FIX', 40, 28, 1)
         age = ctx.get('fix_age_s')
-        if age is not None:
-            text = age_text(age)
-            oled.text(text, (128 - 8 * len(text)) // 2, 38, 1)
+        if age is None and ctx.get('uptime_s') is not None:
+            _draw_waiting(oled, parser, ctx['uptime_s'])    # no fix since boot: show that something is happening
+        else:
+            oled.text('NO FIX', 40, 28, 1)
+            if age is not None:
+                text = age_text(age)
+                oled.text(text, (128 - 8 * len(text)) // 2, 38, 1)
     else:
         Writer.set_textpos(oled, 17, 0)
         font_large.printstring(parser.get_lat_string())
@@ -319,6 +322,14 @@ def _draw_main(oled, font_large, parser, no_fix, jam, spoof, wifi, banner, ctx):
                str(parser.birds_in_use) + '/' + str(parser.birds_in_view))[:13], 0, 54, 1)  # ends before x=104
     oled.text(parser.get_dop_string(type='PDOP') + parser.get_dop_string(type='HDOP') +
               parser.get_dop_string(type='VDOP'), 104, 54, 1)
+
+
+def _draw_waiting(oled, parser, uptime_s):
+    """Before the first fix: the satellites being tracked and how long it has taken (a cold start takes minutes)."""
+    tracked = parser.cn0_stats()[0]
+    oled.text('Waiting for fix', 4, 19, 1)
+    oled.text('tracked {}/{}'.format(tracked, parser.birds_in_view), 16, 30, 1)
+    oled.text('waited {}:{:02d}'.format(uptime_s // 60, uptime_s % 60), 16, 39, 1)
 
 
 def _cap(value, limit):

@@ -28,8 +28,8 @@ Satellites, Signal, Spoofing, System, Debug**.
 **Two keys together.** While both keys are held for more than about 0.4 s a box appears (`Hold: debug`, or
 `Hold: main` in the debug loop) with a progress bar that fills over the 2 s; the loop switches when it is full. While
 both keys are down neither of them acts on its own (that includes the 3 s Wi-Fi toggle on UP), even if you let go
-early. In the debug loop a long DN also leaves it, and a new `MEDIUM`/`HIGH` alert sends you back to the Main page
-so that the banner is seen. The screen can switch itself off after a timeout (menu Display > Screen off); the first
+early. In the debug loop a long DN also leaves it, so does two minutes without a key press, and a new `MEDIUM`/`HIGH`
+alert (or one that gets worse) sends you back to the Main page so that the banner is seen. The screen can switch itself off after a timeout (menu Display > Screen off); the first
 key press only wakes it, and a jamming or spoofing alert wakes it and keeps it on. Pages are redrawn when a visible
 value changes (and at least every 500 ms when something did).
 
@@ -46,7 +46,7 @@ pixels high for the page you are on. In the debug loop the segments are dashed.
 `MEDIUM` or `HIGH`; `MEDIUM` and `HIGH` are alerts. An alert replaces the top row of the Main and
 Speed pages with a white bar showing it (`SPOOFING HIGH`, `JAMMING MEDIUM`, or `SPF! JAM?` for both, the mark standing for the level: `?` medium, `!` high); the indicator codes are on the Spoofing and Signal pages, and the display
 blinks (inverted) for 3 s when the alert starts. The first key press on one of those pages dismisses the banner and
-the blink (it does not change the page); the small labels stay. A new alert shows the banner again.
+the blink (it does not change the page); the small labels stay. A new alert, or one that gets worse (`MEDIUM` to `HIGH`), shows the banner and the blink again.
 `LOW` is not an alert: it only shows the small label (`SPF.` / `JAM.`) and does not keep the screen on.
 
 ![Spoofing alert banner on the Main page](img/main-alert.png)
@@ -74,7 +74,9 @@ GPS 3D 9/14        BBB   <- fix, mode, satellites used/in view, DOP letters
 | Label space | The labels and the Wi-Fi icon share five character cells, right-aligned before the heartbeat icon. When they do not fit, the labels shrink (`SPF?` to `S?`, `JAM!` to `J!`), and if that is not enough the Wi-Fi icon is dropped. |
 | Latitude / longitude | Hemisphere letter, whole degrees, decimal minutes always with two digits before the point and two after: `N59°12.34`, `E018°03.21`. Replaced by `NO FIX` when there is no usable position. |
 | `NO FIX` | Shown when the last GGA says no fix, no position sentence has arrived yet, or the last position sentence is older than 10 s. Under it `lost m:ss` (or `lost 1h02m`) counts the time since the last valid fix; nothing is shown if there has been no fix since boot. |
-| Alert banner | While a strong alert is active and not dismissed, the time/label row is replaced by a white bar with the alert text (see Navigation). |
+| Waiting for the first fix | Before the first fix since boot the page shows `Waiting for fix`, the satellites tracked / in view and how long it has taken (`waited m:ss`, updated every second); a cold start can take several minutes. A fix lost later shows `NO FIX` instead. |
+| Waiting for the first fix | Before the first fix since boot the page shows `Waiting for fix`, the satellites tracked / in view and how long it has taken (`waited m:ss`, updated every second); a cold start can take several minutes. A fix lost later shows `NO FIX` and `lost m:ss` instead. |
+| Alert banner | While an alert (`MEDIUM` or `HIGH`) is active and not dismissed, the time/label row is replaced by a white bar with the alert text (see Navigation). |
 | Fix | Last GGA fix quality: `NO`, `GPS`, `DGPS` (differential/SBAS) or `?`. |
 | Mode | From GSA: `2D`, `3D`, or blank when unknown. |
 | `used/view` | Satellites used in the solution (GGA) / satellites in view (sum of the GSV totals of all systems). |
@@ -85,6 +87,8 @@ GPS 3D 9/14        BBB   <- fix, mode, satellites used/in view, DOP letters
 ![Main page with a radio write failure: the heartbeat icon is a cross](img/main-fault.png)
 
 ![Main page without a fix](img/main-nofix.png)
+
+![Main page waiting for the first fix](img/main-waiting.png)
 
 ## 2. Speed
 

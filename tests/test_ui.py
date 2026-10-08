@@ -83,6 +83,7 @@ class Rig:
 
 def test_first_step_draws_once_and_idle_steps_do_not_redraw():
     r = Rig()
+    r.bridge.parser.fix_type, r.bridge.last_pos = 'GPS', r.clock.now      # a fix: nothing on the page ticks
     r.step()
     assert r.draws == [(nav.PAGE_MAIN, False)] and r.oled.shows == 1
     for _ in range(5):
@@ -432,3 +433,49 @@ def test_chord_hold_box_shows_the_target_loop_and_progress():
     held[0] = 1500
     r.step(advance=ui.HOLD_REFRESH_MS + 1)
     assert r.ctxs[-1]['hold'] == (75, 'Hold: main')
+
+
+def test_an_alert_that_gets_worse_shows_the_banner_and_blink_again():
+    r = Rig()
+    r.step()
+    r.bridge.spoof = FakeDetector('MEDIUM')
+    r.step(advance=10)
+    r.press(UP_SHORT)                                      # dismissed
+    assert r.ui.alert_acked and r.ctxs[-1]['banner'] is False
+    r.step(advance=ui.BLINK_MS + 100)
+    n = len(r.oled.inverts)
+    r.bridge.spoof.state = 'HIGH'
+    r.step(advance=10)
+    assert not r.ui.alert_acked and r.ctxs[-1]['banner'] is True and len(r.oled.inverts) > n
+    r.press(UP_SHORT)
+    r.bridge.spoof.state = 'MEDIUM'                        # getting better does not bring it back
+    r.step(advance=10)
+    assert r.ui.alert_acked
+    r.bridge.spoof.state = 'HIGH'                          # but getting worse again does
+    r.step(advance=10)
+    assert not r.ui.alert_acked
+
+
+def test_the_debug_loop_times_out_without_keys():
+    r = Rig()
+    r.step()
+    r.press(nav.CHORD)
+    assert r.navigator.debug
+    r.step(advance=ui.DEBUG_TIMEOUT_MS - 1000)
+    assert r.navigator.debug
+    r.press(UP_SHORT)                                      # a key press restarts the timer
+    r.step(advance=ui.DEBUG_TIMEOUT_MS - 1000)
+    assert r.navigator.debug
+    r.step(advance=2000)
+    assert not r.navigator.debug and r.navigator.page == nav.PAGE_MAIN
+    assert r.draws[-1][0] == nav.PAGE_MAIN
+
+
+def test_the_main_page_waits_for_the_first_fix_and_passes_the_uptime():
+    r = Rig()
+    r.step()
+    assert r.ctxs[-1]['fix_age_s'] is None and r.ctxs[-1]['uptime_s'] == 0
+    r.step(advance=2100)
+    assert r.ctxs[-1]['uptime_s'] == 2                     # redrawn every second while waiting
+    r.press(UP_SHORT)
+    assert r.ctxs[-1]['uptime_s'] is None                  # only the Main page needs it

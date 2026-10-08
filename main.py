@@ -97,7 +97,10 @@ oled.init_display()
 if cfg.is_overridden('contrast') or cfg.get('night'):
     oled.contrast(0 if cfg.get('night') else cfg.get('contrast'))  # the driver starts at 0
 oled.fill(0)
-oled.text('Waiting for fix...', 0, 0, 1)
+oled.text('NMEA bridge', 16, 8, 1)               # splash: what is running and how it is set up
+oled.text(VERSION[:16], 0, 20, 1)
+oled.text('{} {}'.format(cfg.get('gnss_mode'), cfg.get('gps_baud')), 0, 32, 1)
+oled.text('starting...', 0, 48, 1)
 oled.show()
 
 
