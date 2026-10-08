@@ -49,10 +49,10 @@ pixels high for the page you are on. In the debug loop the segments are dashed.
 
 **Alert banner and blink.** The detectors report the probability of spoofing and of jamming as `OK`, `LOW`,
 `MEDIUM` or `HIGH`; `MEDIUM` and `HIGH` are alerts. An alert replaces the top row of the Main and
-Speed pages with a white bar showing it (`SPOOFING HIGH`, `JAMMING MEDIUM`, or `SPF! JAM?` for both, the mark standing for the level: `?` medium, `!` high); the indicator codes are on the Spoofing and Signal pages, and the display
+Speed pages with a white bar showing it (`SPOOFING HIGH`, `JAMMING MEDIUM`, or `SPOOF+JAM HIGH` for both, with the worse of the two levels); the indicator codes are on the Spoofing and Signal pages, and the display
 blinks (inverted) for 3 s when the alert starts. The first key press on one of those pages dismisses the banner and
 the blink (it does not change the page); the small labels stay. A new alert, or one that gets worse (`MEDIUM` to `HIGH`), shows the banner and the blink again.
-`LOW` is not an alert: it only shows the small label (`SPF.` / `JAM.`) and does not keep the screen on.
+`LOW` is not an alert: it only shows the small icon on the Main page and does not keep the screen on.
 
 ![Spoofing alert banner on the Main page](img/main-alert.png)
 
@@ -73,10 +73,10 @@ GPS 3D 9/14        BBB   <- fix, mode, satellites used/in view, DOP letters
 |---|---|
 | Time | The last RMC/GGA/ZDA time field, `hh:mm:ss`, followed by `Z` for UTC or `L` when the clock is shifted to local time (menu Display > UTC offset, -12 to +14 hours); `--:--:--` until a time has been received. |
 | Heartbeat icon (last column) | Shows that position sentences (RMC/GGA) are reaching the radio. A **filled heart** for 0.35 s after each sentence was written to the radio and an **outline heart** in between, so it beats once per fix. A **short bar** means nothing was forwarded for 3 s (no data, no fix, the types switched off in the menu, or blocked by a spoofing alert in block mode). A **cross** means the radio write failed, or a position sentence was dropped for being more than 3 s late; it stays for 10 s. It shows that the bridge wrote to the radio, not that the radio received it. |
-| Jamming label | The probability of jamming, only when it is above `OK`: `JAM.` (low), `JAM?` (medium), `JAM!` (high). Blank when the detector is off, learning, or `OK`. See [jamming-detection.md](jamming-detection.md). |
-| Spoofing label | The probability of spoofing, only when it is above `OK`: `SPF.` (low), `SPF?` (medium), `SPF!` (high). Blank when `OK` or the detector is off. See [spoofing-detection.md](spoofing-detection.md). |
+| Jamming icon | A **lightning bolt** (interference) followed by a **level meter** of three rising bars, only when the probability of jamming is above `OK`: one filled bar `LOW`, two `MEDIUM`, three `HIGH` (the unfilled bars are a short dash). Nothing is shown when the detector is off, learning, or `OK`. See [jamming-detection.md](jamming-detection.md). |
+| Spoofing icon | A **ghost** (a fake position) followed by the same level meter, only when the probability of spoofing is above `OK`. The spoofing icon is the right-most of the two. See [spoofing-detection.md](spoofing-detection.md). |
 | Wi-Fi icon | Only while the access point is on: the **Wi-Fi arcs** (followed by `!` if the access point failed to start). The number of clients is on the Wi-Fi page. |
-| Label space | The labels and the Wi-Fi icon share five character cells, right-aligned before the heartbeat icon. When they do not fit, the labels shrink (`SPF?` to `S?`, `JAM!` to `J!`), and if that is not enough the Wi-Fi icon is dropped. |
+| Space | The two probability icons (two character cells each) and the Wi-Fi icon share five character cells, right-aligned before the heartbeat icon. When all three would be there the Wi-Fi icon is left out. |
 | Latitude / longitude | Hemisphere letter, whole degrees, decimal minutes always with two digits before the point and two after: `N59°12.34`, `E018°03.21`. With menu Display > Coords set to `dd.dddd` it is decimal degrees instead: `N59.3057°`, `E018.0537°`. Replaced by `NO FIX` when there is no usable position. |
 | `NO FIX` | Shown when the last GGA says no fix, no position sentence has arrived yet, or the last position sentence is older than 10 s. Under it `lost m:ss` (or `lost 1h02m`) counts the time since the last valid fix; nothing is shown if there has been no fix since boot. |
 | Waiting for the first fix | Before the first fix since boot the page shows `Waiting for fix`, the satellites tracked / in view and how long it has taken (`waited m:ss`, updated every second); a cold start can take several minutes. A fix lost later shows `NO FIX` instead. |

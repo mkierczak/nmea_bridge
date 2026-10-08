@@ -146,7 +146,7 @@ Full algorithm description: [docs/jamming-detection.md](docs/jamming-detection.m
 
 `jamming.py` watches per-satellite C/N0 from GSV and the fix status, learns a baseline of normal
 conditions, and reports the probability of jamming as `OK` / `LOW` / `MEDIUM` / `HIGH` (the main screen shows
-`JAM.` / `JAM?` / `JAM!` for the last three; `MEDIUM` and `HIGH` are alerts with a banner; nothing is shown
+a bolt icon with a one-to-three-bar level meter for the last three; `MEDIUM` and `HIGH` are alerts with a banner; nothing is shown
 while the baseline is still being learned). Details (mean vs baseline C/N0, tracked satellites, reason letters
 C/N/F/M) are on the Signal page. NMEA exposes no RF/AGC data, so obstruction, indoor use or
 an antenna fault look the same as jamming: treat `MEDIUM`/`HIGH` as "signal degraded, jamming possible".
@@ -159,7 +159,7 @@ enable Active Interference Cancellation (`$PMTK286,1`); the debug screen shows `
 Full algorithm description: [docs/spoofing-detection.md](docs/spoofing-detection.md).
 
 `spoofing.py` reports the probability of spoofing as `OK` / `LOW` / `MEDIUM` / `HIGH` (the main screen shows
-`SPF.` / `SPF?` / `SPF!` for the last three; `MEDIUM` and `HIGH` are alerts with a banner, `HIGH` is held for
+a ghost icon with a one-to-three-bar level meter for the last three; `MEDIUM` and `HIGH` are alerts with a banner, `HIGH` is held for
 about 11 min). It is **heuristic**: the L76B gives NMEA only (no raw measurements, no RAIM, no signal
 authentication), so a careful spoofer (smooth drift, consistent time, realistic power) will pass.
 Treat it as "spoofing suspected", never as proof or protection. Indicators (letters on the debug

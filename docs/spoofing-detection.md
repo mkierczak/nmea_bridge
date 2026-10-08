@@ -40,12 +40,12 @@ match the reported speed, and signal-strength patterns that look more like one t
 sky full of satellites. It reports the **probability** of spoofing in four levels; `MEDIUM` and `HIGH`
 are alerts (banner, blink, the display stays on):
 
-| Label | Level | Meaning |
+| Main page | Level | Meaning |
 |---|---|---|
-| *(blank)* | `OK` | no relevant indicator in the last 60 s |
-| `SPF.` | `LOW` | a single weak indicator: worth knowing, not an alert |
-| `SPF?` | `MEDIUM` | **alert**: some evidence of inconsistency (a single medium indicator, or two different weak ones); clears when the evidence is older than 60 s |
-| `SPF!` | `HIGH` | **alert**: strong evidence (a strong indicator, or two different medium ones); stays up for about 11 min after the last such evidence (60 s evidence window + 10 min latch, see section 6) |
+| *(nothing)* | `OK` | no relevant indicator in the last 60 s |
+| ghost, 1 bar | `LOW` | a single weak indicator: worth knowing, not an alert |
+| ghost, 2 bars | `MEDIUM` | **alert**: some evidence of inconsistency (a single medium indicator, or two different weak ones); clears when the evidence is older than 60 s |
+| ghost, 3 bars | `HIGH` | **alert**: strong evidence (a strong indicator, or two different medium ones); stays up for about 11 min after the last such evidence (60 s evidence window + 10 min latch, see section 6) |
 
 **Important.** This is a heuristic *suspicion* indicator. The L76B gives NMEA sentences only: no raw
 pseudoranges, no RAIM integrity monitoring and no signal authentication (such as Galileo OSNMA, which
@@ -347,7 +347,7 @@ else:                                              state = OK      (clears the l
 
 `SPOOF_ACTION` (default `'display'`; changeable in **Menu > Detection > Spoof act.**):
 
-* **`display`** - only show the probability (`SPF.`/`SPF?`/`SPF!`, the banner for `MEDIUM` and `HIGH`) and the Spoofing page. Sentences keep flowing to the radio
+* **`display`** - only show the probability (the ghost icon with its level meter, the banner for `MEDIUM` and `HIGH`) and the Spoofing page. Sentences keep flowing to the radio
   and Wi-Fi.
 * **`block`** - while the state is `HIGH` (including the latch, about 11 minutes in total), sentences of the types in
   `SPOOF_BLOCK_TYPES` (default `RMC`, `GGA`, constant in `main.py`) are **not** forwarded to the radio
@@ -442,7 +442,7 @@ raises the state above `LOW`, which is not an alert. A second weak indicator (fo
 
 ## 11. Where you see it
 
-* **Main page**, top row right: `SPF.` / `SPF?` / `SPF!` (blank when `OK`); a `MEDIUM` or `HIGH` level also shows the alert banner and blinks the display.
+* **Main page**, top row right: a ghost icon with a level meter of one to three bars (nothing when `OK`); a `MEDIUM` or `HIGH` level also shows the alert banner and blinks the display.
 * **Spoofing page**: the level as a badge, a tile for each of the eight indicators (lit while it counts),
   `warm n/30` or `armed`, and `latch m:ss` while a `HIGH` alert is latched.
 * **Debug page**: indicator letters (`S:` field).
@@ -501,7 +501,7 @@ raises the state above `LOW`, which is not an alert. A second weak indicator (fo
    board. Without timestamps the tool synthesises the arrival time from GPS time, which makes T1 meaningless;
    keep the timestamps to test it.
 3. **Adjust** thresholds in the menu (Advanced) or sweep them offline with `--set KEY=VALUE` (for example
-   `--set max_speed_kn=40 --set time_jump_ms=800`) until normal operation produces no `SPF!` and few `SPF?`,
+   `--set max_speed_kn=40 --set time_jump_ms=800`) until normal operation produces no `HIGH` and few `MEDIUM`,
    with margin.
 4. **Provoke events safely.** Never transmit spoofing signals: generating counterfeit GNSS signals
    outside a shielded test environment is illegal in most places and dangerous to others. Use

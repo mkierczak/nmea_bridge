@@ -14,16 +14,16 @@ MODULE_JAM = {0: '?', 1: 'ok', 2: 'warn', 3: 'CRIT'}
 
 
 ALERT_STATES = ('MEDIUM', 'HIGH')
-MARKS = {'LOW': '.', 'MEDIUM': '?', 'HIGH': '!'}     # after SPF / JAM: SPF. low, SPF? medium, SPF! high
+LEVELS = {'LOW': 1, 'MEDIUM': 2, 'HIGH': 3}
 
 
 def banner_text(jam, spoof):
     """Text of the alert banner, or '' when nothing is at MEDIUM or HIGH (LOW only gets the small label):
-    'SPOOFING HIGH', 'JAMMING MEDIUM', or 'SPF! JAM?' (the marks stand for the levels) when both are."""
+    'SPOOFING HIGH', 'JAMMING MEDIUM', or 'SPOOF+JAM HIGH' (the worse level) when both are."""
     spf = spoof.state if spoof and spoof.state in ALERT_STATES else ''
     jm = jam.state if jam and jam.state in ALERT_STATES else ''
     if spf and jm:
-        return 'SPF{} JAM{}'.format(MARKS[spf], MARKS[jm])
+        return 'SPOOF+JAM ' + (spf if LEVELS[spf] >= LEVELS[jm] else jm)     # the worse of the two
     if spf:
         return 'SPOOFING ' + spf
     if jm:
@@ -60,46 +60,52 @@ def _wifi_mark(wifi):
     return (ICON_WIFI, '!') if wifi[0] == 'ERR' else None
 
 
-def _short(label):
-    """'SPF?' -> 'S?', 'JAM!' -> 'J!'."""
-    return label[0] + label[-1]
+ICON_JAM = (0b00001110, 0b00011100, 0b00111000, 0b01111111, 0b00011100, 0b00111000, 0b01110000, 0b01000000)   # a bolt
+ICON_SPOOF = (0b00111100, 0b01111110, 0b01011010, 0b01111110, 0b01111110, 0b01111110, 0b01111110, 0b01011010)  # a ghost
+LEVELS_SHOWN = {'LOW': 1, 'MEDIUM': 2, 'HIGH': 3}
+_BARS = ((0, 3), (3, 5), (6, 7))      # the three bars of a level meter: (x offset, height)
+
+
+def _meter(oled, x, y, level):
+    """Three rising bars like a signal-strength meter; the first 'level' of them are filled, the others are a dash."""
+    for i, (dx, height) in enumerate(_BARS):
+        if i < level:
+            oled.fill_rect(x + dx, y + 8 - height, 2, height, 1)
+        else:
+            oled.fill_rect(x + dx, y + 7, 2, 1, 1)
 
 
 def _status_row(oled, parser, jam, spoof, wifi, heartbeat):
-    """Top row of the Main page: UTC time with a Z, then (right to left) the heartbeat icon, the spoofing label,
-    the jamming label (only when something is wrong) and the Wi-Fi icon. When they do not all fit the labels
-    shrink, and the Wi-Fi mark gives way first."""
+    """Top row of the Main page: the clock, then (right to left) the heartbeat icon, the spoofing probability, the
+    jamming probability and the Wi-Fi icon. The probabilities show only above OK, as an icon (a ghost for the
+    fake position, a bolt for interference) with a level meter of one to three bars for LOW, MEDIUM and HIGH. When they
+    do not all fit the Wi-Fi icon gives way."""
     time_text = units.shift_time(parser.get_time_string())
     oled.text(time_text if time_text[0] == '-' else time_text + units.clock_suffix(), 0, 3, 1)
     if heartbeat:
         _icon(oled, HEARTBEAT[heartbeat], 120, 3)
-    jam_label = jam.label() if jam else ''
-    if jam_label == 'OK':
-        jam_label = ''                    # nothing to report: no label
+    items = []                                  # (icon, level, text); width 2 cells with a level, else icon + text
+    for detector, icon in ((spoof, ICON_SPOOF), (jam, ICON_JAM)):
+        level = LEVELS_SHOWN.get(detector.state, 0) if detector is not None else 0
+        if level:
+            items.append((icon, level, ''))
     mark = _wifi_mark(wifi)
-    items = [(spoof.label() if spoof else '', True, None), (jam_label, True, None),
-             (mark[1] if mark else '', False, mark[0] if mark else None)]
-    items = [item for item in items if item[0] or item[2]]
+    if mark:
+        items.append((mark[0], 0, mark[1]))
 
-    def layout(shrunk):
-        texts = [(_short(t) if shrunk and c else t, c, i) for t, c, i in items]
-        widths = [len(t) + (1 if i else 0) for t, c, i in texts]
-        return texts, widths, sum(widths) + len(widths) - 1
-    texts, widths, slots = layout(False)
-    if slots > STATUS_SLOTS:
-        texts, widths, slots = layout(True)
-    if slots > STATUS_SLOTS and items and items[-1][2]:        # still too much: drop the Wi-Fi mark
-        items = items[:-1]
-        texts, widths, slots = layout(True)
+    def width(item):
+        return 2 if item[1] else 1 + len(item[2])
+    if sum(width(i) for i in items) + len(items) - 1 > STATUS_SLOTS and items and not items[-1][1]:
+        items = items[:-1]                      # too much: the Wi-Fi icon gives way
     x = 120
-    for (text, _, icon), width in zip(texts, widths):
-        x -= 8 * width
-        if icon:
-            _icon(oled, icon, x, 3)
-            if text:
-                oled.text(text, x + 8, 3, 1)
-        else:
-            oled.text(text, x, 3, 1)
+    for item in items:
+        icon, level, text = item
+        x -= 8 * width(item)
+        _icon(oled, icon, x, 3)
+        if level:
+            _meter(oled, x + 8, 3, level)
+        elif text:
+            oled.text(text, x + 8, 3, 1)
         x -= 8
 
 

@@ -30,13 +30,13 @@ The detector watches the **quality of the GNSS signal** the L76B module reports 
 that quality collapses in the way it does under radio-frequency interference (jamming). The result is a
 probability of jamming in four levels; `MEDIUM` and `HIGH` are alerts (banner, blink, the display stays on):
 
-| Label | Level | Meaning |
+| Main page | Level | Meaning |
 |---|---|---|
 | *(blank)* | `INIT` | still learning what "normal" looks like (no verdict yet) |
 | *(blank)* | `OK` | signal quality is consistent with the learned baseline |
-| `JAM.` | `LOW` | signal quality is clearly degraded: one kind of evidence, or the module warns. Not an alert. |
-| `JAM?` | `MEDIUM` | **alert**: two kinds of evidence agree (or the module reports a critical state) |
-| `JAM!` | `HIGH` | **alert**: three or more agree, for example loss of tracking and of the fix together with a critical module status |
+| bolt, 1 bar | `LOW` | signal quality is clearly degraded: one kind of evidence, or the module warns. Not an alert. |
+| bolt, 2 bars | `MEDIUM` | **alert**: two kinds of evidence agree (or the module reports a critical state) |
+| bolt, 3 bars | `HIGH` | **alert**: three or more agree, for example loss of tracking and of the fix together with a critical module status |
 
 **Important.** The L76B only gives us NMEA sentences. It does not expose raw RF measurements such as
 AGC level or the noise floor. Everything that reduces signal strength therefore looks the same to this
@@ -280,7 +280,7 @@ know it should be better) and is a limitation (section 11).
 
 ## 8. Where you see it
 
-* **Main page**, top row, to the right of the time: `JAM.`, `JAM?`, `JAM!` for `LOW`, `MEDIUM`, `HIGH` (blank while `OK` or `INIT`); `MEDIUM` and `HIGH` also show the alert banner and blink the display.
+* **Main page**, top row, to the right of the time: a lightning-bolt icon with a level meter of one to three bars for `LOW`, `MEDIUM`, `HIGH` (nothing while `OK` or `INIT`); `MEDIUM` and `HIGH` also show the alert banner and blink the display.
 * **Signal page** (short-press through the pages): the level as a badge, reasons in words, `CN0 mean/baseline dB`,
   `sats tracked/baseline`, mean C/N0 per constellation (GP, BD), module jamming status
   (`ok/warn/CRIT/?`) and the AIC result (`AIC+`, `AIC-`, `AIC?`).

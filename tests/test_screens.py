@@ -285,59 +285,65 @@ def test_cn0_jitter_in_the_decimals_does_not_change_the_signature_but_real_chang
     assert p.display_signature() != sig
 
 
-class Label:
-    """Stand-in for a detector on the main page, which only asks for its label."""
-    def __init__(self, text):
-        self.text = text
-
-    def label(self):
-        return self.text
+class Det:
+    """Stand-in for a detector on the main page, which only asks for its state."""
+    def __init__(self, state):
+        self.state = state
 
 
-def title_row(jam_label, spoof_label, wifi=None, heartbeat=None, parser=None):
-    """Texts of the top row as (x, text), and the icons as (x, name) in one sorted list."""
+ICON_NAMES = ('wifi', 'heart', 'outline', 'idle', 'fault', 'jam', 'spoof')
+
+
+def title_row(jam_state, spoof_state, wifi=None, heartbeat=None, parser=None):
+    """The top row as a sorted list: (x, text) for texts, (x, icon name) for icons, and (x, 'level n') for the level
+    meter drawn after a jam or spoof icon."""
     oled = Oled()
-    jam = Label(jam_label) if jam_label is not None else None
-    spoof = Label(spoof_label) if spoof_label is not None else None
+    jam = Det(jam_state) if jam_state is not None else None
+    spoof = Det(spoof_state) if spoof_state is not None else None
     screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, parser or NMEA.Parser(), STATS, 0, True, jam, spoof, wifi,
                  None, {'heartbeat': heartbeat} if heartbeat else None)
     names = {v: k for k, v in (('heart', screens.ICON_HEART), ('outline', screens.ICON_HEART_OUTLINE),
                                ('idle', screens.ICON_IDLE), ('fault', screens.ICON_FAULT),
-                               ('wifi', screens.ICON_WIFI))}
+                               ('wifi', screens.ICON_WIFI), ('jam', screens.ICON_JAM),
+                               ('spoof', screens.ICON_SPOOF))}
     row = [(x, text) for text, x, y in oled.calls if y == 3]
     for x in range(0, 128, 8):
         icon = oled.icon_at(x)
         if icon in names:
             row.append((x, names[icon]))
+            if names[icon] in ('jam', 'spoof'):
+                lit = [r for r in oled.rects if r[0] in (x + 8, x + 11, x + 14) and r[3] > 1]
+                row.append((x + 8, 'level {}'.format(len(lit))))
     return sorted(row)
-
-
-ICON_NAMES = ('wifi', 'heart', 'outline', 'idle', 'fault')
 
 
 def test_main_page_title_row_never_overlaps_and_keeps_a_gap_after_the_time():
     wifis = (None, ('OFF', '', '', 0, 4, ''), ('ON sta1', '', '', 0, 4, ''), ('ON sta1', '', '', 3, 4, ''),
              ('ERR', '', '', 0, 4, ''))
-    for jam in (None, '', 'JAM.', 'JAM?', 'JAM!'):
-        for spoof in (None, '', 'SPF.', 'SPF?', 'SPF!'):
+    for jam in (None, 'INIT', 'OK', 'LOW', 'MEDIUM', 'HIGH'):
+        for spoof in (None, 'OK', 'LOW', 'MEDIUM', 'HIGH'):
             for wifi in wifis:
                 for heartbeat in (None, 'on', 'fault'):
                     row = title_row(jam, spoof, wifi, heartbeat)
                     assert row[0][0] == 0
                     end = 8 * len(row[0][1])                     # where the time stops
                     for i, (x, text) in enumerate(row[1:]):
-                        width = 8 if text in ICON_NAMES else 8 * len(text)
+                        if text.startswith('level'):
+                            continue                             # drawn inside its icon's 16 pixels
+                        width = 16 if text in ('jam', 'spoof') else 8 if text in ICON_NAMES else 8 * len(text)
                         assert x >= end + (8 if i == 0 else 0), (jam, spoof, wifi, row)   # a gap after the time
                         assert x >= end and x + width <= 128, (jam, spoof, wifi, row)       # no overlap, on screen
                         end = x + width
 
 
-def test_main_page_title_row_typical_cases():
-    assert title_row('', '') == [(0, '--:--:--')]                          # nothing wrong: no labels
-    assert title_row(None, 'SPF!') == [(0, '--:--:--'), (88, 'SPF!')]
-    assert title_row('JAM.', '') == [(0, '--:--:--'), (88, 'JAM.')]
-    assert title_row('JAM?', 'SPF?') == [(0, '--:--:--'), (80, 'J?'), (104, 'S?')]     # both: shortened
-    assert title_row('JAM.', 'SPF!') == [(0, '--:--:--'), (80, 'J.'), (104, 'S!')]
+def test_main_page_probability_icons_only_above_ok_with_one_to_three_bars():
+    assert title_row('OK', 'OK') == [(0, '--:--:--')]                    # nothing wrong: nothing shown
+    assert title_row('INIT', None) == [(0, '--:--:--')]
+    assert title_row(None, 'LOW') == [(0, '--:--:--'), (104, 'spoof'), (112, 'level 1')]
+    assert title_row('MEDIUM', None) == [(0, '--:--:--'), (104, 'jam'), (112, 'level 2')]
+    assert title_row('HIGH', 'MEDIUM') == [(0, '--:--:--'), (80, 'jam'), (88, 'level 3'), (104, 'spoof'),
+                                           (112, 'level 2')]               # the spoofing one is the right-most
+    assert title_row('LOW', 'HIGH', heartbeat='on')[-1] == (120, 'heart')
 
 
 def test_main_page_time_gets_a_z_when_there_is_one():
@@ -354,18 +360,19 @@ def test_heartbeat_is_an_icon_in_the_last_column():
     assert title_row(None, None) == [(0, '--:--:--')]                      # no state: no icon
 
 
-def test_main_page_wifi_icon_has_no_client_count_and_gives_way_to_the_labels():
+def test_main_page_wifi_icon_has_no_client_count_and_gives_way_to_the_probabilities():
     on = ('ON sta1', '', '', 3, 4, '')
     assert title_row(None, None, on)[-1] == (112, 'wifi')                  # next to the heartbeat column
     assert title_row(None, None, ('ERR', '', '', 0, 4, ''))[-2:] == [(104, 'wifi'), (112, '!')]
     assert title_row(None, None, ('OFF', '', '', 0, 4, '')) == [(0, '--:--:--')]
-    assert title_row(None, 'SPF?', on) == [(0, '--:--:--'), (88, 'wifi'), (104, 'S?')]   # the full label does not fit
-    assert title_row('JAM.', 'SPF?', on) == [(0, '--:--:--'), (80, 'J.'), (104, 'S?')]   # labels first: no Wi-Fi icon
+    assert title_row(None, 'HIGH', on) == [(0, '--:--:--'), (88, 'wifi'), (104, 'spoof'), (112, 'level 3')]
+    assert title_row('LOW', 'HIGH', on) == [(0, '--:--:--'), (80, 'jam'), (88, 'level 1'), (104, 'spoof'),
+                                            (112, 'level 3')]               # both: no room for the Wi-Fi icon
 
 
 def test_icons_are_8_by_8_and_drawn_inside_the_display():
     for icon in (screens.ICON_HEART, screens.ICON_HEART_OUTLINE, screens.ICON_IDLE, screens.ICON_FAULT,
-                 screens.ICON_WIFI):
+                 screens.ICON_WIFI, screens.ICON_JAM, screens.ICON_SPOOF):
         assert len(icon) == 8 and all(0 <= row <= 255 for row in icon)
 
 
@@ -450,7 +457,7 @@ def test_alert_banner_only_for_medium_and_high_and_only_when_asked():
         assert 'SPOOFING HIGH' in oled.texts() and oled.rects[0][2] == 128
         oled = Oled()
         screens.draw(oled, FakeWriter(), page, p, STATS, 0, False, jam, spoof, WIFI, INFO, {})
-        assert 'SPOOFING HIGH' not in oled.texts() and not oled.rects
+        assert 'SPOOFING HIGH' not in oled.texts() and not [r for r in oled.rects if r[2] == 128]   # no banner bar
 
     class Jam:
         def __init__(self, state, reason):
@@ -461,8 +468,11 @@ def test_alert_banner_only_for_medium_and_high_and_only_when_asked():
     assert screens.banner_text(Jam('OK', ''), spoof) == 'SPOOFING MEDIUM'
     assert screens.banner_text(Jam('MEDIUM', 'C'), spoof.__class__(p)) == 'JAMMING MEDIUM'
     spoof.state = 'HIGH'
-    assert screens.banner_text(Jam('MEDIUM', 'C'), spoof) == 'SPF! JAM?'
-    assert screens.banner_text(Jam('HIGH', 'C'), spoof) == 'SPF! JAM!'
+    assert screens.banner_text(Jam('MEDIUM', 'C'), spoof) == 'SPOOF+JAM HIGH'          # the worse of the two
+    spoof.state = 'MEDIUM'
+    assert screens.banner_text(Jam('HIGH', 'C'), spoof) == 'SPOOF+JAM HIGH'
+    assert screens.banner_text(Jam('MEDIUM', 'C'), spoof) == 'SPOOF+JAM MEDIUM'
+    spoof.state = 'HIGH'
     for state in ('MEDIUM', 'HIGH'):
         spoof.state = state
         assert len(screens.banner_text(Jam('OK', ''), spoof)) <= 16
