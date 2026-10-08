@@ -47,6 +47,8 @@ types are forwarded to the radio and over Wi-Fi; the display always uses all par
 ## Controls and menu
 
 Every page and menu item, with the meaning of each displayed value: [docs/screens.md](docs/screens.md).
+
+![Main page](docs/img/main.png) ![Satellites page](docs/img/satellites.png)
 Two keys, classified when released: short (< 1 s) and long (>= 1 s).
 
 | | UP | DOWN |

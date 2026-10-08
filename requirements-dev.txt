@@ -2,3 +2,4 @@
 pytest
 ruff
 mpy-cross
+pillow

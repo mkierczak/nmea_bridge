@@ -4,6 +4,10 @@ The OLED is 128 x 64 pixels with an 8 x 8 font, so a line holds 16 characters an
 (Main uses a larger font for the position). This document lists every page, what each value means and where it
 comes from. The drawing code is `screens.py`; the menu is `menu.py`.
 
+The pictures in this document are rendered by [`tools/screenshots.py`](../tools/screenshots.py) with the same drawing
+code and fonts as the board, from made-up data (`python3 tools/screenshots.py` regenerates them). The text sketches
+beside them show what each line is.
+
 ## Navigation
 
 | Key | On a page | In the menu |
@@ -22,6 +26,8 @@ keeps it on. Pages are redrawn when a visible value changes (and at least every 
 **On every page**, the bottom edge carries a page indicator: one segment per page, two pixels high for the page you
 are on.
 
+![Holding UP for the Wi-Fi gesture](img/main-wifi-hold.png)
+
 **Wi-Fi gesture feedback.** While UP is held for more than about 0.4 s a box appears: `Hold: Wi-Fi on` (or `off`,
 whichever the release will switch to) with a progress bar that fills over the 3 s; at full it reads `Release now!`.
 Releasing earlier does nothing but the usual short/long press.
@@ -32,7 +38,11 @@ blinks (inverted) for 3 s when the alert starts. The first key press on one of t
 the blink (it does not change the page); the small `SPF!`/`JAM?` labels stay. A new alert shows the banner again.
 `SUSPECT` and `LOW` only use the small labels.
 
+![Spoofing alert banner on the Main page](img/main-alert.png)
+
 ## 1. Main
+
+![Main page](img/main.png)
 
 ```
 12:34:56   OK   SPF?     <- UTC time, jamming label, spoofing label
@@ -56,7 +66,13 @@ GPS 3D 9/14        BBB   <- fix, mode, satellites used/in view, DOP letters
 | `used/view` | Satellites used in the solution (GGA) / satellites in view (sum of the GSV totals of all systems). |
 | DOP letters (right) | Three letters for PDOP, HDOP, VDOP, each classified: `A` < 1 (ideal), `B` 1-2 (excellent), `C` 2-5 (good), `D` 5-10 (moderate), `E` 10-20 (fair), `F` >= 20 (poor), `?` unknown. |
 
+![Main page with a suspected-spoofing label](img/main-suspect.png)
+
+![Main page without a fix](img/main-nofix.png)
+
 ## 2. Speed
+
+![Speed page](img/speed.png)
 
 ```
 SOG kn
@@ -75,6 +91,8 @@ COG deg
 The alert banner replaces the `SOG kn` header row, as on the Main page.
 
 ## 3. Stats
+
+![Stats page](img/stats.png)
 
 ```
 rx58/m d0                <- sentences per minute, dropped sentences
@@ -101,6 +119,8 @@ The percentages are over a 10-second window of everything the GPS thread framed,
 
 ## 4. Satellites
 
+![Satellites page](img/satellites.png)
+
 ```
 sat  el C/N0
 -------------------------
@@ -118,6 +138,8 @@ The five strongest tracked satellites (C/N0 > 0), strongest first. `no satellite
 | number | C/N0 (signal-to-noise density) in dB-Hz. Typical open-sky values are 35-50. |
 
 ## 5. Signal (jamming indicator)
+
+![Signal page](img/signal.png)
 
 ```
 JAM OK                   <- detector state
@@ -142,6 +164,8 @@ mod:ok AIC+              <- module's own jamming status, interference cancellati
 
 ## 6. Spoofing
 
+![Spoofing page](img/spoofing.png)
+
 ```
 SPF OK                   <- detector state
 armed                    <- or: warm-up 12/30
@@ -164,6 +188,8 @@ Details of each indicator: [spoofing-detection.md](spoofing-detection.md).
 
 ## 7. System
 
+![System page](img/system.png)
+
 ```
 up 1h23m45s
 heap 87k free
@@ -184,7 +210,11 @@ vb48139d
 | `v...` | Software version from `git describe` at deploy time (`-dirty` = uncommitted changes, `dev` = no git). |
 | last line | First 16 hex digits of the board's unique ID (the Wi-Fi name suffix is derived from it). It is replaced by `ERR r<n> g<n> s<n>` as soon as any of these counters is non-zero (each capped at `99+`): `r` radio write failures, `g` failures contained in the optional parts (detectors, Wi-Fi, logging, ...), `s` position sentences dropped because a stall made them too old. They are all zero in normal operation; see `errors` in `bridge.py`. |
 
+![System page with contained errors](img/system-errors.png)
+
 ## 8. Debug
+
+![Debug page](img/debug.png)
 
 ```
 $GNGGA,123456.00  <- start of the last valid sentence
@@ -208,6 +238,8 @@ OTHER:0     why:CN
 
 ## 9. Wi-Fi
 
+![Wi-Fi page](img/wifi.png)
+
 ```
 WiFi: ON sta0
 NMEABridge-AB12
@@ -226,6 +258,10 @@ UP 3s: toggle
 | `TCP clients n/m` | Connected TCP clients / maximum. |
 
 ## Menu
+
+![Top level of the menu](img/menu.png)
+
+![Advanced submenu: the highlighted threshold with its default](img/menu-advanced.png)
 
 Opened with a long DN press on the Main page; leaves with a long DN press at the top level (or after 60 s without a key,
 which also reverts an unconfirmed edit). The title row shows the current submenu and `*reboot` when a changed setting needs a
