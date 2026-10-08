@@ -5,7 +5,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import NMEA
 import units
-from test_jamming import with_checksum
 
 
 class Config:
