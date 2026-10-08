@@ -39,29 +39,29 @@ ICON_IDLE = (0b00000000, 0b00000000, 0b00000000, 0b00111100, 0b00111100, 0b00000
 ICON_FAULT = (0b10000001, 0b01000010, 0b00100100, 0b00011000, 0b00011000, 0b00100100, 0b01000010, 0b10000001)
 ICON_WIFI = (0b00111100, 0b01000010, 0b10000001, 0b00111100, 0b01000010, 0b00011000, 0b00000000, 0b00011000)
 HEARTBEAT = {'on': ICON_HEART, 'off': ICON_HEART_OUTLINE, 'idle': ICON_IDLE, 'fault': ICON_FAULT}
-STATUS_SLOTS = 5          # character cells (x = 80..119) between the time and the heartbeat
 
 
-def _icon(oled, bitmap, x, y):
+def _icon(oled, bitmap, x, y, color=1):
     for row in range(8):
         bits = bitmap[row]
         for col in range(8):
             if bits >> (7 - col) & 1:
-                oled.pixel(x + col, y + row, 1)
+                oled.pixel(x + col, y + row, color)
 
 
-def _wifi_mark(wifi):
-    """(icon, text) for the Wi-Fi access point: the arcs alone when it is on, with '!' when it failed to start;
-    None when it is off. (The number of clients is on the Wi-Fi page.)"""
+def _wifi_state(wifi):
+    """'on' (the arcs), 'error' (the arcs inverted: the access point failed to start) or None (off)."""
     if not wifi:
         return None
     if wifi[0].startswith('ON'):
-        return ICON_WIFI, ''
-    return (ICON_WIFI, '!') if wifi[0] == 'ERR' else None
+        return 'on'
+    return 'error' if wifi[0] == 'ERR' else None
 
 
 ICON_JAM = (0b00001110, 0b00011100, 0b00111000, 0b01111111, 0b00011100, 0b00111000, 0b01110000, 0b01000000)   # a bolt
 ICON_SPOOF = (0b00111100, 0b01111110, 0b01011010, 0b01111110, 0b01111110, 0b01111110, 0b01111110, 0b01011010)  # a ghost
+ICON_SPOOF_OK = (0b00111100, 0b01000010, 0b10100101, 0b10000001, 0b10000001, 0b10000001, 0b10000001, 0b11011011)  # empty
+ICON_JAM_OK = (0b00000001, 0b00000011, 0b00000110, 0b10001100, 0b11011000, 0b01110000, 0b00100000, 0b00000000)  # a tick
 LEVELS_SHOWN = {'LOW': 1, 'MEDIUM': 2, 'HIGH': 3}
 _BARS = ((0, 3), (3, 5), (6, 7))      # the three bars of a level meter: (x offset, height)
 
@@ -75,38 +75,41 @@ def _meter(oled, x, y, level):
             oled.fill_rect(x + dx, y + 7, 2, 1, 1)
 
 
+SPOOF_X, JAM_X, WIFI_X, HEART_X = 102, 84, 74, 120     # left edges of the indicators in the top row (8-pixel icons)
+
+
+def _probability(oled, x, icon_ok, icon_alert, state, ready=True):
+    """A probability indicator: an empty ghost / a tick while all is well, '?' while the detector is still
+    learning, otherwise the ghost / the bolt followed by a level meter (one to three bars)."""
+    level = LEVELS_SHOWN.get(state, 0)
+    if level:
+        _icon(oled, icon_alert, x, 3)
+        _meter(oled, x + 8, 3, level)
+    elif ready and state == 'OK':
+        _icon(oled, icon_ok, x, 3)
+    else:
+        oled.text('?', x, 3, 1)
+
+
 def _status_row(oled, parser, jam, spoof, wifi, heartbeat):
-    """Top row of the Main page: the clock, then (right to left) the heartbeat icon, the spoofing probability, the
-    jamming probability and the Wi-Fi icon. The probabilities show only above OK, as an icon (a ghost for the
-    fake position, a bolt for interference) with a level meter of one to three bars for LOW, MEDIUM and HIGH. When they
-    do not all fit the Wi-Fi icon gives way."""
+    """Top row of the Main page: the clock, then the Wi-Fi icon, the jamming indicator, the spoofing indicator and
+    the heartbeat icon, all in fixed places so the row does not shift. Each detector shows a tick (jamming) or an
+    empty ghost (spoofing) while all is well, '?' while it is still learning, and the bolt or the ghost with a level
+    meter for LOW, MEDIUM and HIGH; nothing when the detector is switched off."""
     time_text = units.shift_time(parser.get_time_string())
     oled.text(time_text if time_text[0] == '-' else time_text + units.clock_suffix(), 0, 3, 1)
     if heartbeat:
-        _icon(oled, HEARTBEAT[heartbeat], 120, 3)
-    items = []                                  # (icon, level, text); width 2 cells with a level, else icon + text
-    for detector, icon in ((spoof, ICON_SPOOF), (jam, ICON_JAM)):
-        level = LEVELS_SHOWN.get(detector.state, 0) if detector is not None else 0
-        if level:
-            items.append((icon, level, ''))
-    mark = _wifi_mark(wifi)
-    if mark:
-        items.append((mark[0], 0, mark[1]))
-
-    def width(item):
-        return 2 if item[1] else 1 + len(item[2])
-    if sum(width(i) for i in items) + len(items) - 1 > STATUS_SLOTS and items and not items[-1][1]:
-        items = items[:-1]                      # too much: the Wi-Fi icon gives way
-    x = 120
-    for item in items:
-        icon, level, text = item
-        x -= 8 * width(item)
-        _icon(oled, icon, x, 3)
-        if level:
-            _meter(oled, x + 8, 3, level)
-        elif text:
-            oled.text(text, x + 8, 3, 1)
-        x -= 8
+        _icon(oled, HEARTBEAT[heartbeat], HEART_X, 3)
+    if spoof is not None:
+        _probability(oled, SPOOF_X, ICON_SPOOF_OK, ICON_SPOOF, spoof.state, getattr(spoof, 'armed', True))
+    if jam is not None:
+        _probability(oled, JAM_X, ICON_JAM_OK, ICON_JAM, jam.state)
+    mode = _wifi_state(wifi)
+    if mode == 'on':
+        _icon(oled, ICON_WIFI, WIFI_X, 3)
+    elif mode == 'error':
+        oled.fill_rect(WIFI_X, 3, 8, 8, 1)
+        _icon(oled, ICON_WIFI, WIFI_X, 3, 0)
 
 
 def _banner(oled, text, height):

@@ -42,7 +42,7 @@ are alerts (banner, blink, the display stays on):
 
 | Main page | Level | Meaning |
 |---|---|---|
-| *(nothing)* | `OK` | no relevant indicator in the last 60 s |
+| empty ghost | `OK` | no relevant indicator in the last 60 s |
 | ghost, 1 bar | `LOW` | a single weak indicator: worth knowing, not an alert |
 | ghost, 2 bars | `MEDIUM` | **alert**: some evidence of inconsistency (a single medium indicator, or two different weak ones); clears when the evidence is older than 60 s |
 | ghost, 3 bars | `HIGH` | **alert**: strong evidence (a strong indicator, or two different medium ones); stays up for about 11 min after the last such evidence (60 s evidence window + 10 min latch, see section 6) |
@@ -442,7 +442,7 @@ raises the state above `LOW`, which is not an alert. A second weak indicator (fo
 
 ## 11. Where you see it
 
-* **Main page**, top row right: a ghost icon with a level meter of one to three bars (nothing when `OK`); a `MEDIUM` or `HIGH` level also shows the alert banner and blinks the display.
+* **Main page**, top row right: a ghost icon with a level meter of one to three bars (an empty ghost when `OK`, `?` during the warm-up); a `MEDIUM` or `HIGH` level also shows the alert banner and blinks the display.
 * **Spoofing page**: the level as a badge, a tile for each of the eight indicators (lit while it counts),
   `warm n/30` or `armed`, and `latch m:ss` while a `HIGH` alert is latched.
 * **Debug page**: indicator letters (`S:` field).
