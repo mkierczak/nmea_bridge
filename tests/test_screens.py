@@ -30,6 +30,15 @@ class Oled(FakeOled):
     def __init__(self):
         super().__init__()
         self.rects = []
+        self.pixels = set()
+
+    def pixel(self, x, y, c):
+        self.pixels.add((x, y))
+
+    def icon_at(self, x, y=3):
+        """The 8x8 icon drawn with its top left corner at (x, y), as the byte tuple the screens use."""
+        return tuple(sum(1 << (7 - col) for col in range(8) if (x + col, y + row) in self.pixels)
+                     for row in range(8))
 
     def fill_rect(self, x, y, w, h, c):
         self.rects.append((x, y, w, h))
@@ -261,27 +270,41 @@ class Label:
 
 
 def title_row(jam_label, spoof_label, wifi=None, heartbeat=None, parser=None):
+    """Texts of the top row as (x, text), and the icons as (x, name) in one sorted list."""
     oled = Oled()
     jam = Label(jam_label) if jam_label is not None else None
     spoof = Label(spoof_label) if spoof_label is not None else None
     screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, parser or NMEA.Parser(), STATS, 0, True, jam, spoof, wifi,
                  None, {'heartbeat': heartbeat} if heartbeat else None)
-    return sorted((x, text) for text, x, y in oled.calls if y == 3)
+    names = {v: k for k, v in (('heart', screens.ICON_HEART), ('outline', screens.ICON_HEART_OUTLINE),
+                               ('idle', screens.ICON_IDLE), ('fault', screens.ICON_FAULT),
+                               ('wifi', screens.ICON_WIFI))}
+    row = [(x, text) for text, x, y in oled.calls if y == 3]
+    for x in range(0, 128, 8):
+        icon = oled.icon_at(x)
+        if icon in names:
+            row.append((x, names[icon]))
+    return sorted(row)
+
+
+ICON_NAMES = ('wifi', 'heart', 'outline', 'idle', 'fault')
 
 
 def test_main_page_title_row_never_overlaps_and_keeps_a_gap_after_the_time():
+    wifis = (None, ('OFF', '', '', 0, 4, ''), ('ON sta1', '', '', 0, 4, ''), ('ON sta1', '', '', 3, 4, ''),
+             ('ERR', '', '', 0, 4, ''))
     for jam in (None, '', 'OK', 'LOW', 'JAM?'):
         for spoof in (None, '', 'SPF?', 'SPF!'):
-            for wifi in (None, ('OFF', '', '', 0, 4, ''), ('ON sta1', '', '', 0, 4, ''), ('ON sta1', '', '', 3, 4, ''),
-                         ('ERR', '', '', 0, 4, '')):
+            for wifi in wifis:
                 for heartbeat in (None, 'on', 'fault'):
                     row = title_row(jam, spoof, wifi, heartbeat)
-                    assert row[0] == (0, '--:--:--')
-                    end = 64                                     # the time ends at column 64
-                    for x, text in row[1:]:
-                        assert x >= end + (0 if x == 120 else 8), (jam, spoof, wifi, row)   # a blank between texts
-                        assert x + 8 * len(text) <= 128, (jam, spoof, wifi, row)
-                        end = x + 8 * len(text)
+                    assert row[0][0] == 0
+                    end = 8 * len(row[0][1])                     # where the time stops
+                    for i, (x, text) in enumerate(row[1:]):
+                        width = 8 if text in ICON_NAMES else 8 * len(text)
+                        assert x >= end + (8 if i == 0 else 0), (jam, spoof, wifi, row)   # a gap after the time
+                        assert x >= end and x + width <= 128, (jam, spoof, wifi, row)       # no overlap, on screen
+                        end = x + width
 
 
 def test_main_page_title_row_typical_cases():
@@ -290,26 +313,37 @@ def test_main_page_title_row_typical_cases():
     assert title_row('LOW', '') == [(0, '--:--:--'), (96, 'LOW')]
     assert title_row('JAM?', 'SPF?') == [(0, '--:--:--'), (80, 'J?'), (104, 'S?')]     # both: shortened
     assert title_row('LOW', 'SPF!') == [(0, '--:--:--'), (88, 'L'), (104, 'S!')]
-    assert title_row('JAM?', '', heartbeat='on')[-1] == (120, '*')
 
 
-def test_main_page_time_gets_a_z_when_there_is_one_and_the_heartbeat_has_its_own_character():
+def test_main_page_time_gets_a_z_when_there_is_one():
     p = NMEA.Parser()
     p.time = '123456.00'
     assert title_row(None, None, parser=p)[0] == (0, '12:34:56Z')
     assert title_row(None, None)[0] == (0, '--:--:--')                      # no time yet: no Z either
-    for state, char in (('on', '*'), ('off', '.'), ('idle', '-'), ('fault', 'X')):
-        assert title_row(None, None, heartbeat=state)[-1] == (120, char)
 
 
-def test_main_page_wifi_mark_and_what_gives_way_to_the_labels():
+def test_heartbeat_is_an_icon_in_the_last_column():
+    for state, name in (('on', 'heart'), ('off', 'outline'), ('idle', 'idle'), ('fault', 'fault')):
+        assert title_row(None, None, heartbeat=state)[-1] == (120, name)
+    assert len(set(screens.HEARTBEAT.values())) == 4                       # four distinguishable pictures
+    assert title_row(None, None) == [(0, '--:--:--')]                      # no state: no icon
+
+
+def test_main_page_wifi_icon_with_client_count_and_what_gives_way_to_the_labels():
     on = ('ON sta1', '', '', 0, 4, '')
-    assert title_row(None, None, on)[-1] == (112, 'W')                      # right next to the heartbeat column
-    assert title_row(None, None, ('ON sta1', '', '', 2, 4, ''))[-1] == (104, 'W2')
-    assert title_row(None, None, ('ERR', '', '', 0, 4, ''))[-1] == (104, 'W!')
+    assert title_row(None, None, on)[-1] == (112, 'wifi')                  # next to the heartbeat column
+    assert title_row(None, None, ('ON sta1', '', '', 2, 4, '')) [-2:] == [(104, 'wifi'), (112, '2')]
+    assert title_row(None, None, ('ON sta1', '', '', 20, 4, ''))[-1] == (112, '9')     # one digit at most
+    assert title_row(None, None, ('ERR', '', '', 0, 4, ''))[-2:] == [(104, 'wifi'), (112, '!')]
     assert title_row(None, None, ('OFF', '', '', 0, 4, '')) == [(0, '--:--:--')]
-    assert title_row(None, 'SPF?', on) == [(0, '--:--:--'), (88, 'W'), (104, 'S?')]       # the full label does not fit
-    assert title_row('LOW', 'SPF?', on) == [(0, '--:--:--'), (88, 'L'), (104, 'S?')]     # labels first: no Wi-Fi mark
+    assert title_row(None, 'SPF?', on) == [(0, '--:--:--'), (88, 'wifi'), (104, 'S?')]   # the full label does not fit
+    assert title_row('LOW', 'SPF?', on) == [(0, '--:--:--'), (88, 'L'), (104, 'S?')]     # labels first: no Wi-Fi icon
+
+
+def test_icons_are_8_by_8_and_drawn_inside_the_display():
+    for icon in (screens.ICON_HEART, screens.ICON_HEART_OUTLINE, screens.ICON_IDLE, screens.ICON_FAULT,
+                 screens.ICON_WIFI):
+        assert len(icon) == 8 and all(0 <= row <= 255 for row in icon)
 
 
 def test_stats_page_rows_are_evenly_spaced_with_the_cn_row_clearly_below():

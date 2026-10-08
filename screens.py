@@ -21,17 +21,33 @@ def banner_text(jam, spoof):
     return ''
 
 
-HEARTBEAT = {'on': '*', 'off': '.', 'idle': '-', 'fault': 'X'}   # forwarding to the radio, see Bridge.heartbeat
-STATUS_SLOTS = 5          # characters (x = 80..119) between the time and the heartbeat for labels and the Wi-Fi mark
+# 8x8 icons, one byte per row, the most significant bit on the left
+ICON_HEART = (0b00000000, 0b01100110, 0b11111111, 0b11111111, 0b01111110, 0b00111100, 0b00011000, 0b00000000)
+ICON_HEART_OUTLINE = (0b00000000, 0b01100110, 0b10011001, 0b10000001, 0b01000010, 0b00100100, 0b00011000,
+                      0b00000000)
+ICON_IDLE = (0b00000000, 0b00000000, 0b00000000, 0b00111100, 0b00111100, 0b00000000, 0b00000000, 0b00000000)
+ICON_FAULT = (0b10000001, 0b01000010, 0b00100100, 0b00011000, 0b00011000, 0b00100100, 0b01000010, 0b10000001)
+ICON_WIFI = (0b00111100, 0b01000010, 0b10000001, 0b00111100, 0b01000010, 0b00011000, 0b00000000, 0b00011000)
+HEARTBEAT = {'on': ICON_HEART, 'off': ICON_HEART_OUTLINE, 'idle': ICON_IDLE, 'fault': ICON_FAULT}
+STATUS_SLOTS = 5          # character cells (x = 80..119) between the time and the heartbeat
+
+
+def _icon(oled, bitmap, x, y):
+    for row in range(8):
+        bits = bitmap[row]
+        for col in range(8):
+            if bits >> (7 - col) & 1:
+                oled.pixel(x + col, y + row, 1)
 
 
 def _wifi_mark(wifi):
-    """'W' access point on, 'W2' with two TCP clients, 'W!' when it failed to start, '' when off."""
+    """(icon, text) for the Wi-Fi access point: the arcs alone when on, with the number of TCP clients, or with
+    '!' when it failed to start; None when it is off."""
     if not wifi:
-        return ''
+        return None
     if wifi[0].startswith('ON'):
-        return 'W' + (str(min(wifi[3], 9)) if wifi[3] else '')
-    return 'W!' if wifi[0] == 'ERR' else ''
+        return ICON_WIFI, (str(min(wifi[3], 9)) if wifi[3] else '')
+    return (ICON_WIFI, '!') if wifi[0] == 'ERR' else None
 
 
 def _short(label):
@@ -40,32 +56,40 @@ def _short(label):
 
 
 def _status_row(oled, parser, jam, spoof, wifi, heartbeat):
-    """Top row of the Main page: UTC time with a Z, then (right to left) the heartbeat, the spoofing label, the
-    jamming label (only when something is wrong) and the Wi-Fi mark. When they do not all fit the labels shrink,
-    and the Wi-Fi mark gives way first."""
+    """Top row of the Main page: UTC time with a Z, then (right to left) the heartbeat icon, the spoofing label,
+    the jamming label (only when something is wrong) and the Wi-Fi icon. When they do not all fit the labels
+    shrink, and the Wi-Fi mark gives way first."""
     time_text = parser.get_time_string()
     oled.text(time_text if time_text[0] == '-' else time_text + 'Z', 0, 3, 1)
     if heartbeat:
-        oled.text(HEARTBEAT[heartbeat], 120, 3, 1)
+        _icon(oled, HEARTBEAT[heartbeat], 120, 3)
     jam_label = jam.label() if jam else ''
     if jam_label == 'OK':
         jam_label = ''                    # nothing to report: no label
-    items = [(spoof.label() if spoof else '', True), (jam_label, True), (_wifi_mark(wifi), False)]
-    items = [(text, can_shrink) for text, can_shrink in items if text]
+    mark = _wifi_mark(wifi)
+    items = [(spoof.label() if spoof else '', True, None), (jam_label, True, None),
+             (mark[1] if mark else '', False, mark[0] if mark else None)]
+    items = [item for item in items if item[0] or item[2]]
 
-    def width(shrunk):
-        texts = [_short(t) if shrunk and c else t for t, c in items]
-        return texts, sum(len(t) for t in texts) + len(texts) - 1
-    texts, slots = width(False)
+    def layout(shrunk):
+        texts = [(_short(t) if shrunk and c else t, c, i) for t, c, i in items]
+        widths = [len(t) + (1 if i else 0) for t, c, i in texts]
+        return texts, widths, sum(widths) + len(widths) - 1
+    texts, widths, slots = layout(False)
     if slots > STATUS_SLOTS:
-        texts, slots = width(True)
-    if slots > STATUS_SLOTS and items and not items[-1][1]:    # still too much: drop the Wi-Fi mark
+        texts, widths, slots = layout(True)
+    if slots > STATUS_SLOTS and items and items[-1][2]:        # still too much: drop the Wi-Fi mark
         items = items[:-1]
-        texts, slots = width(True)
+        texts, widths, slots = layout(True)
     x = 120
-    for text in texts:
-        x -= 8 * len(text)
-        oled.text(text, x, 3, 1)
+    for (text, _, icon), width in zip(texts, widths):
+        x -= 8 * width
+        if icon:
+            _icon(oled, icon, x, 3)
+            if text:
+                oled.text(text, x + 8, 3, 1)
+        else:
+            oled.text(text, x, 3, 1)
         x -= 8
 
 
