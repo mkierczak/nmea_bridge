@@ -758,3 +758,12 @@ def test_confirm_and_toast_boxes_and_the_banner_text_override():
                  {'banner_text': 'ANCHOR DRAG'})                         # not asked for: no banner
     assert 'ANCHOR DRAG' not in oled.texts()
     check_fits([(nav.PAGE_ANCHOR, Oled())])
+
+
+def test_main_page_bottom_row_sits_two_pixels_higher_clear_of_the_page_indicator():
+    oled = Oled()
+    screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, populated_parser(), STATS, 0, False, None, None, WIFI, INFO,
+                 {'pages': nav.MAIN_PAGES})
+    rows = {y for text, x, y in oled.calls if y > 40}
+    assert rows == {52}                                                     # fix/mode/satellites and the DOP letters
+    assert 52 + 8 < 62                                                      # the indicator at y 62-63 stays free

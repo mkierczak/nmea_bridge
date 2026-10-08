@@ -437,9 +437,9 @@ def _draw_main(oled, font_large, parser, no_fix, jam, spoof, wifi, banner, ctx):
         font_large.printstring(parser.get_lon_string())
     oled.hline(0, 48, 128, 1)
     oled.text((parser.fix_type + ' ' + parser.mode + ' ' +
-               str(parser.birds_in_use) + '/' + str(parser.birds_in_view))[:13], 0, 54, 1)  # ends before x=104
+               str(parser.birds_in_use) + '/' + str(parser.birds_in_view))[:13], 0, 52, 1)  # ends before x=104
     oled.text(parser.get_dop_string(type='PDOP') + parser.get_dop_string(type='HDOP') +
-              parser.get_dop_string(type='VDOP'), 104, 54, 1)
+              parser.get_dop_string(type='VDOP'), 104, 52, 1)
 
 
 def _draw_waiting(oled, parser, uptime_s):
