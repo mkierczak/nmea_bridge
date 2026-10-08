@@ -283,7 +283,7 @@ def _draw_anchor(oled, font, watch):
     _title(oled, 'ANCHOR', badge={'ok': 'OK', 'drag': 'DRAG', 'nofix': 'NO FIX'}.get(state, 'OFF'))
     if watch is None or not watch.is_set:
         oled.text('Anchor not set', 8, 18, 1)
-        oled.text('hold UP 3 s to', 8, 30, 1)
+        oled.text('hold DOWN 1 s to', 0, 30, 1)
         oled.text('drop it here', 8, 39, 1)
         if watch is not None:
             oled.text('radius ' + units.distance_text(watch.radius_m), 0, 52, 1)

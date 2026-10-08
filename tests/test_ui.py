@@ -98,6 +98,8 @@ def test_a_key_press_redraws_at_once_and_pages_cycle():
     assert r.navigator.page == nav.PAGE_SPEED and r.draws[-1][0] == nav.PAGE_SPEED
     r.press(DN_SHORT, DN_SHORT)
     assert r.navigator.page == nav.PAGE_ANCHOR               # the last page of the main loop (no Wi-Fi, no MOB)
+    r.press(DN_SHORT)
+    assert r.navigator.page == nav.PAGE_GPS
     r.press(DN_LONG)
     assert r.navigator.page == nav.PAGE_MAIN
 
@@ -549,28 +551,35 @@ def with_fix(r, position=HOME):
     r.bridge.last_pos = r.bridge.last_fix = r.clock.now
 
 
-def test_anchor_page_drops_and_lifts_the_anchor_with_up_held_three_seconds():
+def test_anchor_page_long_down_drops_and_long_up_lifts_the_anchor():
     import anchor
     r = Rig()
     r.bridge.anchor = anchor.AnchorWatch(radius_m=50)
     r.step()
     r.press(UP_SHORT, UP_SHORT, UP_SHORT)                  # Main -> Speed -> GPS -> Anchor
     assert r.navigator.page == nav.PAGE_ANCHOR and r.ctxs[-1]['anchor'] is r.bridge.anchor
-    r.press(UP_LONG)                                       # a plain long UP does nothing here
-    assert not r.bridge.anchor.is_set and 'toast' not in r.ctxs[-1]
-    r.press(WIFI)                                          # UP held 3 s: no fix yet
-    assert not r.bridge.anchor.is_set and r.ctxs[-1]['toast'] == 'No fix yet'
+    r.press(UP_LONG)                                       # nothing to lift yet
+    assert r.ctxs[-1]['toast'] == 'No anchor set'
+    r.press(DN_LONG)                                       # no fix yet
+    assert not r.bridge.anchor.is_set and r.ctxs[-1]['toast'] == 'No fix yet' and r.navigator.page == nav.PAGE_ANCHOR
     with_fix(r)
-    r.press(WIFI)
-    assert r.bridge.anchor.anchor == HOME and r.ctxs[-1]['toast'] == 'Anchor dropped' and r.toggles == 0
+    r.press(DN_LONG)
+    assert r.bridge.anchor.anchor == HOME and r.ctxs[-1]['toast'] == 'Anchor dropped'
     r.step(advance=ui.TOAST_MS + 100)
     assert 'toast' not in r.ctxs[-1]
-    r.press(WIFI)                                          # again: it is lifted, no question asked
+    r.press(DN_LONG)                                       # dropping again does not move it
+    assert r.bridge.anchor.anchor == HOME and r.ctxs[-1]['toast'] == 'Anchor is set'
+    r.press(UP_LONG)                                       # lifted, no question asked
     assert not r.bridge.anchor.is_set and r.ctxs[-1]['toast'] == 'Anchor lifted'
-    assert r.navigator.page == nav.PAGE_ANCHOR and r.toggles == 0          # the Wi-Fi was not touched
-    r.press(UP_SHORT)                                      # on another page the same gesture is the Wi-Fi toggle
+    r.press(WIFI)                                          # the Wi-Fi gesture does nothing here ...
+    assert r.toggles == 0
+    r.press(DN_SHORT, DN_SHORT, DN_SHORT)                  # ... and works on the Main page
+    assert r.navigator.page == nav.PAGE_MAIN
     r.press(WIFI)
     assert r.toggles == 1
+
+
+
 
 
 def test_anchor_alarm_banner_urgent_buzzer_snooze_and_repeat():
@@ -724,34 +733,33 @@ def test_man_overboard_mark_records_the_gps_time_and_the_page_counts_from_it():
     assert r.ctxs[-1]['mob_s'] == 75
 
 
-def test_hold_box_says_what_up_held_does_on_the_anchor_mob_and_other_pages():
-    import anchor
+def test_hold_box_for_up_held_is_the_wifi_on_main_lift_mob_on_its_page_and_nothing_elsewhere():
     r = Rig()
-    r.bridge.anchor = anchor.AnchorWatch(radius_m=50)
     held = [None]
     r.ui.up_held = lambda now: held[0]
     r.step()
-    r.press(UP_SHORT, UP_SHORT, UP_SHORT)                  # the Anchor page
-    held[0] = 1500
+    held[0] = 500
     r.step(advance=200)
-    assert r.ctxs[-1]['hold'] == (50, 'Drop anchor')       # no Wi-Fi countdown here
-    r.bridge.anchor.anchor, r.bridge.anchor.state = HOME, 'ok'
-    r.step(advance=ui.HOLD_REFRESH_MS + 1)
-    assert r.ctxs[-1]['hold'] == (50, 'Lift anchor')
+    assert r.ctxs[-1]['hold'] == (16, 'Hold: Wi-Fi on')       # the Main page
     held[0] = 3200
     r.step(advance=ui.HOLD_REFRESH_MS + 1)
     assert r.ctxs[-1]['hold'] == (100, 'Release now!')
+    held[0] = None
+    r.press(UP_SHORT, UP_SHORT, UP_SHORT)                  # Anchor: UP held does nothing, so no box
+    held[0] = 2000
+    r.step(advance=ui.REFRESH_MS + 1)
+    assert r.ctxs[-1]['hold'] is None
+    r.press(UP_SHORT)                                      # the Wi-Fi is not on this page either (GPS-less loop: Main)
     r.bridge.mob.set(HOME, 0)
     r.navigator.mob_active = True
     r.navigator.page = nav.PAGE_MOB
     held[0] = 1500
-    r.step(advance=ui.HOLD_REFRESH_MS + 1)
+    r.step(advance=ui.REFRESH_MS + 1)
     assert r.ctxs[-1]['hold'] == (50, 'Lift MOB')
-    held[0] = None
-    r.press(DN_SHORT, DN_SHORT)                            # Anchor, then GPS: the Wi-Fi box as before
-    held[0] = 500
-    r.step(advance=200)
-    assert r.ctxs[-1]['hold'] == (16, 'Hold: Wi-Fi on')
+    r.navigator.page = nav.PAGE_SPEED
+    r.step(advance=ui.REFRESH_MS + 1)
+    assert r.ctxs[-1]['hold'] is None                      # Speed: nothing
+    r.navigator.page = nav.PAGE_MAIN
     r.navigator.wifi = False                               # no Wi-Fi in this build: nothing to hold for
     r.step(advance=ui.REFRESH_MS + 1)
     assert r.ctxs[-1]['hold'] is None

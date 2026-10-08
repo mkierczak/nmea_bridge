@@ -18,9 +18,9 @@ Stats, Satellites, Signal, Spoofing, System, Debug**.
 |---|---|---|
 | UP short | next page of the loop | previous item / increase value |
 | DN short | previous page of the loop | next item / decrease value |
-| UP long (1 s) | nothing | select / confirm |
-| DN long (1 s) | back to Main; **on Main: open the menu**; in the debug loop: leave it | back / cancel / leave the menu |
-| UP held 3 s | Wi-Fi access point on/off; on the **Anchor** page drop / lift the anchor, on the **MOB** page lift the mark | treated as a normal long press |
+| UP long (1 s) | nothing; **on Anchor: lift the anchor** | select / confirm |
+| DN long (1 s) | back to Main; **on Main: open the menu**; in the debug loop: leave it; **on Anchor: drop the anchor** | back / cancel / leave the menu |
+| UP held 3 s | **on Main only:** Wi-Fi access point on/off; on the **MOB** page: lift the mark; nowhere else | treated as a normal long press |
 | **DN held 3 s** | **man overboard**: mark the position | man overboard too (the menu closes) |
 | **UP and DN together, 2 s** | switch between the main loop and the debug loop | nothing |
 
@@ -41,10 +41,10 @@ pixels high for the page you are on. In the debug loop the segments are dashed.
 
 ![Holding UP for the Wi-Fi gesture](img/main-wifi-hold.png)
 
-**Wi-Fi gesture feedback.** While UP is held on its own for more than about 0.4 s a box appears: `Hold: Wi-Fi on`
-(or `off`, whichever the release will switch to) with a progress bar that fills over the 3 s; at full it reads
-`Release now!`. On the Anchor and MOB pages the same 3 s hold does something else, so the box reads `Drop anchor`,
-`Lift anchor` or `Lift MOB` there and the Wi-Fi is switched from any other page. The Wi-Fi page itself is in the main loop only while the access point is on (or failed to start).
+**Hold feedback for UP.** While UP is held on its own for more than about 0.4 s a box appears with a progress bar that
+fills over the 3 s: `Hold: Wi-Fi on` (or `off`, whichever the release will switch to) on the Main page, `Lift MOB` on
+the MOB page; at full it reads `Release now!`. On every other page nothing happens when UP is held, and there is no
+box, so the Wi-Fi can only be switched from the Main page. The Wi-Fi page itself is in the main loop only while the access point is on (or failed to start).
 
 **Alert banner and blink.** The detectors report the probability of spoofing and of jamming as `OK`, `LOW`,
 `MEDIUM` or `HIGH`; `MEDIUM` and `HIGH` are alerts. An alert replaces the top row of the Main and
@@ -156,8 +156,8 @@ ANCHOR                [OK]  <- title and state badge (OFF, OK, DRAG, NO FIX)
 rad 50m max 63m              <- alarm radius, the furthest it has been since the anchor was dropped
 ```
 
-The anchor watch is for the boat at anchor: holding **UP for 3 s** on this page **drops the anchor at the current
-position** (the box reads `Drop anchor`; without a fix you get `No fix yet`), and from then on the boat's distance and bearing from that point are shown. The position is stored
+The anchor watch is for the boat at anchor: a long **DOWN** (1 s) on this page **drops the anchor at the current
+position** (the notice reads `Anchor dropped`; without a fix you get `No fix yet`, with an anchor already set `Anchor is set`), and from then on the boat's distance and bearing from that point are shown. The position is stored
 in a file (`anchor.json`), so a reboot or a power cut does not end the watch.
 
 | Item | Meaning |
@@ -167,8 +167,9 @@ in a file (`anchor.json`), so a reboot or a power cut does not end the watch.
 | `BRG` | True bearing of the boat seen from the anchor, with a small compass needle: where it has dragged to. |
 | bottom line | The alarm radius (menu Anchor > Radius, 10-500 m, default 50 m) and the largest distance so far. |
 
-Holding UP for 3 s again **lifts the anchor** (the box reads `Lift anchor`, the notice `Anchor lifted`, no question
-asked). An alarm raises the banner `ANCHOR DRAG` or `ANCHOR NO FIX` on the Main and
+A long **UP** (1 s) **lifts the anchor** and ends the watch (the notice reads `Anchor lifted`, no question asked; `No anchor
+set` when there is none). On this page a long DOWN therefore does not go back to Main: use the short presses to leave
+it. An alarm raises the banner `ANCHOR DRAG` or `ANCHOR NO FIX` on the Main and
 Speed pages, blinks the display, keeps the screen on, adds an `ANC!` entry to the Alerts page and sounds the buzzer
 (rapid beeping). A key press silences the buzzer and the banner for 30 s; if the boat is still dragging they come
 back. The alarm ends by itself when the boat is back inside the radius for three fixes.
@@ -176,8 +177,6 @@ back. The alarm ends by itself when the boat is back inside the radius for three
 ![Anchor dragging](img/anchor-drag.png)
 
 ![Main page with the anchor alarm](img/main-anchor-alarm.png)
-
-![Holding UP to drop the anchor](img/anchor-hold.png)
 
 ![The anchor was lifted](img/anchor-toast.png)
 

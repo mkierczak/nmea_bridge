@@ -271,7 +271,11 @@ class UiController(object):
             self.wifi_toggle()
             self._last_sig = None
         elif action == nav.PAGE_ACTION:
-            self._page_action()
+            self._lift_mob()
+        elif action == nav.ANCHOR_DROP:
+            self._drop_anchor()
+        elif action == nav.ANCHOR_LIFT:
+            self._lift_anchor()
 
     def _position(self):
         """(lat_u, lon_u) of the boat, or None without a usable fix."""
@@ -309,27 +313,38 @@ class UiController(object):
         self.alert_acked = False
         self.alarm_silenced = False
 
-    def _page_action(self):
-        """UP held for 3 s on the Anchor or MOB page: drop or lift the anchor, lift the man-overboard mark."""
-        if self.navigator.page == nav.PAGE_ANCHOR:
-            watch = self.bridge.anchor
-            if watch is None:
-                return
-            if watch.is_set:
-                watch.clear()
-                self._notice('Anchor lifted')
-            else:
-                position = self._position()
-                if position is None:
-                    self._notice('No fix yet')
-                else:
-                    watch.set(position)
-                    self._notice('Anchor dropped')
-        elif self.navigator.page == nav.PAGE_MOB:
-            self.bridge.mob.clear()
-            self.navigator.mob_active = False
-            self.navigator.check()
-            self._notice('MOB lifted')
+    def _drop_anchor(self):
+        """A long DOWN on the Anchor page: drop the anchor at the current position."""
+        watch = self.bridge.anchor
+        if watch is None:
+            return
+        if watch.is_set:
+            self._notice('Anchor is set')
+            return
+        position = self._position()
+        if position is None:
+            self._notice('No fix yet')
+        else:
+            watch.set(position)
+            self._notice('Anchor dropped')
+
+    def _lift_anchor(self):
+        """A long UP on the Anchor page: lift the anchor, which ends the watch."""
+        watch = self.bridge.anchor
+        if watch is None:
+            return
+        if watch.is_set:
+            watch.clear()
+            self._notice('Anchor lifted')
+        else:
+            self._notice('No anchor set')
+
+    def _lift_mob(self):
+        """UP held for 3 s on the MOB page: lift the man-overboard mark."""
+        self.bridge.mob.clear()
+        self.navigator.mob_active = False
+        self.navigator.check()
+        self._notice('MOB lifted')
 
     def _close_menu(self, cancel=False):
         if cancel and self.menu is not None:
@@ -363,16 +378,16 @@ class UiController(object):
         return percent, 'Release now!' if percent >= 100 else label
 
     def _gesture_label(self):
-        """What UP held for 3 s does on this page (the text of the progress box), or '' if nothing."""
+        """What UP held for 3 s does on this page (the text of the progress box), or '' if nothing: lift the
+        man-overboard mark on its page, switch the Wi-Fi on the Main page."""
         page = self.navigator.page
-        if page == nav.PAGE_ANCHOR and not self.navigator.debug:
-            watch = self.bridge.anchor
-            return '' if watch is None else 'Lift anchor' if watch.is_set else 'Drop anchor'
-        if page == nav.PAGE_MOB and not self.navigator.debug:
-            return 'Lift MOB'
-        if not self.navigator.wifi:
+        if self.navigator.debug:
             return ''
-        return 'Hold: Wi-Fi ' + ('off' if self.wifi_info()[0].startswith('ON') else 'on')
+        if page == nav.PAGE_MOB:
+            return 'Lift MOB'
+        if page == nav.PAGE_MAIN and self.navigator.wifi:
+            return 'Hold: Wi-Fi ' + ('off' if self.wifi_info()[0].startswith('ON') else 'on')
+        return ''
 
     def _draw(self, now):
         if self.screen_off:

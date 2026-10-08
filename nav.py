@@ -24,6 +24,7 @@ DEBOUNCE_MS = 30
 
 # What Navigator.handle() asks the main loop to do
 OPEN_MENU, TOGGLE_WIFI, TO_MENU, PAGE_ACTION = 'open_menu', 'toggle_wifi', 'menu', 'page_action'
+ANCHOR_DROP, ANCHOR_LIFT = 'anchor_drop', 'anchor_lift'     # a long DOWN / long UP on the Anchor page
 
 
 def classify(key, held_ms, long_ms=LONG_MS, wifi_ms=WIFI_MS, mob_ms=None):
@@ -190,15 +191,21 @@ class Navigator(object):
                 self.page = DEBUG_PAGES[0] if self.debug else PAGE_MAIN
             return None
         if event == WIFI:                        # UP held for 3 s
-            if self.page in (PAGE_ANCHOR, PAGE_MOB) and not self.debug:
-                return PAGE_ACTION                   # there it drops / lifts the anchor, lifts the mark
-            return TOGGLE_WIFI if self.wifi else None
+            if self.debug:
+                return None
+            if self.page == PAGE_MOB:
+                return PAGE_ACTION                   # lifts the man-overboard mark
+            return TOGGLE_WIFI if self.wifi and self.page == PAGE_MAIN else None   # the Wi-Fi: from Main only
         if self.in_menu:
             return TO_MENU
         if event == UP_SHORT:
             self._step(1)
         elif event == DN_SHORT:
             self._step(-1)
+        elif event == UP_LONG and self.page == PAGE_ANCHOR and not self.debug:
+            return ANCHOR_LIFT
+        elif event == DN_LONG and self.page == PAGE_ANCHOR and not self.debug:
+            return ANCHOR_DROP
         elif event == DN_LONG:
             if self.debug:                           # a long DOWN leaves the debug loop
                 self.leave_debug()

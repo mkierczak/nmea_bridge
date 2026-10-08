@@ -240,8 +240,6 @@ def scenes():
         ('anchor', 'Anchor watch', page_scene(nav.PAGE_ANCHOR, p, anchor=anchor_watch())),
         ('anchor-unset', 'Anchor not set', page_scene(nav.PAGE_ANCHOR, p, anchor=anchor_watch(set_=False))),
         ('anchor-drag', 'Anchor dragging', page_scene(nav.PAGE_ANCHOR, p, anchor=anchor_watch('drag', 85.0, 20, 85.0))),
-        ('anchor-hold', 'Holding UP to drop the anchor',
-         page_scene(nav.PAGE_ANCHOR, p, anchor=anchor_watch(set_=False), hold=(55, 'Drop anchor'))),
         ('anchor-toast', 'The anchor was lifted',
          page_scene(nav.PAGE_ANCHOR, p, anchor=anchor_watch(set_=False), toast='Anchor lifted')),
         ('main-anchor-alarm', 'Main, anchor alarm',

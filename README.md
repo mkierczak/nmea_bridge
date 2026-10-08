@@ -58,7 +58,7 @@ Two keys, classified when released: short (< 1 s) and long (>= 1 s).
 
 | | UP | DOWN |
 |---|---|---|
-| **Pages** | short: next page; **hold 3 s: Wi-Fi on/off** (a shorter long press does nothing); on the Anchor / MOB page it drops or lifts the anchor / lifts the mark instead of switching the Wi-Fi | short: previous page; long: back to Main, and **on the Main page: open the menu**; **hold 3 s: man overboard** (marks the position) |
+| **Pages** | short: next page; **hold 3 s: Wi-Fi on/off, on the Main page only** (on the MOB page it lifts the mark); long on the Anchor page: lift the anchor | short: previous page; long: back to Main, and **on the Main page: open the menu**; **hold 3 s: man overboard** (marks the position); long on the Anchor page: drop the anchor |
 | **Menu** | short: cursor up; long: select / toggle / start editing | short: cursor down; long: back (leaves the menu at the top level) |
 | **Editing a value** | short: increase / next; long: confirm | short: decrease / previous; long: cancel (value reverts) |
 
@@ -74,7 +74,7 @@ software version, board ID) and **Debug**. A long DOWN leaves the debug loop, an
 alert or two minutes without a key.
 
 **Man overboard:** hold DOWN for 3 s on any page to mark the position (banner, blink, buzzer, and the MOB page with
-distance and bearing back to it; hold UP for 3 s on that page to lift the mark; the mark is stored in `mob.json` and survives a reboot). **Anchor:** holding UP for 3 s on the Anchor page drops the anchor at the current position (and lifts it again);
+distance and bearing back to it; hold UP for 3 s on that page to lift the mark; the mark is stored in `mob.json` and survives a reboot). **Anchor:** a long DOWN on the Anchor page drops the anchor at the current position and a long UP lifts it;
 the alarm radius is in the menu (Anchor > Radius). Both alarms use the buzzer if you wire one and set `PIN_BUZZER` in
 `main.py`.
 

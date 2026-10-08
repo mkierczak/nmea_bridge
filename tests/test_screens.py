@@ -706,7 +706,7 @@ def _anchor_oled(watch, **ctx):
 def test_anchor_page_not_set_set_and_dragging():
     import anchor
     oled = _anchor_oled(None)
-    assert oled.texts() == ['ANCHOR', 'OFF', 'Anchor not set', 'hold UP 3 s to', 'drop it here']
+    assert oled.texts() == ['ANCHOR', 'OFF', 'Anchor not set', 'hold DOWN 1 s to', 'drop it here']
     w = anchor.AnchorWatch(radius_m=50)
     oled = _anchor_oled(w)
     assert 'radius 50m' in oled.texts() and 'OFF' in oled.texts()

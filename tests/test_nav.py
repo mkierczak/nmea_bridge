@@ -217,26 +217,36 @@ def test_dn_held_three_seconds_is_man_overboard_only_when_the_gesture_is_enabled
     assert u.edge(1, 3500) == WIFI                              # the gesture belongs to DN only
 
 
-def test_up_held_three_seconds_drops_and_lifts_on_the_anchor_and_mob_pages_and_toggles_wifi_elsewhere():
+def test_up_held_three_seconds_toggles_wifi_on_the_main_page_only_and_lifts_the_mob_mark_on_its_page():
     n = Navigator()
-    n.page = nav.PAGE_ANCHOR
-    assert n.handle(WIFI) == nav.PAGE_ACTION
-    assert n.handle(UP_LONG) is None                            # a plain long UP does nothing there any more
+    assert n.page == nav.PAGE_MAIN and n.handle(WIFI) == nav.TOGGLE_WIFI
+    for page in (nav.PAGE_SPEED, nav.PAGE_GPS, nav.PAGE_ANCHOR, nav.PAGE_WIFI):
+        n.page = page
+        assert n.handle(WIFI) is None, page                     # not from any other page
     n.mob_active = True
     n.page = nav.PAGE_MOB
-    assert n.handle(WIFI) == nav.PAGE_ACTION
-    n.page = nav.PAGE_GPS
-    assert n.handle(WIFI) == nav.TOGGLE_WIFI
+    assert n.handle(WIFI) == nav.PAGE_ACTION                    # there it lifts the mark
     n.debug = True
-    n.page = nav.PAGE_ANCHOR                                    # (never shown in the debug loop)
-    assert n.handle(WIFI) == nav.TOGGLE_WIFI
-    n = Navigator(wifi=False)                                   # a build without Wi-Fi: the gesture is for the pages
-    assert n.handle(WIFI) is None
-    n.page = nav.PAGE_ANCHOR
-    assert n.handle(WIFI) == nav.PAGE_ACTION
+    n.page = nav.PAGE_MAIN
+    assert n.handle(WIFI) is None                               # and never in the debug loop
+    n = Navigator(wifi=False)
+    assert n.handle(WIFI) is None                               # a build without Wi-Fi
     n = Navigator()
     n.mob_active = True
     n.page = nav.PAGE_MOB
     n.mob_active = False
     n.check()
     assert n.page == nav.PAGE_MAIN                              # the mark was lifted while you looked at it
+
+
+def test_long_down_drops_and_long_up_lifts_the_anchor_on_its_page_only():
+    n = Navigator()
+    n.page = nav.PAGE_ANCHOR
+    assert n.handle(DN_LONG) == nav.ANCHOR_DROP and n.page == nav.PAGE_ANCHOR      # does not go back to Main
+    assert n.handle(UP_LONG) == nav.ANCHOR_LIFT
+    assert n.handle(UP_SHORT) is None and n.page == nav.PAGE_MAIN               # the pages still cycle
+    n.page = nav.PAGE_GPS
+    assert n.handle(UP_LONG) is None and n.handle(DN_LONG) is None and n.page == nav.PAGE_MAIN   # as before
+    n.debug = True
+    n.page = nav.PAGE_ANCHOR                                    # (never shown in the debug loop)
+    assert n.handle(UP_LONG) is None
