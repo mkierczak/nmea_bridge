@@ -305,16 +305,18 @@ class UiController(object):
         self._toast = (text, self.uptime_ms + TOAST_MS)
 
     def _mark_mob(self):
-        """Man overboard: mark the position, show its page, and raise the alarm."""
+        """Man overboard: mark the position, show its page, and raise the alarm. The same gesture again, with a mark
+        in place, lifts it."""
         mob = self.bridge.mob
         if self.menu is not None:
             self._close_menu(cancel=True)
         self.navigator.leave_debug()
         position = self._position()
         if mob.active:
-            self.navigator.mob_active = True
-            self.navigator.page = nav.PAGE_MOB          # already marked: just show it
-            self._notice('MOB already marked')
+            mob.clear()
+            self.navigator.mob_active = False
+            self.navigator.check()
+            self._notice('MOB lifted')
         elif position is None:
             self._notice('No position yet')
         else:
@@ -371,7 +373,8 @@ class UiController(object):
         if self.dn_held is not None:
             held = self.dn_held(now)
             if held is not None and MOB_SHOW_MS <= held <= HOLD_STALE_MS:
-                return min(100, held * 100 // self.mob_ms), 'Release now!' if held >= self.mob_ms else 'Hold: MOB'
+                return min(100, held * 100 // self.mob_ms), 'Release now!' if held >= self.mob_ms else (
+                    'Hold: clear MOB' if self.bridge.mob.active else 'Hold: MOB')
         if self.up_held is None:
             return None
         held = self.up_held(now)

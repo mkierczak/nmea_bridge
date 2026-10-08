@@ -618,12 +618,16 @@ def test_man_overboard_gesture_marks_the_position_and_raises_the_alarm_from_any_
     assert r.ui.alarm_level() == alerts.URGENT and r.bridge.alert_log.entries[-1][1:] == ('MOB!', 'marked')
     r.press(DN_SHORT)                                      # the first key press acknowledges (banner, buzzer)
     assert not mob.alerting and r.ui.alarm_level() == alerts.NONE and mob.active
-    r.press(nav.MOB)                                       # again: no second mark, just the page
-    assert r.ctxs[-1]['toast'] == 'MOB already marked' and r.bridge.alert_log.total == 1
-    r.press(UP_LONG)                                       # clearing asks first
+    r.navigator.page = nav.PAGE_MOB
+    r.press(UP_LONG)                                       # clearing from the page asks first
     assert r.ctxs[-1]['confirm'] == ui._CONFIRM_TEXT['mob']
     r.press(UP_LONG)
     assert not mob.active and r.navigator.page == nav.PAGE_MAIN and nav.PAGE_MOB not in r.navigator.pages
+    r.press(nav.MOB)                                       # a new mark ...
+    assert mob.active and mob.alerting
+    r.press(nav.MOB)                                       # ... and the same gesture again lifts it, no question asked
+    assert not mob.active and r.ctxs[-1]['toast'] == 'MOB lifted' and r.bridge.alert_log.total == 2
+    assert r.navigator.page == nav.PAGE_MAIN and nav.PAGE_MOB not in r.navigator.pages
 
 
 def test_man_overboard_works_with_the_screen_off_and_with_the_menu_open():
@@ -654,6 +658,10 @@ def test_hold_box_for_man_overboard_appears_after_a_normal_long_press():
     held[0] = 1800
     r.step(advance=200)
     assert r.ctxs[-1]['hold'] == (60, 'Hold: MOB')
+    r.bridge.mob.set((1, 1), 0)                            # with a mark in place the same hold lifts it
+    r.step(advance=ui.HOLD_REFRESH_MS + 1)
+    assert r.ctxs[-1]['hold'] == (60, 'Hold: clear MOB')
+    r.bridge.mob.clear()
     held[0] = 3200
     r.step(advance=ui.HOLD_REFRESH_MS + 1)
     assert r.ctxs[-1]['hold'] == (100, 'Release now!')

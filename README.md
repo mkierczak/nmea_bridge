@@ -73,7 +73,7 @@ progress, alert latch time left), **System** (uptime, free heap, drops, GPS baud
 software version, board ID) and **Debug**. A long DOWN leaves the debug loop, and so does a new `MEDIUM`/`HIGH`
 alert or two minutes without a key.
 
-**Man overboard:** hold DOWN for 3 s on any page to mark the position (banner, blink, buzzer, and the MOB page with
+**Man overboard:** hold DOWN for 3 s on any page to mark the position (hold it for 3 s again to lift the mark) (banner, blink, buzzer, and the MOB page with
 distance and bearing back to it; the mark is stored in `mob.json` and survives a reboot). **Anchor:** a long UP on the Anchor page drops the anchor at the current position;
 the alarm radius is in the menu (Anchor > Radius). Both alarms use the buzzer if you wire one and set `PIN_BUZZER` in
 `main.py`.

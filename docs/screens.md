@@ -200,7 +200,7 @@ Hold **DN for 3 s** on any page (a box `Hold: MOB` with a progress bar appears a
 marked, the display jumps to this page, the banner `MAN OVERBOARD` shows with the blink, the buzzer sounds (rapid) and
 an `MOB!` entry goes to the Alerts page. The gesture works with the screen off, in the menu and in the debug loop,
 and does nothing without a position (`No position yet`). The first key press acknowledges the banner and the buzzer;
-the mark stays and the page stays in the main loop until you clear it. The mark is stored in a file (`mob.json`), so a reboot or a power cut does not lose it: after the restart the page is back in the loop, the banner and the buzzer raise the alarm again and an `MOB!` `restored` entry goes to the Alerts page. The elapsed time is counted on the GPS clock, so it stays right across the reboot.
+the mark stays and the page stays in the main loop until you lift it. The mark is stored in a file (`mob.json`), so a reboot or a power cut does not lose it: after the restart the page is back in the loop, the banner and the buzzer raise the alarm again and an `MOB!` `restored` entry goes to the Alerts page. The elapsed time is counted on the GPS clock, so it stays right across the reboot.
 
 ![Holding DN for man overboard](img/main-mob-hold.png)
 
@@ -210,8 +210,9 @@ the mark stays and the page stays in the main loop until you clear it. The mark 
 | `DIST` / `BRG` | Distance from the boat to the marked position and the true bearing to steer, with a compass needle. |
 | `rel` | The bearing relative to the course over ground: `-090` means 90 degrees to port, `+045` 45 degrees to starboard; `---` while the boat is not moving (no course). |
 
-A long UP on this page **clears the mark** after a confirmation. Marking again while a mark exists only shows it
-(`MOB already marked`).
+**Lifting the mark:** hold **DN for 3 s again** while a mark exists (the box then reads `Hold: clear MOB`) and the mark
+is lifted at once, with the notice `MOB lifted` and no question. A long UP on this page also clears it, after a
+confirmation.
 
 ## 6. Wi-Fi
 
