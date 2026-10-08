@@ -25,9 +25,11 @@ When `mpy-cross` is installed, `make deploy` runs `make deploy-mpy`, which preco
 copying anything it compares the `.mpy` format version of `mpy-cross` with the board's firmware and stops on a
 mismatch (the bytecode of `mpy-cross` 1.29 loads on firmware 1.24.1). `make deploy-py` always deploys the
 source files. With `DEBUG` on, the free/used heap is printed at boot and every minute (`MEM ...`).
-Measured on a Pico W (MicroPython 1.24.1, `make deploy` with `.mpy` modules, all pages drawn, the menu opened and
-the Wi-Fi access point on): about 56 KB of the 190 KB heap stay free; the menu costs about 3.5 KB and the Wi-Fi
-code and access point about 4-7 KB. The GPS thread's 4 KB stack must be one contiguous block, which the heap no
+Measured on a Pico W (MicroPython 1.24.1, `make deploy` with `.mpy` modules, heap read after a garbage collection;
+the board has 185 KiB of heap): the booted app holds about 125 KiB and leaves about **59 KiB free** (the System page
+shows `heap 56k`: it rounds down to 4 KiB). Opening the menu costs about 3.5 KiB, loading the Wi-Fi code about
+2.5 KiB and running the access point about 1 KiB more, and drawing every page changes nothing worth mentioning: in the
+worst case about **55 KiB stay free**, and the figure is steady while the UI runs. The GPS thread's 4 KiB stack must be one contiguous block, which the heap no
 longer offers by the time the modules have loaded, so `main.py` keeps a block back for it from the very start and
 frees it just before the thread is started (without that the board stopped at that line with a `MemoryError`).
 
@@ -117,8 +119,8 @@ The forwarded sentence types are the same as for the radio (Radio output menu); 
 chooses the talker IDs (default GP, GN and BeiDou BD); when `SPOOF_ACTION = 'block'` is active the blocked sentences are not sent over Wi-Fi
 either. Everyone who joins the network can read the vessel's position.
 
-Resources (measured, see the Deploy section): the app needs roughly 130 KB of heap; the Wi-Fi code is
-imported only when first switched on and adds on the order of 10-30 KB. Keep the Wi-Fi board and its
+Resources (measured, see the Deploy section): the app needs roughly 125 KiB of the 185 KiB heap; the Wi-Fi code is
+imported only when first switched on and adds about 3-4 KiB on top of the 59 KiB that are free at boot. Keep the Wi-Fi board and its
 antenna away from the GNSS antenna (the 2.4 GHz radio and board noise can lower C/N0; compare the
 C/N0 figures on the stats screen with Wi-Fi on and off). Starting the AP can block the main loop for
 a second or two, so a few GPS sentences may be dropped (see the `d` figure, dropped sentences, on the stats screen).
