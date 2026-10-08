@@ -25,8 +25,11 @@ When `mpy-cross` is installed, `make deploy` runs `make deploy-mpy`, which preco
 copying anything it compares the `.mpy` format version of `mpy-cross` with the board's firmware and stops on a
 mismatch (the bytecode of `mpy-cross` 1.29 loads on firmware 1.24.1). `make deploy-py` always deploys the
 source files. With `DEBUG` on, the free/used heap is printed at boot and every minute (`MEM ...`).
-On a Pico W with the whole app loaded about 100 KB of the 185 KB heap stay free, and the Wi-Fi access
-point costs about 3 KB more.
+Measured on a Pico W (MicroPython 1.24.1, `make deploy` with `.mpy` modules, all pages drawn, the menu opened and
+the Wi-Fi access point on): about 56 KB of the 190 KB heap stay free; the menu costs about 3.5 KB and the Wi-Fi
+code and access point about 4-7 KB. The GPS thread's 4 KB stack must be one contiguous block, which the heap no
+longer offers by the time the modules have loaded, so `main.py` keeps a block back for it from the very start and
+frees it just before the thread is started (without that the board stopped at that line with a `MemoryError`).
 
 **Deploying to (or poking at) a board that is running the app.** Two things matter once the GPS has armed
 the 5 s hardware watchdog. `mpremote` soft-resets the board on connect; with the GPS thread on the second
@@ -114,7 +117,7 @@ The forwarded sentence types are the same as for the radio (Radio output menu); 
 chooses the talker IDs (default GP, GN and BeiDou BD); when `SPOOF_ACTION = 'block'` is active the blocked sentences are not sent over Wi-Fi
 either. Everyone who joins the network can read the vessel's position.
 
-Resources (estimates, measure on your board): the app needs roughly 70-100 KB of heap; the Wi-Fi code is
+Resources (measured, see the Deploy section): the app needs roughly 130 KB of heap; the Wi-Fi code is
 imported only when first switched on and adds on the order of 10-30 KB. Keep the Wi-Fi board and its
 antenna away from the GNSS antenna (the 2.4 GHz radio and board noise can lower C/N0; compare the
 C/N0 figures on the stats screen with Wi-Fi on and off). Starting the AP can block the main loop for

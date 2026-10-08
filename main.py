@@ -5,8 +5,11 @@ The logic lives in hardware-free modules that are tested on a desktop:
   ui.py      key events, menu, screen-off timer, redraw
 This file only creates the hardware objects, connects them and runs the loop.
 """
-import binascii
 import gc
+# The heap fragments as the modules load, and starting the GPS thread needs one contiguous block for its stack
+# (4096 bytes): keep a block back from the start and give it up just before the thread is started.
+_thread_stack_reserve = bytearray(4096 + 512)
+import binascii
 import sys
 import _thread
 import utime
@@ -224,6 +227,8 @@ def configure_module():
 gps = l76x.L76X(uartx=UARTx, _baudrate=GPS_BAUDRATE, verbose=DEBUG)
 reader = GpsReader(gps, rx_queue, utime.ticks_ms, gps_init)
 core.reader = reader
+del _thread_stack_reserve
+gc.collect()                      # one contiguous hole for the thread's stack
 _thread.start_new_thread(reader.run_forever, (utime.sleep_ms, report))
 
 # Wi-Fi (Pico W): imported and started only when switched on
