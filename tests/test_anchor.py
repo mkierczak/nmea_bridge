@@ -105,3 +105,29 @@ def test_mob_mark():
     assert m.active and not m.alerting
     m.clear()
     assert not m.active and m.position is None
+
+
+def test_mob_mark_survives_a_reboot_and_counts_on_by_the_gps_clock():
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, 'mob.json')
+        m = anchor.MobMark(path)
+        assert not m.load()
+        m.set(HOME, 5000, utc_s=1000000)
+        assert os.path.exists(path)
+        again = anchor.MobMark(path)                              # the board restarted
+        assert again.load() and again.position == HOME and again.active
+        assert again.alerting                                      # it must be seen again
+        assert again.seconds(20000, utc_s=1000090) == 90           # the GPS clock knows how long ago
+        assert again.seconds(20000, utc_s=None) == 20              # without it: counted from the boot
+        assert again.seconds(20000, utc_s=999000) == 0             # never negative
+        m.set(HOME, 0)                                             # marked before any time was known
+        no_time = anchor.MobMark(path)
+        assert no_time.load() and no_time.marked_utc is None
+        again.clear()
+        assert not os.path.exists(path) and not again.active
+        with open(path, 'w') as f:
+            f.write('{broken')
+        assert not anchor.MobMark(path).load()
+    nowhere = anchor.MobMark('/nonexistent-dir/mob.json')
+    nowhere.set(HOME, 0)                                           # no file system: the mark still works
+    assert nowhere.active

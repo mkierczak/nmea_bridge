@@ -703,3 +703,16 @@ def test_automatic_night_mode_keeps_the_last_answer_without_a_fix_and_does_not_t
     assert r.ui.night_active()
     r.step(advance=600000)
     assert not r.ui.screen_off                               # auto only dims; "on" also switches the screen off
+
+
+def test_man_overboard_mark_records_the_gps_time_and_the_page_counts_from_it():
+    r = Rig()
+    r.step()
+    with_fix(r)
+    p = r.bridge.parser
+    p.utc_days, p.utc_ms = 20625, 12 * 3600 * 1000
+    r.press(nav.MOB)
+    assert r.bridge.mob.marked_utc == 20625 * 86400 + 12 * 3600
+    p.utc_ms += 75000
+    r.step(advance=ui.REFRESH_MS + 1)
+    assert r.ctxs[-1]['mob_s'] == 75

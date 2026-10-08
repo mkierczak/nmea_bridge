@@ -295,6 +295,11 @@ class UiController(object):
             return None
         return p.lat_u, p.lon_u
 
+    def _utc_s(self):
+        """Seconds since 1970 on the GPS clock, or None before the first time sentence."""
+        p = self.bridge.parser
+        return p.utc_days * 86400 + p.utc_ms // 1000 if p.utc_days else None
+
     def _notice(self, text):
         self._toast = (text, self.uptime_ms + TOAST_MS)
 
@@ -312,7 +317,7 @@ class UiController(object):
         elif position is None:
             self._notice('No position yet')
         else:
-            mob.set(position, self.uptime_ms)
+            mob.set(position, self.uptime_ms, self._utc_s())
             self.bridge.log_alert('MOB!', 'marked')
             self.navigator.mob_active = True
             self.navigator.page = nav.PAGE_MOB
@@ -419,7 +424,7 @@ class UiController(object):
             ctx['anchor'] = bridge.anchor
         elif page == nav.PAGE_MOB:
             ctx['mob'] = bridge.mob
-            ctx['mob_s'] = bridge.mob.seconds(self.uptime_ms)
+            ctx['mob_s'] = bridge.mob.seconds(self.uptime_ms, self._utc_s())
         if page == nav.PAGE_LOG:
             ctx['alerts'] = bridge.alert_log.newest(5)
             ctx['alert_total'] = bridge.alert_log.total

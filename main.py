@@ -160,6 +160,9 @@ core = Bridge(nmea_parser, rx_queue, radio, utime.ticks_ms, on_fatal=fatal,
 core.report = report
 core.anchor = anchor.AnchorWatch('anchor.json', cfg.get('anchor_radius_m'))
 core.anchor.load()                # an anchor dropped before a reboot is still there
+core.mob = anchor.MobMark('mob.json')
+if core.mob.load():               # so is a man-overboard mark (it raises the alarm again)
+    core.log_alert('MOB!', 'restored')
 core.forward_talkers = FORWARD_TALKERS
 core.wifi_talkers = WIFI_FORWARD_TALKERS
 core.block_types = SPOOF_BLOCK_TYPES

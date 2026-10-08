@@ -143,28 +143,68 @@ class AnchorWatch(object):
 
 
 class MobMark(object):
-    """A man-overboard position, with the time it was marked (uptime ms)."""
+    """A man-overboard position, with the time it was marked. With a file it survives a reboot (and then raises the
+    alarm again: somebody must look at it)."""
 
-    def __init__(self):
+    def __init__(self, path=None):
+        self.path = path
         self.position = None
-        self.marked_ms = 0
+        self.marked_ms = 0            # uptime when it was marked (counted from the boot after a reboot)
+        self.marked_utc = None        # seconds since 1970 on the GPS clock, when it was known
         self.alerting = False         # True from the mark until a key press: banner, blink and buzzer
 
     @property
     def active(self):
         return self.position is not None
 
-    def set(self, position, now_ms):
+    def set(self, position, now_ms, utc_s=None):
         self.position = (position[0], position[1])
         self.marked_ms = now_ms
+        self.marked_utc = utc_s
         self.alerting = True
+        self._save()
 
     def acknowledge(self):
         self.alerting = False
 
     def clear(self):
         self.position = None
+        self.marked_utc = None
         self.alerting = False
+        self._save()
 
-    def seconds(self, now_ms):
+    def seconds(self, now_ms, utc_s=None):
+        """Seconds since the mark: by the GPS clock when both times are known (right across a reboot), else by
+        the uptime."""
+        if self.marked_utc is not None and utc_s is not None:
+            return max(0, utc_s - self.marked_utc)
         return max(0, (now_ms - self.marked_ms) // 1000)
+
+    def load(self):
+        if not self.path or json is None:
+            return False
+        try:
+            with open(self.path) as f:
+                data = json.load(f)
+            self.position = (int(data['lat_u']), int(data['lon_u']))
+            utc = data.get('utc')
+            self.marked_utc = int(utc) if utc is not None else None
+            self.marked_ms = 0
+            self.alerting = True                 # a reboot with somebody in the water: make sure it is seen
+            return True
+        except (OSError, ValueError, KeyError, TypeError):
+            self.position = None
+            return False
+
+    def _save(self):
+        if not self.path or json is None:
+            return
+        try:
+            if self.position is None:
+                import os
+                os.remove(self.path)
+            else:
+                with open(self.path, 'w') as f:
+                    json.dump({'lat_u': self.position[0], 'lon_u': self.position[1], 'utc': self.marked_utc}, f)
+        except OSError:
+            pass
