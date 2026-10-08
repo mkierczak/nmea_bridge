@@ -109,8 +109,12 @@ def test_zda_parsed():
 def test_coordinate_strings():
     p = NMEA.Parser()
     p.lat, p.NS, p.lon, p.EW = '4807.038', 'N', '01131.000', 'E'
-    assert p.get_lat_string() == 'N48' + chr(176) + '7.04'
-    assert p.get_lon_string() == 'E011' + chr(176) + '31.0'
+    assert p.get_lat_string() == 'N48' + chr(176) + '07.04'
+    assert p.get_lon_string() == 'E011' + chr(176) + '31.00'
+    p.lon = '01803.2190'
+    assert p.get_lon_string() == 'E018' + chr(176) + '03.22'          # minutes keep their leading zero
+    p.lat = '5918.3000'
+    assert p.get_lat_string() == 'N59' + chr(176) + '18.30'           # ... and their trailing one
     p.lat = 'garbage'
     assert p.get_lat_string() == ''
 

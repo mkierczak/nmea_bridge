@@ -45,7 +45,7 @@ the blink (it does not change the page); the small `SPF!`/`JAM?` labels stay. A 
 ![Main page](img/main.png)
 
 ```
-12:34:56   OK   SPF?     <- UTC time, jamming label, spoofing label
+12:34:56Z  W1 S?  *     <- UTC time, Wi-Fi mark, labels, heartbeat
 -------------------------
 N59°12.34                <- latitude  (large font)
 E018°03.21               <- longitude (large font)
@@ -55,10 +55,13 @@ GPS 3D 9/14        BBB   <- fix, mode, satellites used/in view, DOP letters
 
 | Item | Meaning |
 |---|---|
-| Time | UTC from the last RMC/GGA/ZDA time field, `hh:mm:ss`; `--:--:--` until a time has been received. |
-| Jamming label (x = 72) | Blank while the jamming detector is off or still learning (`INIT`); otherwise `OK`, `LOW` (suspected signal degradation) or `JAM?` (strong evidence). See [jamming-detection.md](jamming-detection.md). |
-| Spoofing label (right edge) | Blank when `OK` or the detector is off; `SPF?` (suspect) or `SPF!` (alert). If both labels would touch they shrink to `S?` / `S!`. See [spoofing-detection.md](spoofing-detection.md). |
-| Latitude / longitude | Hemisphere letter, whole degrees, decimal minutes (2 decimals): `N59°12.34`. Replaced by `NO FIX` when there is no usable position. |
+| Time | UTC from the last RMC/GGA/ZDA time field, `hh:mm:ss` followed by `Z` (Zulu = UTC); `--:--:--` until a time has been received. |
+| Heartbeat (last column) | Shows that position sentences (RMC/GGA) are reaching the radio. `*` and `.` alternate: `*` for 0.35 s after each sentence was written to the radio, `.` in between, so it ticks once per fix. `-`: nothing was forwarded for 3 s (no data, no fix, the types switched off in the menu, or blocked by a spoofing alert in block mode). `X`: the radio write failed, or a position sentence was dropped for being more than 3 s late; stays for 10 s. |
+| Jamming label | Only shown when something is wrong: `LOW` (suspected signal degradation) or `JAM?` (strong evidence). Blank when the detector is off, learning, or `OK`. See [jamming-detection.md](jamming-detection.md). |
+| Spoofing label | Blank when `OK` or the detector is off; `SPF?` (suspect) or `SPF!` (alert). See [spoofing-detection.md](spoofing-detection.md). |
+| Wi-Fi mark | Only while the access point is on: `W` with no client, `W2` with two TCP clients (`W9` at most), `W!` if it failed to start. |
+| Label space | The labels and the Wi-Fi mark share five character cells, right-aligned before the heartbeat. When they do not fit, the labels shrink (`SPF?` to `S?`, `JAM?` to `J?`, `LOW` to `L`), and if that is not enough the Wi-Fi mark is dropped. |
+| Latitude / longitude | Hemisphere letter, whole degrees, decimal minutes always with two digits before the point and two after: `N59°12.34`, `E018°03.21`. Replaced by `NO FIX` when there is no usable position. |
 | `NO FIX` | Shown when the last GGA says no fix, no position sentence has arrived yet, or the last position sentence is older than 10 s. Under it `lost m:ss` (or `lost 1h02m`) counts the time since the last valid fix; nothing is shown if there has been no fix since boot. |
 | Alert banner | While a strong alert is active and not dismissed, the time/label row is replaced by a white bar with the alert text (see Navigation). |
 | Fix | Last GGA fix quality: `NO`, `GPS`, `DGPS` (differential/SBAS) or `?`. |
@@ -66,7 +69,9 @@ GPS 3D 9/14        BBB   <- fix, mode, satellites used/in view, DOP letters
 | `used/view` | Satellites used in the solution (GGA) / satellites in view (sum of the GSV totals of all systems). |
 | DOP letters (right) | Three letters for PDOP, HDOP, VDOP, each classified: `A` < 1 (ideal), `B` 1-2 (excellent), `C` 2-5 (good), `D` 5-10 (moderate), `E` 10-20 (fair), `F` >= 20 (poor), `?` unknown. |
 
-![Main page with a suspected-spoofing label](img/main-suspect.png)
+![Main page with jamming and spoofing suspected: the labels shrink to fit](img/main-suspect.png)
+
+![Main page with a radio write failure: the heartbeat shows X](img/main-fault.png)
 
 ![Main page without a fix](img/main-nofix.png)
 

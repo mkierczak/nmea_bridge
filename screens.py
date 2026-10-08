@@ -21,6 +21,54 @@ def banner_text(jam, spoof):
     return ''
 
 
+HEARTBEAT = {'on': '*', 'off': '.', 'idle': '-', 'fault': 'X'}   # forwarding to the radio, see Bridge.heartbeat
+STATUS_SLOTS = 5          # characters (x = 80..119) between the time and the heartbeat for labels and the Wi-Fi mark
+
+
+def _wifi_mark(wifi):
+    """'W' access point on, 'W2' with two TCP clients, 'W!' when it failed to start, '' when off."""
+    if not wifi:
+        return ''
+    if wifi[0].startswith('ON'):
+        return 'W' + (str(min(wifi[3], 9)) if wifi[3] else '')
+    return 'W!' if wifi[0] == 'ERR' else ''
+
+
+def _short(label):
+    """'SPF?' -> 'S?', 'JAM?' -> 'J?', 'LOW' -> 'L'."""
+    return label[0] + ('?' if label.endswith('?') else '!' if label.endswith('!') else '')
+
+
+def _status_row(oled, parser, jam, spoof, wifi, heartbeat):
+    """Top row of the Main page: UTC time with a Z, then (right to left) the heartbeat, the spoofing label, the
+    jamming label (only when something is wrong) and the Wi-Fi mark. When they do not all fit the labels shrink,
+    and the Wi-Fi mark gives way first."""
+    time_text = parser.get_time_string()
+    oled.text(time_text if time_text[0] == '-' else time_text + 'Z', 0, 3, 1)
+    if heartbeat:
+        oled.text(HEARTBEAT[heartbeat], 120, 3, 1)
+    jam_label = jam.label() if jam else ''
+    if jam_label == 'OK':
+        jam_label = ''                    # nothing to report: no label
+    items = [(spoof.label() if spoof else '', True), (jam_label, True), (_wifi_mark(wifi), False)]
+    items = [(text, can_shrink) for text, can_shrink in items if text]
+
+    def width(shrunk):
+        texts = [_short(t) if shrunk and c else t for t, c in items]
+        return texts, sum(len(t) for t in texts) + len(texts) - 1
+    texts, slots = width(False)
+    if slots > STATUS_SLOTS:
+        texts, slots = width(True)
+    if slots > STATUS_SLOTS and items and not items[-1][1]:    # still too much: drop the Wi-Fi mark
+        items = items[:-1]
+        texts, slots = width(True)
+    x = 120
+    for text in texts:
+        x -= 8 * len(text)
+        oled.text(text, x, 3, 1)
+        x -= 8
+
+
 def _banner(oled, text, height):
     """Inverted bar across the top: white background, black text."""
     oled.fill_rect(0, 0, 128, height, 1)
@@ -104,7 +152,8 @@ def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None, spo
          ctx=None):
     """Render one screen into the frame buffer (caller calls oled.show()). ctx (optional dict) carries what
     only the controller knows: 'pages' (page indicator), 'fix_age_s' (seconds since the last fix, None if
-    never), 'banner' (True to show the alert banner) and 'hold' (Wi-Fi gesture progress, see _draw_hold)."""
+    never), 'banner' (True to show the alert banner), 'heartbeat' (key of HEARTBEAT, Main page) and 'hold' (Wi-Fi gesture
+    progress, see _draw_hold). 'wifi' is used by the Wi-Fi page and, as a small mark, by the Main page."""
     ctx = ctx or {}
     banner = banner_text(jam, spoof) if ctx.get('banner') else ''
     oled.fill(0)
@@ -114,15 +163,7 @@ def draw(oled, font_large, screen, parser, stats, dropped, no_fix, jam=None, spo
         if banner:
             _banner(oled, banner, 13)
         else:
-            oled.text(parser.get_time_string(), 0, 3, 1)  # UTC
-            jam_label = jam.label() if jam else ''        # '', OK, LOW or JAM?
-            spoof_label = spoof.label() if spoof else ''  # '', SPF? or SPF!
-            if jam_label:
-                oled.text(jam_label, 72, 3, 1)            # one character of space after the time
-            if spoof_label:
-                if 72 + 8 * len(jam_label) >= 128 - 8 * len(spoof_label):
-                    spoof_label = 'S' + spoof_label[-1]   # both at once: 'S?' / 'S!' so they never touch
-                oled.text(spoof_label, 128 - 8 * len(spoof_label), 3, 1)
+            _status_row(oled, parser, jam, spoof, wifi, ctx.get('heartbeat'))
         oled.hline(0, 14, 128, 1)
         if no_fix:
             oled.text('NO FIX', 40, 28, 1)

@@ -260,31 +260,56 @@ class Label:
         return self.text
 
 
-def title_row(jam_label, spoof_label):
+def title_row(jam_label, spoof_label, wifi=None, heartbeat=None, parser=None):
     oled = Oled()
     jam = Label(jam_label) if jam_label is not None else None
     spoof = Label(spoof_label) if spoof_label is not None else None
-    screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, NMEA.Parser(), STATS, 0, True, jam, spoof)
-    return [(text, x) for text, x, y in oled.calls if y == 3]
+    screens.draw(oled, FakeWriter(), nav.PAGE_MAIN, parser or NMEA.Parser(), STATS, 0, True, jam, spoof, wifi,
+                 None, {'heartbeat': heartbeat} if heartbeat else None)
+    return sorted((x, text) for text, x, y in oled.calls if y == 3)
 
 
-def test_main_page_title_row_has_a_space_after_the_time_and_labels_never_touch():
+def test_main_page_title_row_never_overlaps_and_keeps_a_gap_after_the_time():
     for jam in (None, '', 'OK', 'LOW', 'JAM?'):
         for spoof in (None, '', 'SPF?', 'SPF!'):
-            row = title_row(jam, spoof)
-            assert row[0] == ('--:--:--', 0)
-            end = 64                                         # the time ends at column 64
-            for text, x in row[1:]:
-                assert x >= end + 8, (jam, spoof, row)       # at least one blank character between texts
-                assert x + 8 * len(text) <= 128, (jam, spoof, row)
-                end = x + 8 * len(text)
+            for wifi in (None, ('OFF', '', '', 0, 4, ''), ('ON sta1', '', '', 0, 4, ''), ('ON sta1', '', '', 3, 4, ''),
+                         ('ERR', '', '', 0, 4, '')):
+                for heartbeat in (None, 'on', 'fault'):
+                    row = title_row(jam, spoof, wifi, heartbeat)
+                    assert row[0] == (0, '--:--:--')
+                    end = 64                                     # the time ends at column 64
+                    for x, text in row[1:]:
+                        assert x >= end + (0 if x == 120 else 8), (jam, spoof, wifi, row)   # a blank between texts
+                        assert x + 8 * len(text) <= 128, (jam, spoof, wifi, row)
+                        end = x + 8 * len(text)
 
 
 def test_main_page_title_row_typical_cases():
-    assert title_row('OK', '') == [('--:--:--', 0), ('OK', 72)]
-    assert title_row('OK', 'SPF!') == [('--:--:--', 0), ('OK', 72), ('SPF!', 96)]
-    assert title_row('JAM?', 'SPF?') == [('--:--:--', 0), ('JAM?', 72), ('S?', 112)]   # both: the spoof label is shortened
-    assert title_row('LOW', 'SPF!') == [('--:--:--', 0), ('LOW', 72), ('S!', 112)]
+    assert title_row('OK', '') == [(0, '--:--:--')]                        # an OK jamming label is not shown
+    assert title_row(None, 'SPF!') == [(0, '--:--:--'), (88, 'SPF!')]
+    assert title_row('LOW', '') == [(0, '--:--:--'), (96, 'LOW')]
+    assert title_row('JAM?', 'SPF?') == [(0, '--:--:--'), (80, 'J?'), (104, 'S?')]     # both: shortened
+    assert title_row('LOW', 'SPF!') == [(0, '--:--:--'), (88, 'L'), (104, 'S!')]
+    assert title_row('JAM?', '', heartbeat='on')[-1] == (120, '*')
+
+
+def test_main_page_time_gets_a_z_when_there_is_one_and_the_heartbeat_has_its_own_character():
+    p = NMEA.Parser()
+    p.time = '123456.00'
+    assert title_row(None, None, parser=p)[0] == (0, '12:34:56Z')
+    assert title_row(None, None)[0] == (0, '--:--:--')                      # no time yet: no Z either
+    for state, char in (('on', '*'), ('off', '.'), ('idle', '-'), ('fault', 'X')):
+        assert title_row(None, None, heartbeat=state)[-1] == (120, char)
+
+
+def test_main_page_wifi_mark_and_what_gives_way_to_the_labels():
+    on = ('ON sta1', '', '', 0, 4, '')
+    assert title_row(None, None, on)[-1] == (112, 'W')                      # right next to the heartbeat column
+    assert title_row(None, None, ('ON sta1', '', '', 2, 4, ''))[-1] == (104, 'W2')
+    assert title_row(None, None, ('ERR', '', '', 0, 4, ''))[-1] == (104, 'W!')
+    assert title_row(None, None, ('OFF', '', '', 0, 4, '')) == [(0, '--:--:--')]
+    assert title_row(None, 'SPF?', on) == [(0, '--:--:--'), (88, 'W'), (104, 'S?')]       # the full label does not fit
+    assert title_row('LOW', 'SPF?', on) == [(0, '--:--:--'), (88, 'L'), (104, 'S?')]     # labels first: no Wi-Fi mark
 
 
 def test_stats_page_rows_are_evenly_spaced_with_the_cn_row_clearly_below():

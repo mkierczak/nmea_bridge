@@ -47,6 +47,7 @@ class Rig:
         self.navigator = nav.Navigator()
         self.draws = []
         self.ctxs = []
+        self.wifi_args = []
         self.toggles = 0
         self.system_calls = 0
         self.hook_log = []
@@ -54,6 +55,7 @@ class Rig:
         def draw(oled, font, page, parser, stats, dropped, no_fix, jam, spoof, wifi, info, ctx=None):
             self.draws.append((page, info is not None))
             self.ctxs.append(ctx)
+            self.wifi_args.append(wifi)
         self.hooks = {'apply': lambda k: self.hook_log.append(k), 'reset': lambda: None,
                       'reboot': lambda: self.hook_log.append('reboot'),
                       'wifi_active': lambda: False, 'wifi_toggle': lambda: None}
@@ -331,3 +333,31 @@ def test_fix_age_is_passed_while_there_is_no_fix():
     r.bridge.parser.fix_type = 'NO'
     r.step(advance=ui.REFRESH_MS + 1)
     assert r.ctxs[-1]['fix_age_s'] == 5
+
+
+def test_main_page_heartbeat_changes_redraw_at_once_and_other_pages_do_not_care():
+    r = Rig()
+    r.bridge.heartbeat = lambda now: state[0]
+    state = ['idle']
+    r.step()
+    n = len(r.draws)
+    r.step(advance=50)
+    assert len(r.draws) == n                               # nothing changed, nothing drawn
+    state[0] = 'on'
+    r.step(advance=50)                                     # far sooner than REFRESH_MS
+    assert len(r.draws) == n + 1 and r.ctxs[-1]['heartbeat'] == 'on'
+    state[0] = 'off'
+    r.step(advance=50)
+    assert len(r.draws) == n + 2 and r.ctxs[-1]['heartbeat'] == 'off'
+    r.press(UP_SHORT)                                      # another page: the heartbeat is not drawn there
+    n = len(r.draws)
+    state[0] = 'on'
+    r.step(advance=50)
+    assert len(r.draws) == n and r.ctxs[-1]['heartbeat'] is None
+
+
+def test_main_page_gets_the_wifi_state_for_its_mark():
+    r = Rig()
+    r.step()
+    assert r.draws[-1][0] == nav.PAGE_MAIN
+    assert r.wifi_args[-1] is not None

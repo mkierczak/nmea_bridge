@@ -388,7 +388,7 @@ class Parser(object):
         if len(value) > 0:
             try:
                 mm = round(float(value[deg_digits:]), 2)
-                return "{}{}{}{}".format(hemisphere, value[0:deg_digits], chr(176), mm)
+                return "{}{}{}{:05.2f}".format(hemisphere, value[0:deg_digits], chr(176), mm)   # 03.21, not 3.21
             except ValueError:
                 return ''
         return ''

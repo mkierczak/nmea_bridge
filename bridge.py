@@ -30,6 +30,9 @@ DISABLE_MS = 30 * 1000        # ... switch it off for this long
 CRITICAL_FAILURES_MAX = 20    # consecutive unexpected failures in the sentence path => on_fatal
 REPROBE_AFTER_MS = 30 * 1000  # no valid sentence for this long: look for the GPS module again
 REPROBE_EVERY_MS = 60 * 1000
+HEARTBEAT_PULSE_MS = 350      # the heartbeat shows 'on' this long after a position sentence reached the radio
+HEARTBEAT_IDLE_MS = 3000      # nothing forwarded for this long: 'idle'
+HEARTBEAT_FAULT_MS = 10 * 1000   # a radio write failure or a stale drop shows as 'fault' for this long
 FORWARD_CACHE_MAX = 64        # distinct sentence types remembered (valid checksums only, so this is generous)
 _TO_RADIO, _TO_WIFI = 1, 2
 
@@ -251,6 +254,8 @@ class Bridge(object):
         self.stats = {'rcvpm': 1, 'rcv': 1, 'val': 0, 'inv': 0, 'par': 0, 'ign': 0}
         self.last_pos = None
         self.last_fix = None               # when the last valid fix (RMC status A) arrived
+        self.last_forward = None           # when the radio last took a position sentence
+        self.last_fault = None             # when a radio write failed or a late position sentence was dropped
         self._fix_seen = 0
         self.stale_dropped = 0
         self.radio_errors = 0
@@ -276,6 +281,19 @@ class Bridge(object):
     def fix_age_ms(self, now):
         """Milliseconds since the last valid fix, or None if there has not been one since boot."""
         return None if self.last_fix is None else ticks_diff(now, self.last_fix)
+
+    def heartbeat(self, now):
+        """State of forwarding for the Main page: 'on' / 'off' alternate while position sentences reach the
+        radio, 'idle' when none did lately (no data, no fix, types switched off, blocked), 'fault' after a
+        radio write failure or a position sentence dropped for being late."""
+        if self.last_fault is not None and ticks_diff(now, self.last_fault) < HEARTBEAT_FAULT_MS:
+            return 'fault'
+        if self.last_forward is None:
+            return 'idle'
+        age = ticks_diff(now, self.last_forward)
+        if age >= HEARTBEAT_IDLE_MS:
+            return 'idle'
+        return 'on' if age < HEARTBEAT_PULSE_MS else 'off'
 
     def guard_errors(self):
         """Failures contained in the optional parts (everything but the radio), since boot."""
@@ -324,14 +342,18 @@ class Bridge(object):
         to_wifi = bool(code & _TO_WIFI) and bool(self.broadcaster and self.broadcaster.active)
         if ((to_radio or to_wifi) and sentence_type in POSITION_TYPES and rx_ms is not None
                 and ticks_diff(now, rx_ms) > MAX_AGE_MS):
-            self.stale_dropped += 1        # a stall delayed this position: the radio must not see it late
+            self.stale_dropped += 1
+            self.last_fault = now          # a stall delayed this position: the radio must not see it late
             return
         text = p.last_valid_sentence
         if to_radio:
             try:
                 self.radio.write(text)
+                if sentence_type in POSITION_TYPES:
+                    self.last_forward = now
             except Exception as e:         # e.g. an OSError on the UART: count it and carry on
                 self.radio_errors += 1
+                self.last_fault = now
                 self._note_error('radio', e)
             if self.on_forward:
                 self._guard('debug_print', self.on_forward, text)

@@ -654,3 +654,49 @@ def test_fix_age_counts_from_the_last_valid_fix_and_error_summary():
     assert b.fix_age_ms(clock()) == 3500
     b.errors.update({'radio': 2, 'spoof': 1, 'wifi_send': 3})
     assert b.guard_errors() == 4
+
+
+def test_heartbeat_pulses_after_each_forwarded_position_sentence_then_idles():
+    b, clock = make_bridge()
+    assert b.heartbeat(clock()) == 'idle'                  # nothing forwarded yet
+    clock.now = 2000
+    push(b, RMC)
+    b.step(clock())
+    assert b.heartbeat(2000) == 'on'
+    assert b.heartbeat(2000 + B.HEARTBEAT_PULSE_MS - 1) == 'on'
+    assert b.heartbeat(2000 + B.HEARTBEAT_PULSE_MS) == 'off'
+    assert b.heartbeat(2000 + B.HEARTBEAT_IDLE_MS - 1) == 'off'
+    assert b.heartbeat(2000 + B.HEARTBEAT_IDLE_MS) == 'idle'
+
+
+def test_heartbeat_ignores_sentences_that_are_not_position_and_those_that_are_not_forwarded():
+    b, clock = make_bridge()
+    push(b, GSV)
+    b.step(clock())
+    assert b.heartbeat(clock()) == 'idle'                  # forwarded, but not a position sentence
+    b.forward_types = ('GSV',)
+    push(b, RMC)
+    b.step(clock())
+    assert b.heartbeat(clock()) == 'idle'                  # a position sentence the radio is not meant to get
+
+
+def test_heartbeat_shows_a_fault_after_a_radio_error_or_a_stale_drop_and_recovers():
+    b, clock = make_bridge()
+    clock.now = 2000
+    push(b, RMC)
+    b.step(clock())
+    b.radio_.error = OSError('uart')
+    clock.now = 3000
+    push(b, RMC)
+    b.step(clock())
+    assert b.heartbeat(3000) == 'fault' and b.radio_errors == 1
+    b.radio_.error = None
+    assert b.heartbeat(3000 + B.HEARTBEAT_FAULT_MS - 1) == 'fault'
+    clock.now = 3000 + B.HEARTBEAT_FAULT_MS
+    push(b, RMC)
+    b.step(clock())
+    assert b.heartbeat(clock()) == 'on'
+    clock.now += 100
+    push(b, RMC, rx_ms=clock.now - B.MAX_AGE_MS - 1)       # a stall made this position sentence late
+    b.step(clock())
+    assert b.stale_dropped == 1 and b.heartbeat(clock()) == 'fault'

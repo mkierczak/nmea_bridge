@@ -195,11 +195,15 @@ def scenes():
     nofix = make_parser()
     nofix.fix_type = 'NO'
     return [
-        ('main', 'Main', page_scene(nav.PAGE_MAIN, p, jam=Jam('OK'), spoof=make_spoof(p, 'OK', (), ''))),
-        ('main-suspect', 'Main, suspected spoofing', page_scene(nav.PAGE_MAIN, p, jam=Jam('OK'), spoof=suspect_spoof)),
+        ('main', 'Main', page_scene(nav.PAGE_MAIN, p, jam=Jam('OK'), spoof=make_spoof(p, 'OK', (), ''),
+                                    heartbeat='on')),
+        ('main-suspect', 'Main, jamming and spoofing suspected',
+         page_scene(nav.PAGE_MAIN, p, jam=Jam('LOW', 'C'), spoof=suspect_spoof, heartbeat='off')),
+        ('main-fault', 'Main, radio write failure',
+         page_scene(nav.PAGE_MAIN, p, jam=Jam('OK'), spoof=make_spoof(p, 'OK', (), ''), heartbeat='fault')),
         ('main-alert', 'Main, spoofing alert banner',
          page_scene(nav.PAGE_MAIN, p, jam=Jam('OK'), spoof=alert_spoof, banner=True)),
-        ('main-nofix', 'Main, no fix', page_scene(nav.PAGE_MAIN, nofix, no_fix=True, jam=Jam('OK'), fix_age_s=42)),
+        ('main-nofix', 'Main, no fix', page_scene(nav.PAGE_MAIN, nofix, no_fix=True, jam=Jam('OK'), fix_age_s=42, heartbeat='idle')),
         ('main-wifi-hold', 'Holding UP for the Wi-Fi gesture',
          page_scene(nav.PAGE_MAIN, p, jam=Jam('OK'), hold=(55, True))),
         ('speed', 'Speed', page_scene(nav.PAGE_SPEED, p)),

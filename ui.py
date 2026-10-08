@@ -58,6 +58,7 @@ class UiController(object):
         self._last_tick = now
         self._last_draw = now
         self._last_sig = None
+        self._last_heartbeat = None
 
     def step(self, now):
         self._advance(now)
@@ -163,11 +164,16 @@ class UiController(object):
         if self.screen_off:
             return
         hold = self._hold(now)
-        if not (self.force_draw or hold or ticks_diff(now, self._last_draw) > self.refresh_ms):
+        page = self.navigator.page
+        # the heartbeat of the Main page pulses faster than the refresh period: its changes redraw at once
+        heartbeat = self.bridge.heartbeat(now) if page == nav.PAGE_MAIN and self.menu is None else None
+        pulse = heartbeat != self._last_heartbeat
+        if not (self.force_draw or hold or pulse or ticks_diff(now, self._last_draw) > self.refresh_ms):
             return
-        if hold and not self.force_draw and ticks_diff(now, self._last_draw) < HOLD_REFRESH_MS:
+        if hold and not (self.force_draw or pulse) and ticks_diff(now, self._last_draw) < HOLD_REFRESH_MS:
             return
         self._last_draw = now
+        self._last_heartbeat = heartbeat
         redraw_all = self.force_draw or bool(hold)
         self.force_draw = False
         if self.menu is not None:
@@ -176,13 +182,12 @@ class UiController(object):
             return
         bridge = self.bridge
         parser = bridge.parser
-        page = self.navigator.page
         no_fix = bridge.no_fix(now)
         info = self.system_info() if page in (nav.PAGE_SYSTEM, nav.PAGE_SPOOF) else None
-        wifi = self.wifi_info() if page == nav.PAGE_WIFI else None   # only that page shows it
+        wifi = self.wifi_info() if page in (nav.PAGE_WIFI, nav.PAGE_MAIN) else None   # the Main page shows a mark
         age_ms = bridge.fix_age_ms(now) if no_fix else None
         ctx = {'pages': self.navigator.pages, 'banner': self._banner_visible(), 'hold': hold,
-               'fix_age_s': None if age_ms is None else age_ms // 1000}
+               'heartbeat': heartbeat, 'fix_age_s': None if age_ms is None else age_ms // 1000}
         sig = (page, no_fix, bridge.queue.dropped, tuple(bridge.stats.values()),
                parser.display_signature(),
                bridge.detector.signature() if bridge.detector else None,
@@ -190,7 +195,7 @@ class UiController(object):
                wifi,
                tuple(v for k, v in info.items() if k != 'now_ms') if info else None,
                parser.type_signature() if page in (nav.PAGE_STATS, nav.PAGE_DEBUG) else None,
-               ctx['banner'], ctx['fix_age_s'], bool(hold),
+               ctx['banner'], ctx['fix_age_s'], bool(hold), heartbeat,
                (parser.sog_kn, parser.cog_deg) if page == nav.PAGE_SPEED else None)
         if redraw_all or sig != self._last_sig:
             self.draw(self.oled, self.font, page, parser, bridge.stats, bridge.queue.dropped, no_fix,
