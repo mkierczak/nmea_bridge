@@ -7,7 +7,6 @@ Design rule: forwarding sentences to the radio is the one job that must never st
 (detectors, Wi-Fi, logging, statistics) runs inside a guard that counts failures and switches the failing
 part off for a while instead of letting an exception take the loop down.
 """
-import NMEA
 
 try:
     from utime import ticks_diff
@@ -18,7 +17,7 @@ except ImportError:
 MAX_SENTENCE_LEN = 100        # longer buffers are garbage; resync on the next '$'
 MAX_AGE_MS = 3000             # position sentences older than this (after a stall) are not forwarded
 POSITION_TYPES = ('RMC', 'GGA')
-DETECTOR_TYPES = ('RMC', 'GGA', 'GSV')
+SPOOF_TYPES = ('RMC', 'GGA')    # GSV statistics are picked up at the next fix or by the periodic evaluation
 STATS_PERIOD_MS = 10 * 1000
 JAM_EVAL_PERIOD_MS = 2 * 1000
 SPOOF_IDLE_PERIOD_MS = 1000
@@ -31,6 +30,8 @@ DISABLE_MS = 30 * 1000        # ... switch it off for this long
 CRITICAL_FAILURES_MAX = 20    # consecutive unexpected failures in the sentence path => on_fatal
 REPROBE_AFTER_MS = 30 * 1000  # no valid sentence for this long: look for the GPS module again
 REPROBE_EVERY_MS = 60 * 1000
+FORWARD_CACHE_MAX = 64        # distinct sentence types remembered (valid checksums only, so this is generous)
+_TO_RADIO, _TO_WIFI = 1, 2
 
 
 class NullLock(object):
@@ -173,8 +174,6 @@ class GpsReader(object):
         now = self.clock()
         for sentence in self.framer.feed(data):
             self.queue.push((now, sentence))
-            if NMEA.valid_checksum(sentence.strip()):
-                self.last_good = now
         return True
 
     def maintain(self):
@@ -259,6 +258,8 @@ class Bridge(object):
         self._disabled_at = {}
         self._critical = 0
         self._wifi_lines = []
+        self._fwd_cfg = [None, None, None, None]   # the lists the cache below was computed for
+        self._fwd_cache = {}                       # sentence type -> {talker -> forward bits}
         self._logged_acks = {}
         self._fatal_since = None
         now = clock()
@@ -295,17 +296,19 @@ class Bridge(object):
         if not ok:
             return
         self.watchdog.on_valid(now)
+        if self.reader is not None:
+            self.reader.last_good = now    # the GPS thread re-probes the module when this goes stale
         p = self.parser
         sentence_type = p.sentence_last_valid_type
         if sentence_type in POSITION_TYPES:
             self.last_pos = now
-        if self.spoof is not None and sentence_type in DETECTOR_TYPES:
+        if self.spoof is not None and sentence_type in SPOOF_TYPES:
             self._guard('spoof', self.spoof.evaluate, now)
         block = (self.spoof_action == 'block' and self.spoof is not None
                  and self.spoof.state == 'ALERT')
-        to_radio, to_wifi = forward_decision(
-            sentence_type, sentence[1:3], self.forward_types, self.forward_talkers, self.wifi_talkers,
-            block, self.block_types, bool(self.broadcaster and self.broadcaster.active))
+        code = self._forward_code(sentence_type, p.sentence_last_valid_talker, block)
+        to_radio = bool(code & _TO_RADIO)
+        to_wifi = bool(code & _TO_WIFI) and bool(self.broadcaster and self.broadcaster.active)
         if ((to_radio or to_wifi) and sentence_type in POSITION_TYPES and rx_ms is not None
                 and ticks_diff(now, rx_ms) > MAX_AGE_MS):
             self.stale_dropped += 1        # a stall delayed this position: the radio must not see it late
@@ -321,6 +324,30 @@ class Bridge(object):
                 self._guard('debug_print', self.on_forward, text)
         if to_wifi:
             self._wifi_lines.append(text)
+
+    def _forward_code(self, sentence_type, talker, block):
+        """_TO_RADIO | _TO_WIFI bits for a sentence (Wi-Fi still needs the access point to be up). The result
+        of forward_decision() is remembered per (type, talker) so the per-sentence cost is two dict lookups
+        and no allocation; it is recomputed when the lists are replaced (the menu assigns new tuples)."""
+        if block:                                   # spoofing alert in block mode: rare, always decided afresh
+            radio, wifi = forward_decision(sentence_type, talker, self.forward_types, self.forward_talkers,
+                                           self.wifi_talkers, True, self.block_types, True)
+            return (_TO_RADIO if radio else 0) | (_TO_WIFI if wifi else 0)
+        cfg = self._fwd_cfg
+        if (cfg[0] is not self.forward_types or cfg[1] is not self.forward_talkers
+                or cfg[2] is not self.wifi_talkers or cfg[3] is not self.block_types
+                or len(self._fwd_cache) > FORWARD_CACHE_MAX):
+            self._fwd_cfg = [self.forward_types, self.forward_talkers, self.wifi_talkers, self.block_types]
+            self._fwd_cache = {}
+        by_talker = self._fwd_cache.get(sentence_type)
+        if by_talker is None:
+            by_talker = self._fwd_cache[sentence_type] = {}
+        code = by_talker.get(talker)
+        if code is None:
+            radio, wifi = forward_decision(sentence_type, talker, self.forward_types, self.forward_talkers,
+                                           self.wifi_talkers, False, self.block_types, True)
+            code = by_talker[talker] = (_TO_RADIO if radio else 0) | (_TO_WIFI if wifi else 0)
+        return code
 
     def _flush_wifi(self, now):
         b = self.broadcaster

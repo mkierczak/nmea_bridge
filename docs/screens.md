@@ -207,7 +207,7 @@ reboot; items marked `*` after the label are applied only at the next boot. The 
 | Radio output | RMC, GGA, GSA, GSV, ZDA (which sentence types go to the radio) |
 | Display | Contrast, Screen off (`never`, `30s`, `60s`, `5m`) |
 | Wi-Fi | Wi-Fi now (on/off), New password |
-| Advanced | Detector thresholds: CN0 drop, Sats drop%, Jam enter, Jam exit, Max speed, Time jump, Flat C/N0, Alt step, Latch min, Warm-up |
+| Advanced | Detector thresholds: CN0 drop, Sats drop%, Jam enter, Jam exit, Max speed, Time jump, Flat C/N0, Alt step, Latch min, Warm-up, S2 corr, S2 cycles |
 | System | Log raw, Reset defaults, Reboot now |
 
 The advanced thresholds are explained in the two detection documents.

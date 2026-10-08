@@ -137,6 +137,11 @@ class SH1107(framebuf.FrameBuffer):
         self.bufsize = self.pages * self.width
         self.displaybuf = bytearray(self.bufsize)
         self.displaybuf_mv = memoryview(self.displaybuf)
+        self.shadow = bytearray(self.bufsize)        # what the display RAM holds: unchanged rows are not resent
+        self.shadow_mv = memoryview(self.shadow)
+        self._force_full = True                      # the display RAM is unknown until the first full update
+        self._cmd3 = bytearray(3)                    # command buffers reused by show()
+        self._cmd2 = bytearray(2)
         self.pages_to_update = 0
         self._is_awake = False
         if self.rotate90:
@@ -166,6 +171,7 @@ class SH1107(framebuf.FrameBuffer):
         self.poweron()
 
     def poweron(self):
+        self._force_full = True       # do not trust the display RAM after power-up: next show() sends everything
         self.write_command(_SET_DISPLAY_ON.to_bytes(1,"big"))
         self._is_awake = True
         time.sleep_ms(self.delay_ms) # SH1107 datasheet recommends a delay in power on sequence
@@ -223,38 +229,49 @@ class SH1107(framebuf.FrameBuffer):
         self.inverse = invert
 
     def show(self, full_update: bool = False):
-#         _start = time.ticks_us()
-        (w, p, db_mv) = (self.width, self.pages, self.displaybuf_mv)
+        """Send the framebuffer to the display. Only rows that differ from what was sent last time are
+        written (a full update after power-on or when asked): SPI transfers dominate the time spent here."""
+        (w, p, db_mv, sh_mv) = (self.width, self.pages, self.displaybuf_mv, self.shadow_mv)
+        full = full_update or self._force_full
+        self._force_full = False
         current_page = 1
-        if full_update:
+        if full:
             pages_to_update = (1 << p) - 1
         else:
             pages_to_update = self.pages_to_update
         if self.rotate90:
-            buffer_3Bytes = bytearray(3)
+            buffer_3Bytes = self._cmd3
             buffer_3Bytes[1] = _LOW_COLUMN_ADDRESS
             buffer_3Bytes[2] = _HIGH_COLUMN_ADDRESS
             for page in range(p):
                 if pages_to_update & current_page:
-                    buffer_3Bytes[0] = _SET_PAGE_ADDRESS | page
-                    self.write_command(buffer_3Bytes)
                     page_start = w * page
-                    self.write_data(db_mv[page_start : page_start + w])
+                    new = db_mv[page_start : page_start + w]
+                    if full or new != sh_mv[page_start : page_start + w]:
+                        buffer_3Bytes[0] = _SET_PAGE_ADDRESS | page
+                        self.write_command(buffer_3Bytes)
+                        self.write_data(new)
+                        sh_mv[page_start : page_start + w] = new
                 current_page <<= 1
         else:
             row_bytes = w // 8
-            buffer_2Bytes = bytearray(2)
+            buffer_2Bytes = self._cmd2
             for start_row in range(0, p * 8, 8):
                 if pages_to_update & current_page:
-                    for row in range(start_row, start_row + 8):
-                        buffer_2Bytes[0] = row & 0x0f  # low column (low col. cmd is 0x00)
-                        buffer_2Bytes[1] = _HIGH_COLUMN_ADDRESS | (row >> 4) 
-                        self.write_command(buffer_2Bytes)
-                        slice_start = row * row_bytes
-                        self.write_data(db_mv[slice_start : slice_start + row_bytes])
+                    page_start = start_row * row_bytes
+                    page_end = page_start + 8 * row_bytes
+                    if full or db_mv[page_start : page_end] != sh_mv[page_start : page_end]:
+                        for row in range(start_row, start_row + 8):
+                            slice_start = row * row_bytes
+                            new = db_mv[slice_start : slice_start + row_bytes]
+                            if full or new != sh_mv[slice_start : slice_start + row_bytes]:
+                                buffer_2Bytes[0] = row & 0x0f  # low column (low col. cmd is 0x00)
+                                buffer_2Bytes[1] = _HIGH_COLUMN_ADDRESS | (row >> 4)
+                                self.write_command(buffer_2Bytes)
+                                self.write_data(new)
+                                sh_mv[slice_start : slice_start + row_bytes] = new
                 current_page <<= 1
         self.pages_to_update = 0
-#         print("screen update used ", (time.ticks_us() - _start) / 1000, "ms")
 
     def pixel(self, x, y, c=None):
         if c is None:

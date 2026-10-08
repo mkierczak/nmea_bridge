@@ -225,3 +225,22 @@ def test_pmtkspf_bumps_version():
     assert p.spf_version == 0
     p.parse_sentence(with_checksum('PMTKSPF,2'))
     assert p.module_jam_status == 2 and p.spf_version == 1
+
+
+def test_expiry_check_runs_at_most_once_per_period():
+    p = NMEA.Parser()
+    calls = []
+    p._expire = calls.append
+    zda = with_checksum('GNZDA,201530.00,04,07,2002,00,00')
+    for t in (1000, 1100, 1400, 1500, 1600):
+        assert p.parse_sentence(zda, t)
+    assert calls == [1000, 1500]
+
+
+def test_forwarded_text_is_normalised_whatever_the_line_ending():
+    p = NMEA.Parser()
+    zda = with_checksum('GPZDA,201530.00,04,07,2002,00,00')
+    for raw in (zda + '\r\n', zda + '\n', zda, ' ' + zda + '\r\n', zda + ' \r\n', zda + '\r\n\r\n'):
+        assert p.parse_sentence(raw)
+        assert p.last_valid_sentence == zda + '\r\n', repr(raw)
+        assert p.sentence_last_valid_talker == 'GP'

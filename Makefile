@@ -5,7 +5,7 @@ FILES = main.py NMEA.py l76x.py screens.py jamming.py spoofing.py wifi.py wificr
 # Modules that can be precompiled (everything except main.py); roboto14 is the font main.py imports
 MPY_MODULES = NMEA l76x screens jamming spoofing wifi wificreds settings nav menu bridge ui linkcalc sh1107 writer roboto14
 
-.PHONY: deploy deploy-mpy maintenance start-app mpy test lint docs-check check check-clean version
+.PHONY: deploy deploy-py deploy-mpy check-mpy maintenance start-app mpy test lint docs-check check check-clean version
 
 # version.py is generated (and git-ignored): the git revision shown on the System page
 version:
@@ -27,7 +27,14 @@ maintenance:
 start-app:
 	-$(MPR) reset
 
-deploy: version maintenance
+# Precompiled modules need less RAM to load and boot faster, so `make deploy` uses them when mpy-cross is
+# installed and falls back to plain source files when it is not. `make deploy-py` forces source files.
+deploy:
+	@if command -v mpy-cross >/dev/null 2>&1; then $(MAKE) deploy-mpy; \
+	else echo "mpy-cross not found: deploying source files (pip install mpy-cross to use precompiled modules)"; \
+	$(MAKE) deploy-py; fi
+
+deploy-py: version maintenance
 	$(MPR) cp $(filter-out main.py,$(FILES)) :
 	$(MPR) cp main.py :
 	$(MAKE) start-app
@@ -38,8 +45,17 @@ mpy:
 	mkdir -p build
 	for m in $(MPY_MODULES); do mpy-cross -o build/$$m.mpy $$m.py || exit 1; done
 
+# The firmware only loads .mpy files of its own format version: a mismatch would stop the app from booting
+# (until source files are deployed again), so compare mpy-cross with the board before copying anything.
+check-mpy:
+	@board=$$($(MPR) exec "import sys; print(sys.implementation._mpy & 0xff)" | tr -d '\r' | tail -n 1); \
+	cross=$$(mpy-cross --version | sed -n 's/.*mpy v\([0-9][0-9]*\)\..*/\1/p'); \
+	echo "mpy format: board v$$board, mpy-cross v$$cross"; \
+	if [ -z "$$board" ] || [ "$$board" != "$$cross" ]; then \
+	echo "mpy-cross does not match the firmware: use 'make deploy-py' or install a matching mpy-cross"; exit 1; fi
+
 # A .py next to a .mpy on the board would shadow it, so remove the source copies first.
-deploy-mpy: mpy version maintenance
+deploy-mpy: mpy version check-mpy maintenance
 	-for m in $(MPY_MODULES); do $(MPR) fs rm :$$m.py; done
 	$(MPR) cp version.py :
 	$(MPR) cp $(addprefix build/,$(addsuffix .mpy,$(MPY_MODULES))) :

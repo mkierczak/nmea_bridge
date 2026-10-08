@@ -153,7 +153,7 @@ def test_apply_thresholds_pushes_values_and_defaults_are_neutral():
     saved = {(m, n): getattr(m, n) for m, names in (
         (jamming, ('CN0_DROP_DB', 'TRACKED_DROP_FRACTION', 'ENTER_CYCLES', 'EXIT_CYCLES')),
         (spoofing, ('MAX_SPEED_KN', 'TIME_JUMP_MS', 'UNIFORM_STD_DB', 'ALT_STEP_M', 'LATCH_MS',
-                    'WARMUP_FIXES'))) for n in names}
+                    'WARMUP_FIXES', 'ELEV_CORR_MAX', 'ELEV_CYCLES'))) for n in names}
     try:
         cfg = S.Settings(full_defaults(), '/nonexistent/s.json')
         S.apply_thresholds(cfg, jamming, spoofing)       # defaults must leave the constants unchanged
@@ -162,9 +162,12 @@ def test_apply_thresholds_pushes_values_and_defaults_are_neutral():
         cfg.set('tracked_drop_pct', 50)
         cfg.set('latch_min', 2)
         cfg.set('uniform_std_x10', 20)
+        cfg.set('elev_corr_x100', -30)
+        cfg.set('elev_cycles', 20)
         S.apply_thresholds(cfg, jamming, spoofing)
         assert jamming.CN0_DROP_DB == 9 and jamming.TRACKED_DROP_FRACTION == 0.5
         assert spoofing.LATCH_MS == 120000 and spoofing.UNIFORM_STD_DB == 2.0
+        assert spoofing.ELEV_CORR_MAX == -0.3 and spoofing.ELEV_CYCLES == 20
     finally:
         for (m, n), v in saved.items():
             setattr(m, n, v)

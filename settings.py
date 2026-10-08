@@ -38,6 +38,8 @@ SCHEMA = (
     ('alt_step_m', 'Alt step', INT, 'Advanced', LIVE, (10, 100, 5)),
     ('latch_min', 'Latch min', INT, 'Advanced', LIVE, (1, 60, 1)),
     ('warmup_fixes', 'Warm-up', INT, 'Advanced', LIVE, (10, 120, 5)),
+    ('elev_corr_x100', 'S2 corr', INT, 'Advanced', LIVE, (-60, 20, 5)),
+    ('elev_cycles', 'S2 cycles', INT, 'Advanced', LIVE, (3, 60, 1)),
 )
 _SPEC = {row[0]: row for row in SCHEMA}
 
@@ -88,6 +90,8 @@ def threshold_defaults(jamming, spoofing):
         'alt_step_m': spoofing.ALT_STEP_M,
         'latch_min': spoofing.LATCH_MS // 60000,
         'warmup_fixes': spoofing.WARMUP_FIXES,
+        'elev_corr_x100': round(spoofing.ELEV_CORR_MAX * 100),
+        'elev_cycles': spoofing.ELEV_CYCLES,
     }
 
 
@@ -103,6 +107,8 @@ def apply_thresholds(cfg, jamming, spoofing):
     spoofing.ALT_STEP_M = cfg.get('alt_step_m')
     spoofing.LATCH_MS = cfg.get('latch_min') * 60000
     spoofing.WARMUP_FIXES = cfg.get('warmup_fixes')
+    spoofing.ELEV_CORR_MAX = cfg.get('elev_corr_x100') / 100
+    spoofing.ELEV_CYCLES = cfg.get('elev_cycles')
 
 
 class Settings(object):

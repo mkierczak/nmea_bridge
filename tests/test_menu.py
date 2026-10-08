@@ -190,7 +190,7 @@ def test_scrolling_window_follows_cursor():
     oled = FakeOled()
     r.menu.draw(oled)
     marked = [c for c in oled.calls if c[0].startswith('>')]
-    assert len(marked) == 1 and marked[0][0].split()[0] == '>Warm-up'
+    assert len(marked) == 1 and marked[0][0].split()[0] == '>S2'
     r.send(*([UP_SHORT] * (n - 1)))
     assert r.menu.top == 0
 

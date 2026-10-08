@@ -58,6 +58,7 @@ WIFI_PORT = 10110                 # NMEA 0183 over TCP (server) and UDP (broadca
 WIFI_MAX_CLIENTS = 4
 WIFI_FORWARD_TALKERS = ('GP', 'GN', 'BD')
 HEAP_REFRESH_MS = 3000           # System page: how often free heap is re-measured (after gc.collect)
+GC_THRESHOLD = 16 * 1024          # collect after this many bytes were allocated: short, frequent collections instead of a long one when the heap runs out
 MEM_REPORT_PERIOD = 60 * 1000     # print free/used heap this often when DEBUG is on
 UARTx = 0                         # GPS UART
 GPS_BAUDRATE = 4800               # GPS link rate: 4800, 9600, 14400, 19200, 38400, 57600 or 115200 (module is switched at boot)
@@ -332,12 +333,15 @@ def free_heap(now_ms):
     return _heap[1]
 
 
+_UID = binascii.hexlify(machine.unique_id()).decode()
+
+
 def system_info():
     inv_base = core.stats['rcv'] or 1
     return {'uptime_s': screen_ui.uptime_ms // 1000, 'heap': free_heap(utime.ticks_ms()),
             'dropped': rx_queue.dropped, 'inv_pct': round(core.stats['inv'] * 100 / inv_base),
             'baud': GPS_BAUDRATE, 'found': reader.found, 'fix_ms': FIX_INTERVAL_MS, 'gnss': GNSS_MODE,
-            'uid': binascii.hexlify(machine.unique_id()).decode(), 'now_ms': utime.ticks_ms(),
+            'uid': _UID, 'now_ms': utime.ticks_ms(),
             'version': VERSION}
 
 
@@ -348,6 +352,9 @@ screen_ui = ui.UiController(cfg, oled, font_large, screens.draw, navigator, even
                             menu_timeout_ms=60 * 1000)
 
 utime.sleep(1)  # grace time for the UARTs to start
+gc.collect()    # boot is over: start the loop from a compact heap (the long-lived objects are all allocated)
+if hasattr(gc, 'threshold'):
+    gc.threshold(GC_THRESHOLD)
 last_mem_report = utime.ticks_ms()
 if DEBUG:
     memreport('boot')
@@ -375,4 +382,4 @@ while True:
         memreport('run')
         last_mem_report = now
 
-    utime.sleep(0.01)  # yield so the GPS thread isn't starved
+    utime.sleep_ms(10)  # yield so the GPS thread isn't starved

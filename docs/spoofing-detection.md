@@ -115,7 +115,7 @@ antimeridian is not mistaken for one that jumped across the planet.
 ```
 GPS thread (core 1)              main loop (core 0)
  reads UART, builds lines,        takes sentences from the queue, parser.parse_sentence()
- stamps rx_ms at end of line  ->  for each valid RMC / GGA / GSV:  spoof.evaluate(now)
+ stamps rx_ms at end of line  ->  for each valid RMC / GGA:        spoof.evaluate(now)
  pushes (rx_ms, line)             then forwards (or blocks, section 7) the sentence
                                   once per second also: spoof.evaluate(now)  (expires old evidence)
 
@@ -378,7 +378,9 @@ live (stored in `settings.json`).
 | `ALT_STEP_M` | 30 | *Alt step* (`alt_step_m`, 10-100) | altitude step (K3) |
 | `UNIFORM_STD_DB` | 1.5 | *Flat C/N0* (`uniform_std_x10`, 5-40 = 0.5-4.0 dB) | std dev below which signals are "too uniform" (S1) |
 | `UNIFORM_MIN_SATS` | 6 | - | satellites needed for S1 |
-| `ELEV_CORR_MAX` / `ELEV_MIN_SATS` / `ELEV_ALPHA` / `ELEV_CYCLES` | -0.2 / 6 / 0.15 / 12 | - | S2 |
+| `ELEV_CORR_MAX` | -0.2 | *S2 corr* (`elev_corr_x100`, -60 to 20 = -0.60 to 0.20) | smoothed elevation/C-N0 correlation at or below which S2 flags |
+| `ELEV_CYCLES` | 12 | *S2 cycles* (`elev_cycles`, 3-60) | smoothed readings (GSV cycles) before S2 may fire |
+| `ELEV_MIN_SATS` / `ELEV_ALPHA` | 6 / 0.15 | - | S2 |
 | `CN0_RISE_DB` | 8 | - | power rise above baseline (S3) |
 | `JACCARD_MIN` / `JACCARD_MIN_SATS` | 0.5 / 6 | - | set-change test (S3) |
 | `CROSS_SHIFT_DB` / `CROSS_MIN_SATS` | 8 / 3 | - | GPS-BeiDou offset shift (C1) |

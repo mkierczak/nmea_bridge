@@ -123,15 +123,16 @@ class UiController(object):
         page = self.navigator.page
         no_fix = bridge.no_fix(now)
         info = self.system_info() if page in (nav.PAGE_SYSTEM, nav.PAGE_SPOOF) else None
+        wifi = self.wifi_info() if page == nav.PAGE_WIFI else None   # only that page shows it
         sig = (page, no_fix, bridge.queue.dropped, tuple(bridge.stats.values()),
                parser.display_signature(),
                bridge.detector.signature() if bridge.detector else None,
                bridge.spoof.signature() if bridge.spoof else None,
-               self.wifi_info() if page == nav.PAGE_WIFI else None,
+               wifi,
                tuple(v for k, v in info.items() if k != 'now_ms') if info else None,
                parser.type_signature() if page in (nav.PAGE_STATS, nav.PAGE_DEBUG) else None)
         if redraw_all or sig != self._last_sig:
             self.draw(self.oled, self.font, page, parser, bridge.stats, bridge.queue.dropped, no_fix,
-                      bridge.detector, bridge.spoof, self.wifi_info(), info)
+                      bridge.detector, bridge.spoof, wifi, info)
             self.oled.show()
             self._last_sig = sig

@@ -205,16 +205,19 @@ def test_reader_stamps_each_sentence_when_its_line_completes():
     assert not r.step()                                    # nothing waiting
 
 
-def test_reader_tracks_the_last_valid_sentence_only():
-    r, gps, q, clock, _ = make_reader()
+def test_bridge_marks_the_reader_good_on_valid_sentences_only():
+    b, clock = make_bridge()
+    r, gps, q, rclock, _ = make_reader()
     r.start()
+    b.reader = r
     clock.now = 500
-    gps.feed(b'garbage line\r\n$GPGGA,1*FF\r\n')           # unframed text and a bad checksum
-    r.step()
+    push(b, 'garbage line\r\n')
+    push(b, '$GPGGA,1*FF\r\n')                             # unframed text and a bad checksum
+    b.step(clock.now)
     assert r.last_good == 0
     clock.now = 900
-    gps.feed((GGA + '\r\n').encode())
-    r.step()
+    push(b, GGA)
+    b.step(clock.now)
     assert r.last_good == 900
 
 
@@ -596,3 +599,43 @@ def test_bridge_calls_the_raw_logger_for_every_sentence_before_parsing():
     push(b, BDGSV)
     b.step(clock.now)
     assert [s for _, s in seen] == ['garbage', BDGSV]    # invalid lines and BeiDou too, unmodified
+
+
+def test_gn_to_gp_checksum_is_updated_incrementally():
+    p = NMEA.Parser()
+    for body in ('GNGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,', 'GNZDA,201530.00,04,07,2002,00,00',
+                 'GNGSA,A,3,01,02,03,,,,,,,,,,1.0,1.0,1.0'):
+        s = with_checksum(body)
+        assert p.parse_sentence(s)
+        assert p.last_valid_sentence == with_checksum('GP' + body[2:]) + '\r\n'
+
+
+def test_forward_cache_follows_replaced_type_and_talker_lists():
+    b, clock = make_bridge()
+    push(b, RMC)
+    push(b, GSV)
+    b.step(clock())
+    assert [s[3:6] for s in b.radio_.written] == ['RMC', 'GSV']
+    b.forward_types = ('RMC',)                 # the menu assigns a new tuple
+    push(b, RMC)
+    push(b, GSV)
+    b.step(clock())
+    assert [s[3:6] for s in b.radio_.written] == ['RMC', 'GSV', 'RMC']
+    b.forward_types = ('RMC', 'GSV')
+    b.forward_talkers = ('GN',)                # only combined-talker sentences from now on
+    push(b, RMC)                               # GN: still forwarded
+    push(b, GSV)                               # GP: no longer
+    b.step(clock())
+    assert [s[3:6] for s in b.radio_.written] == ['RMC', 'GSV', 'RMC', 'RMC']
+
+
+def test_forward_cache_matches_forward_decision_for_all_combinations():
+    b, clock = make_bridge()
+    b.forward_types = ('RMC', 'GSV')
+    for block in (False, True):
+        for t in ('RMC', 'GGA', 'GSV', 'XXX'):
+            for tk in ('GP', 'GN', 'BD', 'GL'):
+                want = B.forward_decision(t, tk, b.forward_types, b.forward_talkers, b.wifi_talkers,
+                                          block, b.block_types, True)
+                code = b._forward_code(t, tk, block)
+                assert (bool(code & 1), bool(code & 2)) == want

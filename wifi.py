@@ -193,7 +193,7 @@ class NmeaBroadcaster(object):
         alive = []
         for entry in self._clients:
             conn = entry[0]
-            out = entry[2] + data           # bytes the client has not taken yet go first, in order
+            out = entry[2] + data if entry[2] else data   # bytes the client has not taken yet go first, in order
             try:
                 n = conn.send(out)
                 if n is None:

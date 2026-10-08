@@ -6,6 +6,8 @@ except ImportError:
 
 TALKER_TTL_MS = 20 * 1000     # per-talker GSV/GSA data older than this is dropped (talker went silent)
 GSV_SETTLE_MS = 800           # a GSV cycle counts as complete once no talker finished for this long
+_GN_TO_GP = ord('N') ^ ord('P')   # checksum change when the talker 'GN' becomes 'GP'
+_EXPIRE_PERIOD_MS = 500       # how often talkers that went silent are looked for
 _HEX = '0123456789abcdefABCDEF'
 
 
@@ -34,9 +36,12 @@ def valid_checksum(sentence):
     body, star, cksum = sentence[1:].partition('*')
     if not star or len(cksum) != 2 or cksum[0] not in _HEX or cksum[1] not in _HEX:
         return False
+    data = body.encode()
+    if len(data) != len(body):          # not plain ASCII: cannot be a sentence from the module
+        return False
     csum = 0
-    for c in body:
-        csum ^= ord(c)
+    for c in data:
+        csum ^= c
     return csum == int(cksum, 16)
 
 
@@ -74,6 +79,7 @@ class Parser(object):
         self.sentence_last_error_type = ''
         self.sentence_last_parsed_type = ''
         self.sentence_last_valid_type = ''
+        self.sentence_last_valid_talker = ''
         self.sentence_last_invalid_type = ''
         self.sentence_last_ignored_type = ''
         self._view_by_talker = {}
@@ -99,6 +105,7 @@ class Parser(object):
         self.utc_ms = 0             # milliseconds of day of the last RMC
         self.rx_ms = None           # local ticks_ms when the last RMC was received
         self._rx_ms = None
+        self._last_expire = None
         self.alt_m = None
         self.alt_version = 0
 
@@ -136,22 +143,30 @@ class Parser(object):
         of it could not be read for the display, which is only counted in parse_errors.
 
         rx_ms is the local ticks_ms at which the sentence arrived (used for time checks and expiry)."""
-        sentence = sentence.strip()
+        raw = sentence
+        sentence = raw.strip()
         self._rx_ms = rx_ms
         self.sentences_received += 1
+        sentence_type = sentence[3:6]
         if not self._validate_nmea(sentence):
-            self.sentence_last_invalid_type = sentence[3:6]
+            self.sentence_last_invalid_type = sentence_type
             self.sentences_invalid += 1
             return False
         self.sentences_valid += 1
-        self.sentence_last_valid_type = sentence[3:6]
-        self.last_valid_sentence = self._fix_sentence(sentence) + '\r\n'
+        self.sentence_last_valid_type = sentence_type
+        talker = self.sentence_last_valid_talker = sentence[1:3]
+        if talker != 'GN' and len(raw) == len(sentence) + 2 and raw.endswith('\r\n'):
+            self.last_valid_sentence = raw             # already exactly what is forwarded: no new string
+        else:
+            self.last_valid_sentence = self._fix_sentence(sentence) + '\r\n'
         try:
-            self._dispatch(sentence)
+            self._dispatch(sentence, sentence_type)
         except (ValueError, IndexError):
             self.parse_errors += 1
-            self.sentence_last_error_type = sentence[3:6]
-        if rx_ms is not None:
+            self.sentence_last_error_type = sentence_type
+        if rx_ms is not None and (self._last_expire is None
+                                  or _ticks_diff(rx_ms, self._last_expire) >= _EXPIRE_PERIOD_MS):
+            self._last_expire = rx_ms
             self._expire(rx_ms)
         return True
 
@@ -177,14 +192,13 @@ class Parser(object):
                 del self._gsa_ms[talker]
                 self._set_birds(talker, [])
 
-    def _dispatch(self, sentence):
-        sentence_type = sentence[3:6]
+    def _dispatch(self, sentence, sentence_type):
         handler = self._handlers.get(sentence_type)
         if handler is None:
             self.sentence_last_ignored_type = sentence_type
             self.sentences_ignored += 1
             return
-        payload = sentence.split('*')[0].split(',')
+        payload = sentence[:sentence.rindex('*')].split(',')
         handler(self, payload)
         self.sentence_last_parsed_type = sentence_type
         self.sentences_parsed += 1
@@ -342,16 +356,13 @@ class Parser(object):
         return valid_checksum(sentence)
 
     def _fix_sentence(self, sentence):
+        """GN talker -> GP for the radio. The sentence is already checksum-verified, and 'GN' -> 'GP'
+        changes a single character, so the new checksum is the old one with that character swapped."""
         if sentence.startswith('$GN'):
-            sentence = '$GP' + sentence[3:]
-            new_checksum = self._calculate_nmea_checksum(sentence)
-            tmp = sentence.split('*')
-            string_value = '{:02X}'.format(new_checksum)
-            fixed = tmp[0] + '*' + string_value
-        else:
-            fixed = sentence
-        #print(fixed)
-        return fixed
+            star = sentence.rindex('*')
+            new_checksum = int(sentence[star + 1:], 16) ^ _GN_TO_GP
+            return '$GP' + sentence[3:star + 1] + '{:02X}'.format(new_checksum)
+        return sentence
 
     def _validate_nmea(self, sentence):
         try:

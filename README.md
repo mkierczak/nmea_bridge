@@ -20,9 +20,11 @@ All pins and rates are constants at the top of `main.py`.
 `make deploy` (uses `mpremote`; it first writes `version.py` from `git describe`, which the System page shows) copies `main.py`, `NMEA.py`, `l76x.py`, `screens.py`, `jamming.py`, `spoofing.py`, `wifi.py`, `wificreds.py`,
 `settings.py`, `nav.py`, `menu.py`, `bridge.py`, `ui.py`, `sh1107.py`, `writer.py` and the `roboto14.py` font to the Pico. `main.py` runs on boot.
 
-`make deploy-mpy` precompiles the modules with `mpy-cross` and deploys `.mpy` files instead (less RAM to
-load them, faster boot; `mpy-cross` must match the firmware version: the bytecode of `mpy-cross` 1.29 loads
-on firmware 1.24.1). With `DEBUG` on, the free/used heap is printed at boot and every minute (`MEM ...`).
+When `mpy-cross` is installed, `make deploy` runs `make deploy-mpy`, which precompiles the modules and deploys
+`.mpy` files instead (less RAM to load them, faster boot); without it the source files are deployed. Before
+copying anything it compares the `.mpy` format version of `mpy-cross` with the board's firmware and stops on a
+mismatch (the bytecode of `mpy-cross` 1.29 loads on firmware 1.24.1). `make deploy-py` always deploys the
+source files. With `DEBUG` on, the free/used heap is printed at boot and every minute (`MEM ...`).
 On a Pico W with the whole app loaded about 100 KB of the 185 KB heap stay free, and the Wi-Fi access
 point costs about 3 KB more.
 
