@@ -716,3 +716,26 @@ def test_man_overboard_mark_records_the_gps_time_and_the_page_counts_from_it():
     p.utc_ms += 75000
     r.step(advance=ui.REFRESH_MS + 1)
     assert r.ctxs[-1]['mob_s'] == 75
+
+
+def test_wifi_box_stays_out_of_the_way_of_a_long_up_on_the_anchor_and_mob_pages():
+    r = Rig()
+    held = [None]
+    r.ui.up_held = lambda now: held[0]
+    r.step()
+    r.press(UP_SHORT, UP_SHORT, UP_SHORT)                  # the Anchor page
+    assert r.navigator.page == nav.PAGE_ANCHOR
+    held[0] = 1000                                         # holding UP to drop the anchor
+    r.step(advance=200)
+    assert r.ctxs[-1]['hold'] is None                      # no Wi-Fi countdown
+    held[0] = 1400
+    r.step(advance=200)
+    assert r.ctxs[-1]['hold'] is None
+    held[0] = 2000                                         # clearly longer: it is the Wi-Fi gesture after all
+    r.step(advance=200)
+    assert r.ctxs[-1]['hold'] == (66, 'Hold: Wi-Fi on')
+    held[0] = None
+    r.press(DN_SHORT)                                      # another page: the box appears as before
+    held[0] = 500
+    r.step(advance=200)
+    assert r.ctxs[-1]['hold'] == (16, 'Hold: Wi-Fi on')

@@ -24,6 +24,7 @@ BLINK_HALF_MS = 400           # ... in phases of this length
 HOLD_SHOW_MS = 400            # the Wi-Fi gesture box appears once UP has been held this long
 HOLD_STALE_MS = 10 * 1000     # a key 'held' longer than this is a lost release edge: ignore it
 HOLD_REFRESH_MS = 150
+PAGE_ACTION_SHOW_MS = 1500    # on the Anchor and MOB pages a long UP does something: the Wi-Fi box waits until it is clearly longer
 MOB_SHOW_MS = 1200            # the man-overboard box appears once DN has been held past a normal long press
 CONFIRM_MS = 10 * 1000        # a confirmation question is dropped after this long without an answer
 TOAST_MS = 2500               # how long a notice ("Anchor dropped") stays
@@ -374,7 +375,8 @@ class UiController(object):
         if self.up_held is None:
             return None
         held = self.up_held(now)
-        if held is None or held < HOLD_SHOW_MS or held > HOLD_STALE_MS:
+        show_ms = PAGE_ACTION_SHOW_MS if self.navigator.page in (nav.PAGE_ANCHOR, nav.PAGE_MOB) else HOLD_SHOW_MS
+        if held is None or held < show_ms or held > HOLD_STALE_MS:
             return None
         state = self.wifi_info()[0]
         percent = min(100, held * 100 // self.wifi_ms)

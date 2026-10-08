@@ -44,7 +44,8 @@ pixels high for the page you are on. In the debug loop the segments are dashed.
 
 **Wi-Fi gesture feedback.** While UP is held on its own for more than about 0.4 s a box appears: `Hold: Wi-Fi on`
 (or `off`, whichever the release will switch to) with a progress bar that fills over the 3 s; at full it reads
-`Release now!`. The Wi-Fi page itself is in the main loop only while the access point is on (or failed to start).
+`Release now!`. (On the Anchor and MOB pages a long UP drops the anchor or clears the mark, so the box only appears after
+1.5 s there.) The Wi-Fi page itself is in the main loop only while the access point is on (or failed to start).
 
 **Alert banner and blink.** The detectors report the probability of spoofing and of jamming as `OK`, `LOW`,
 `MEDIUM` or `HIGH`; `MEDIUM` and `HIGH` are alerts. An alert replaces the top row of the Main and
