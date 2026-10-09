@@ -137,10 +137,12 @@ The overview you want under way: how healthy the sky is, and how likely jamming 
 | title right, badge | Fix mode (`2D`/`3D`, or the fix quality while the mode is unknown) and satellites used in the solution / in view. |
 | `G<n> B<n>` | Satellites used from GPS and BeiDou (from GSA). |
 | `<n>dB` | Mean C/N0 of all tracked satellites; `--` when none are tracked. |
-| `AIC` tag | The module's interference cancellation: a lit (white) `AIC+` when it acknowledged being on, an outlined `AIC-` when it refused, `AIC?` when it has not answered. |
+| `AIC` tag | The module's interference cancellation: `AIC+` when it acknowledged being on, `AIC-` when it refused, `AIC?` when it has not answered. `AIC+` turns into a **white box** (inverted) while the module reports interference (`$PMTKSPF` warning or critical, the `m:` line of the Signal page): the cancellation is working against a jammer. `AIC-` and `AIC?` stay plain. |
 | `JAMMING` / `SPOOF` gauges | The probability of jamming and of spoofing: no step lit and `OK`; one step `LOW`; two steps `MEDIUM`; three steps `HIGH`. `INIT` while the jamming baseline is being learned, `off` when the detector is disabled. A `MEDIUM` or `HIGH` gauge is filled solid, because it is an alert. The reasons are in the debug loop (Signal and Spoofing pages). |
 
 ![GPS page with a spoofing alert](img/gps-alert.png)
+
+![GPS page while the module reports interference](img/gps-interference.png)
 
 ## 4. Anchor
 
@@ -325,7 +327,7 @@ The page shows `off` in the badge (and nothing else) when the detector is disabl
 | `C/N0 dB` panel | Current mean C/N0 of the tracked satellites (large) and the learned baseline (`/41`). |
 | `SATS` panel | Tracked satellites now (large) and the baseline (`/10`). |
 | reason line | Words for the indicators that were true at the last evaluation: `cn0` (mean C/N0 dropped), `sat` (fewer satellites tracked), `fix` (no fix although many satellites are in view), `mod` (module reports interference). `no issue` when none. |
-| `AIC` | Active interference cancellation: `+` module acknowledged it as on, `-` refused, `?` no answer yet. |
+| `AIC` | Active interference cancellation: `AIC+` module acknowledged it as on, `AIC-` refused, `AIC?` no answer yet; `AIC+` is drawn as a white box while the module reports interference. |
 | `GP.. BD..` | Mean C/N0 of the GPS and BeiDou satellites separately; `-` if that system is not tracked. |
 | `m:` | The L76B's own jamming detector (`$PMTKSPF`): `?` unknown, `ok`, `warn`, `CRIT`. |
 
@@ -396,7 +398,7 @@ S:K1T1S1             J:CN
 |---|---|
 | Top line | First 16 characters of the last checksum-valid sentence. |
 | Date | `dd/mm/yyyy` from the last ZDA sentence. |
-| `AIC+/-/?` | As on the Signal page. |
+| `AIC+/-/?` | As on the Signal page (a white box while the module reports interference). |
 | `GPS`, `SBS`, `BDS`, `OTH` | Satellites used in the solution, per system, from GSA: GPS, SBAS, BeiDou, other. |
 | `S:` | Reason string of the spoofing detector (first 6 characters; `-` when none), only when it is on. |
 | `J:` | Reason letters of the jamming detector (`C` cn0, `N` sats, `F` fix, `M` module; `-` when none), only when it is on. |

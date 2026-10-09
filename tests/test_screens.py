@@ -560,6 +560,7 @@ def test_gps_page_shows_the_constellation_strip_aic_tag_and_both_severity_gauges
     p.parse_sentence(with_checksum('GNGSA,A,3,05,07,13,15,20,21,,,,,,,1.6,0.9,1.3,1'), 1)
     p.parse_sentence(with_checksum('GNGSA,A,3,06,09,11,21,,,,,,,,,1.6,0.9,1.3,4'), 1)
     p.pmtk_acks[286] = 3
+    p.module_jam_status = 1
     oled = _gps_page(_Sev('OK'), _Sev('LOW'), p)
     texts = oled.texts()
     assert texts[0] == 'GPS' and 'G6 B4 36dB' in texts and 'AIC+' in texts
@@ -567,15 +568,36 @@ def test_gps_page_shows_the_constellation_strip_aic_tag_and_both_severity_gauges
     check_fits([(nav.PAGE_GPS, oled)])
 
 
-def test_gps_page_aic_tag_is_lit_only_when_cancellation_is_on_and_alerts_fill_the_gauge():
+def test_aic_tag_text_is_plus_minus_or_question_mark_and_white_only_for_aic_plus_reporting_interference():
     p = populated_parser()
-    p.pmtk_acks[286] = 3
-    assert (96, 12, 32, 9) in _gps_page(_Sev('OK'), _Sev('OK'), p).rects          # a lit tag
-    p.pmtk_acks[286] = 2
-    off = _gps_page(_Sev('OK'), _Sev('OK'), p)
-    assert (96, 12, 32, 9) not in off.rects and 'AIC-' in off.texts()
-    del p.pmtk_acks[286]
-    assert 'AIC?' in _gps_page(_Sev('OK'), _Sev('OK'), p).texts()
+    tag = (96, 12, 32, 9)
+    for acked, status, text, lit in ((3, 1, 'AIC+', False),         # on, nothing reported: plain
+                                     (3, 2, 'AIC+', True),          # on and the module warns: a white box
+                                     (3, 3, 'AIC+', True),          # ... or reports critical
+                                     (3, 0, 'AIC+', False),         # status unknown: plain
+                                     (2, 3, 'AIC-', False),         # refused: plain whatever it reports
+                                     (None, 3, 'AIC?', False)):     # no answer yet: plain
+        if acked is None:
+            p.pmtk_acks.pop(286, None)
+        else:
+            p.pmtk_acks[286] = acked
+        p.module_jam_status = status
+        oled = _gps_page(_Sev('OK'), _Sev('OK'), p)
+        assert text in oled.texts(), (acked, status)
+        assert (tag in oled.rects) == lit, (acked, status)
+    p.pmtk_acks[286], p.module_jam_status = 3, 2                     # the other two pages show it the same way
+    for page, rect in ((nav.PAGE_SIGNAL, (96, 41, 32, 9)), (nav.PAGE_DEBUG, (96, 8, 32, 9))):
+        oled = Oled()
+        screens.draw(oled, FakeWriter(), page, p, STATS, 0, False, JamDetector(p), SpoofDetector(p), WIFI, INFO)
+        assert rect in oled.rects and 'AIC+' in oled.texts(), page
+        p.module_jam_status = 1
+        oled = Oled()
+        screens.draw(oled, FakeWriter(), page, p, STATS, 0, False, JamDetector(p), SpoofDetector(p), WIFI, INFO)
+        assert rect not in oled.rects and 'AIC+' in oled.texts(), page
+        p.module_jam_status = 2
+
+
+def test_gps_page_alerts_fill_the_gauge():
     calm = _gps_page(_Sev('LOW'), _Sev('OK'))
     assert (0, 22, 62, 38) not in calm.rects
     alert = _gps_page(_Sev('OK'), _Sev('HIGH'))

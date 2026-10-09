@@ -192,6 +192,13 @@ def menu_scene(group, cursor, change=None):
     return render
 
 
+def interference_parser(_parser=None):
+    """A parser like the others, but with the module's own jamming detector reporting a warning ($PMTKSPF,2)."""
+    parser = make_parser()
+    parser.module_jam_status = 2
+    return parser
+
+
 def anchor_watch(state='ok', distance=42.4, bearing=245, maximum=63.0, set_=True):
     watch = anchor.AnchorWatch(radius_m=50)
     if set_:
@@ -231,6 +238,8 @@ def scenes():
          page_scene(nav.PAGE_MAIN, p, jam=Jam('OK'), hold=(70, 'Hold: debug'))),
         ('speed', 'Speed', page_scene(nav.PAGE_SPEED, p, sog_trend=1)),
         ('gps', 'GPS', page_scene(nav.PAGE_GPS, p, jam=Jam('LOW', 'C'), spoof=make_spoof(p, 'OK', (), ''))),
+        ('gps-interference', 'GPS: the module reports interference, AIC+ in a white box',
+         page_scene(nav.PAGE_GPS, interference_parser(p), jam=Jam('MEDIUM', 'CN'), spoof=make_spoof(p, 'OK', (), ''))),
         ('gps-alert', 'GPS with a spoofing alert',
          page_scene(nav.PAGE_GPS, p, jam=Jam('OK'), spoof=alert_spoof)),
         ('speed-alert', 'Speed, jamming alert banner',

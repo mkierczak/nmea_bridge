@@ -390,19 +390,26 @@ def _severity(oled, x, label, state):
     oled.text(word, x + (62 - 8 * len(word)) // 2, 48, color)
 
 
+def _aic_tag(oled, x, y, parser):
+    """The module's interference cancellation: AIC+ (acknowledged as on), AIC- (refused), AIC? (no answer yet). AIC+
+    goes white-on-black-inverted, a white box, while the module reports interference ($PMTKSPF warning or
+    critical): the cancellation is working against a jammer."""
+    aic = parser.pmtk_acks.get(286)
+    text = 'AIC' + ('?' if aic is None else '+' if aic == 3 else '-')
+    if aic == 3 and parser.module_jam_status >= 2:
+        oled.fill_rect(x, y - 1, 32, 9, 1)
+        oled.text(text, x, y, 0)
+    else:
+        oled.text(text, x, y, 1)
+
+
 def _draw_gps(oled, parser, jam, spoof):
-    """Constellation stats on a strip, the AIC status as a small tag, and the two severity gauges."""
+    """Constellation stats on a strip, the AIC status as a small tag (inverted while it reports interference), and the two severity gauges."""
     mode = parser.mode or parser.fix_type
     _title(oled, 'GPS', mode, '{}/{}'.format(parser.birds_in_use, parser.birds_in_view))
     tracked, mean, _ = parser.cn0_stats()
     oled.text('G{} B{} {}dB'.format(parser.birds_GPS, parser.birds_BD, round(mean) if tracked else '--'), 0, 13, 1)
-    aic = parser.pmtk_acks.get(286)
-    if aic == 3:                                   # interference cancellation is on: a lit tag
-        oled.fill_rect(96, 12, 32, 9, 1)
-        oled.text('AIC+', 96, 13, 0)
-    else:
-        _frame(oled, 96, 12, 32, 9)
-        oled.text('AIC' + ('?' if aic is None else '-'), 96, 13, 1)
+    _aic_tag(oled, 96, 13, parser)
     _severity(oled, 0, 'JAMMING', jam.state if jam else None)
     _severity(oled, 66, 'SPOOF', spoof.state if spoof else None)
 
@@ -522,8 +529,7 @@ def _draw_signal(oled, font, parser, jam):
     _readout(oled, font, 66, 'SATS', str(tracked), '/{}'.format(round(jam.base_tracked)))
     reason = ' '.join(JAM_WORDS.get(c, c) for c in jam.reason)
     oled.text(reason[:11] or 'no issue', 0, 42, 1)
-    aic = parser.pmtk_acks.get(286)
-    oled.text('AIC' + ('?' if aic is None else '+' if aic == 3 else '-'), 96, 42, 1)
+    _aic_tag(oled, 96, 42, parser)
     means = {}
     for cn, grp, _, _ in _tracked(parser):
         means.setdefault(grp, []).append(cn)
@@ -597,8 +603,7 @@ def _draw_debug(oled, font, parser, jam, spoof):
     """Last sentence and date, the satellites used per system as four counters, the detectors' reasons."""
     oled.text(parser.last_valid_sentence.strip()[:16], 0, 0, 1)
     oled.text(parser.date, 0, 9, 1)
-    aic = parser.pmtk_acks.get(286)
-    oled.text('AIC' + ('?' if aic is None else '+' if aic == 3 else '-'), 96, 9, 1)
+    _aic_tag(oled, 96, 9, parser)
     oled.hline(0, 18, 128, 1)
     for i, (label, value) in enumerate((('GPS', parser.birds_GPS), ('SBS', parser.birds_SBAS),
                                         ('BDS', parser.birds_BD), ('OTH', parser.birds_OTHER))):
